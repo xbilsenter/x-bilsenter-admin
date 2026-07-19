@@ -1,0 +1,133 @@
+{
+  "kjoretoydataListe": [
+    {
+      "kjoretoyId": {
+        "kjennemerke": "RL12345",
+        "understellsnummer": "WBADT43452G123456"
+      },
+      "forstegangsregistrering": {
+        "registrertForstegangNorgeDato": "2019-06-12"
+      },
+      "godkjenning": {
+        "forstegangsGodkjenning": {
+          "forstegangRegistrertDato": "2019-06-12"
+        },
+        "tekniskGodkjenning": {
+          "kjoretoyklassifisering": {
+            "beskrivelse": "Personbil",
+            "tekniskKode": { "kodeBeskrivelse": "M1" },
+            "efTypegodkjenning": {
+              "variant": "XDA",
+              "versjon": "001"
+            },
+            "nasjonalGodkjenning": {
+              "nasjonaltGodkjenningsAr": "2019"
+            }
+          },
+          "tekniskeData": {
+            "generelt": {
+              "merke": [{ "merke": "VOLKSWAGEN" }],
+              "handelsbetegnelse": [{ "handelsbetegnelse": "GOLF" }],
+              "typebetegnelse": "1.6 TDI"
+            },
+            "karosseriOgLasteplan": {
+              "rFarge": [{ "kodeNavn": "Grå", "kodeBeskrivelse": "Grå" }],
+              "karosseritype": { "kodeBeskrivelse": "Stasjonsvogn" },
+              "antallDorer": 5
+            },
+            "dimensjoner": {
+              "lengde": 4588,
+              "bredde": 1789,
+              "hoyde": 1486
+            },
+            "persontall": {
+              "sitteplasserTotalt": 5
+            },
+            "motorOgDrivverk": {
+              "girkassetype": { "kodeBeskrivelse": "Manuell" },
+              "antallGir": 6,
+              "effektKraftuttakKW": 85,
+              "maksimumHastighet": 202,
+              "motor": [
+                {
+                  "slagvolum": 1598,
+                  "antallSylindre": 4,
+                  "motorNummer": "CAY123456",
+                  "drivstoff": [
+                    {
+                      "drivstoffKode": { "kodeBeskrivelse": "Diesel" },
+                      "maksNettoEffekt": 85
+                    }
+                  ]
+                }
+              ]
+            },
+            "miljodata": {
+              "euroKlasse": { "kodeBeskrivelse": "Euro 6" },
+              "miljoOgdrivstoffGruppe": [
+                {
+                  "drivstoffKodeMiljodata": { "kodeBeskrivelse": "Diesel" },
+                  "forbrukOgUtslipp": [
+                    {
+                      "co2BlandetKjoring": 109,
+                      "forbrukBlandetKjoring": 4.2,
+                      "forbrukBykjoring": 5.1,
+                      "forbrukLandeveiskjoring": 3.8,
+                      "wltpKjoretoyspesifikk": {
+                        "forbrukKombinert": 4.5,
+                        "co2Kombinert": 118
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "vekter": {
+              "egenvekt": 1320,
+              "tillattTotalvekt": 1840,
+              "nyttelast": 520,
+              "tillattVogntogvekt": 3500
+            },
+            "akslinger": {
+              "antallAksler": 2,
+              "akselGruppe": [
+                {
+                  "akselListe": {
+                    "aksel": [
+                      {
+                        "plasseringAksel": 1,
+                        "drivAksel": false,
+                        "styreAksel": true,
+                        "antallHjul": 2,
+                        "tekniskTillattAkselLast": 950
+                      },
+                      {
+                        "plasseringAksel": 2,
+                        "drivAksel": true,
+                        "styreAksel": false,
+                        "antallHjul": 2,
+                        "tekniskTillattAkselLast": 1100
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "ovrigeTekniskeData": [
+              { "datafeltNavn": "modellår", "datafeltVerdi": "2019" }
+            ]
+          }
+        }
+      },
+      "periodiskKjoretoyKontroll": {
+        "sistGodkjent": "2024-03-15",
+        "kontrollfrist": "2026-03-15"
+      },
+      "registrering": {
+        "fomTidspunkt": "2019-06-12",
+        "registrertForstegangPaEierskap": "2022-01-10",
+        "registreringsstatus": { "kodeBeskrivelse": "Registrert" }
+      }
+    }
+  ]
+}
