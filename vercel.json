@@ -5,6 +5,7 @@
   "outputDirectory": "client/dist",
   "framework": null,
   "rewrites": [
+    { "source": "/api/health", "destination": "/api/health" },
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/uploads/(.*)", "destination": "/api" }
   ],
