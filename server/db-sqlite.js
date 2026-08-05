@@ -8,8 +8,14 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DB_PATH = path.join(DATA_DIR, 'xbilsenter.db');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+if (!process.env.VERCEL) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  } catch (err) {
+    console.warn('[db] Kunne ikke opprette lokal data-mappe:', err.message);
+  }
+}
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');

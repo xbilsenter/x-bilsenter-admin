@@ -8,8 +8,12 @@ const { getSupabase, isSupabaseEnabled } = require('./supabase');
 const UPLOADS_DIR = path.join(__dirname, 'data', 'uploads');
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'uploads';
 
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+if (!process.env.VERCEL && !fs.existsSync(UPLOADS_DIR)) {
+  try {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  } catch (err) {
+    console.warn('[storage] Kunne ikke opprette uploads-mappe:', err.message);
+  }
 }
 
 function isRemoteStorageEnabled() {
