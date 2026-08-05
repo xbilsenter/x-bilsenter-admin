@@ -43,12 +43,16 @@ import {
 } from './api.js';
 
 // ─── DATE HELPERS ────────────────────────────────────────────────────────────
+const NORSK_TIDSSONE = 'Europe/Oslo';
+
 function idag() {
-  return new Date().toISOString().slice(0, 10);
+  // toISOString er UTC og gir feil dato rundt midnatt norsk tid.
+  return new Date().toLocaleDateString('sv-SE', { timeZone: NORSK_TIDSSONE });
 }
 
 function formatDatoLang() {
   return new Date().toLocaleDateString('nb-NO', {
+    timeZone: NORSK_TIDSSONE,
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
 }
@@ -229,7 +233,11 @@ function computeListeReorder(allBiler, dragId, targetStatus, beforeId) {
 }
 
 function bilLoggEntry(tekst) {
-  return { tekst: tekst, dato: new Date().toLocaleString('nb-NO'), av: 'Admin' };
+  return {
+    tekst: tekst,
+    dato: new Date().toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE }),
+    av: 'Admin'
+  };
 }
 
 function isBilAktiv(b) {
@@ -1023,7 +1031,12 @@ function formatDriftTid(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toLocaleTimeString('nb-NO', {
+    timeZone: NORSK_TIDSSONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 }
 
 async function openNettside(url, { preview = false } = {}) {
@@ -1075,7 +1088,7 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
     try {
       const res = await refreshFinnInventory();
       const tid = res.updatedAt
-        ? new Date(res.updatedAt).toLocaleString('nb-NO')
+        ? new Date(res.updatedAt).toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE })
         : 'nå';
       setFinnMelding(`FINN-lager oppdatert · ${res.total || 0} biler · ${tid}`);
     } catch (err) {
@@ -1697,7 +1710,12 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
               return String(b.archivedAt || '').localeCompare(String(a.archivedAt || '')) || b.id - a.id;
             }).map(function (bil) {
               const archivedLabel = bil.archivedAt
-                ? new Date(bil.archivedAt).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })
+                ? new Date(bil.archivedAt).toLocaleDateString('nb-NO', {
+                  timeZone: NORSK_TIDSSONE,
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric'
+                })
                 : '—';
               return (
                 <div className="bil-arkiv-row" key={bil.id}>
@@ -1848,7 +1866,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
 
   const leggTilLogg = () => {
     if (!nyLogg.trim()) return;
-    const dato = new Date().toLocaleString('nb-NO');
+    const dato = new Date().toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE });
     const av = currentUser?.name || currentUser?.username || 'Ukjent';
     oppdater('logg', [...(bil.logg || []), { tekst: nyLogg, dato, av }]);
     setNyLogg('');
@@ -5961,7 +5979,13 @@ function formatKalDag(iso) {
   if (!iso) return '—';
   const d = new Date(String(iso) + 'T12:00:00');
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return d.toLocaleDateString('nb-NO', {
+    timeZone: NORSK_TIDSSONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
 }
 
 const KAL_DAY_HOURS = 24;
@@ -6886,7 +6910,11 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
       euKontroll: v.nesteEuKontroll || '',
       forsikring: '',
       ...initBilSjekklister(startStatus, lists.bilSjekklister),
-      logg: [{ tekst: 'Importert fra Statens vegvesen', dato: new Date().toLocaleString('nb-NO'), av: 'System' }],
+      logg: [{
+        tekst: 'Importert fra Statens vegvesen',
+        dato: new Date().toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE }),
+        av: 'System'
+      }],
       svvData: rawData || v
     };
     try {

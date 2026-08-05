@@ -10,11 +10,16 @@ function parseJson(value, fallback) {
   }
 }
 
+// Serveren kjører i UTC på Vercel, så tidssonen må settes eksplisitt for at
+// klokkeslettene skal stemme med norsk tid.
+const NORSK_TIDSSONE = 'Europe/Oslo';
+
 function formatDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString('nb-NO', {
+    timeZone: NORSK_TIDSSONE,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit'
   }).replace(',', '');

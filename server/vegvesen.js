@@ -139,7 +139,12 @@ function formatNorwegianDate(value) {
   if (typeof value === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(value)) return value;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString('nb-NO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return d.toLocaleDateString('nb-NO', {
+    timeZone: 'Europe/Oslo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
 }
 
 function getVehicleEntry(raw) {

@@ -380,6 +380,7 @@ export function formatKommentarDato(value) {
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toLocaleString('nb-NO', {
+      timeZone: 'Europe/Oslo',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',

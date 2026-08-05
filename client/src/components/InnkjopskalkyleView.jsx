@@ -32,6 +32,7 @@ function fmtDateTime(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleString('nb-NO', {
+    timeZone: 'Europe/Oslo',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
