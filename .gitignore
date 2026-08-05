@@ -6,3 +6,5 @@ server/data/
 client/dist/
 supabase/export/
 .DS_Store
+.vercel
+.env*

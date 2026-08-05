@@ -3,8 +3,8 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const { Pool } = require('pg');
 const { expandNamedParams, normalizeRow } = require('./sql');
+const { resolvePoolConfig } = require('./connection-url');
 
-const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || '';
 const txStorage = new AsyncLocalStorage();
 
 const TRANSIENT_PG_CODES = new Set([
@@ -60,16 +60,12 @@ function attachPoolErrorHandler(activePool) {
 }
 
 function getPool() {
-  if (!DATABASE_URL) {
-    throw new Error(
-      'Mangler DATABASE_URL (eller SUPABASE_DB_URL). Hent connection string fra Supabase → Settings → Database.'
-    );
-  }
   if (!pool) {
+    const config = resolvePoolConfig();
     pool = new Pool({
-      connectionString: DATABASE_URL,
-      ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-      max: Number(process.env.DB_POOL_MAX || 10),
+      connectionString: config.connectionString,
+      ssl: config.ssl,
+      max: Number(process.env.DB_POOL_MAX || (process.env.VERCEL ? 1 : 10)),
       idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
       connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || (process.env.VERCEL ? 4000 : 10000)),
       keepAlive: true,
