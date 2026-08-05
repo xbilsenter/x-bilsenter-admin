@@ -19,7 +19,7 @@
   "crons": [
     {
       "path": "/api/cron/mail-sync",
-      "schedule": "*/3 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }

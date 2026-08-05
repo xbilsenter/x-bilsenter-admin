@@ -4,7 +4,7 @@ const { syncAllAccounts } = require('./mail-sync');
 const { prepare, isPostgres } = require('./db');
 
 const LOCK_KEY = 'mail_sync_lock';
-const LOCK_TTL_MS = Number(process.env.MAIL_SYNC_LOCK_TTL_MS || 240000);
+const LOCK_TTL_MS = Number(process.env.MAIL_SYNC_LOCK_TTL_MS || 120000);
 
 function verifyCronRequest(req) {
   const expected = process.env.CRON_SECRET;

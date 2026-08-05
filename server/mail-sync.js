@@ -227,6 +227,37 @@ async function upsertSyncedMessage(konto, mappe, msg, parsed) {
   return { id: rowId, created: true };
 }
 
+async function getSyncedUidMap(kontoId, mappeId) {
+  const rows = await prepare(`
+    SELECT id, imap_uid, lest, flagged FROM eposter
+    WHERE konto_id = ? AND mappe_id = ? AND imap_uid IS NOT NULL AND slettet = 0
+  `).all(kontoId, mappeId);
+
+  const map = new Map();
+  for (const row of rows) {
+    map.set(Number(row.imap_uid), row);
+  }
+  return map;
+}
+
+async function refreshKnownMessageFlags(client, knownUids, uidMap) {
+  let updated = 0;
+
+  for await (const msg of client.fetch(knownUids, { uid: true, flags: true })) {
+    const row = uidMap.get(Number(msg.uid));
+    if (!row) continue;
+
+    const lest = msg.flags?.has('\\Seen') ? 1 : 0;
+    const flagged = msg.flags?.has('\\Flagged') ? 1 : 0;
+    if (Number(row.lest) === lest && Number(row.flagged) === flagged) continue;
+
+    await prepare('UPDATE eposter SET lest = ?, flagged = ? WHERE id = ?').run(lest, flagged, row.id);
+    updated += 1;
+  }
+
+  return updated;
+}
+
 async function syncFolderMessages(client, konto, mappe) {
   if (!mappe.syncEnabled) return { mappeId: mappe.id, imported: 0, updated: 0 };
 
@@ -242,16 +273,32 @@ async function syncFolderMessages(client, konto, mappe) {
 
     if (!fetchUids.length) return { mappeId: mappe.id, imported: 0, updated: 0 };
 
-    for await (const msg of client.fetch(fetchUids, {
-      uid: true,
-      envelope: true,
-      source: true,
-      flags: true
-    })) {
-      const parsed = await simpleParser(msg.source);
-      const result = await upsertSyncedMessage(konto, mappe, msg, parsed);
-      if (result.created) imported += 1;
-      else updated += 1;
+    // Meldinger som allerede er lagret trenger ikke nedlasting og parsing på nytt –
+    // kun flagg (lest/flagget) kan ha endret seg på serveren.
+    const uidMap = await getSyncedUidMap(konto.id, mappe.id);
+    const newUids = [];
+    const knownUids = [];
+    for (const uid of fetchUids) {
+      if (uidMap.has(Number(uid))) knownUids.push(uid);
+      else newUids.push(uid);
+    }
+
+    if (newUids.length) {
+      for await (const msg of client.fetch(newUids, {
+        uid: true,
+        envelope: true,
+        source: true,
+        flags: true
+      })) {
+        const parsed = await simpleParser(msg.source);
+        const result = await upsertSyncedMessage(konto, mappe, msg, parsed);
+        if (result.created) imported += 1;
+        else updated += 1;
+      }
+    }
+
+    if (knownUids.length) {
+      updated += await refreshKnownMessageFlags(client, knownUids, uidMap);
     }
   } finally {
     lock.release();
@@ -311,10 +358,22 @@ async function syncAllAccounts(kontoId) {
     throw new Error('Ingen aktive mailkontoer med IMAP er konfigurert.');
   }
 
-  const results = [];
-  for (const konto of accounts) {
-    results.push(await syncAccountFull(konto));
-  }
+  // Hver konto har egen IMAP-tilkobling, så de kan synkes parallelt.
+  // En konto som feiler skal ikke stoppe de andre.
+  const results = await Promise.all(accounts.map(async function (konto) {
+    try {
+      return await syncAccountFull(konto);
+    } catch (err) {
+      console.warn(`[mail-sync] Konto ${konto.id} feilet:`, err.message);
+      return {
+        kontoId: konto.id,
+        kontoNavn: konto.navn,
+        imported: 0,
+        updated: 0,
+        error: err.message
+      };
+    }
+  }));
 
   const imported = results.reduce(function (sum, item) { return sum + (item.imported || 0); }, 0);
   const updated = results.reduce(function (sum, item) { return sum + (item.updated || 0); }, 0);
