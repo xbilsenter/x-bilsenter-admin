@@ -1,21 +1,25 @@
 'use strict';
 
 const { ImapFlow } = require('imapflow');
-const { simpleParser } = require('mailparser');
 const nodemailer = require('nodemailer');
 const {
-  db,
+  accountImapReady,
+  accountSmtpReady,
+  normalizeMessageId
+} = require('./mail-utils');
+const { syncAllAccounts, getSentMappeForKonto, startBackgroundMailSync } = require('./mail-sync');
+const { saveEpostVedlegg } = require('./mail-folders');
+const { saveBuffer, makeFilename } = require('./storage');
+const {
+  prepare,
   getMailKontoer,
   getMailKontoById,
   getDefaultMailKonto,
   setMailKontoLastSync,
   countUlestEpost,
-  countEpostUtkast
+  countEpostUtkast,
+  linkInboundEpostToKunde
 } = require('./db');
-
-function normalizeMessageId(value) {
-  return String(value || '').trim().replace(/^<|>$/g, '');
-}
 
 function parseEmailList(value) {
   if (!value) return null;
@@ -28,33 +32,67 @@ function parseEmailList(value) {
 
 const ADMIN_PUBLIC_URL = process.env.ADMIN_PUBLIC_URL || process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8090';
 
+const {
+  decodeHtmlEntities,
+  normalizeOutgoingHtml,
+  MAIL_BODY_PARAGRAPH_STYLE,
+  MAIL_BODY_TEXT_COLOR,
+  prepareSignatureHtmlForSend
+} = require('../shared/mail-html-normalize');
+
+const MAIL_BODY_WRAP_STYLE = `font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:${MAIL_BODY_TEXT_COLOR}`;
+
+function wrapMailBody(html) {
+  return html ? `<div style="${MAIL_BODY_WRAP_STYLE}">${html}</div>` : '';
+}
+
+function wrapMailSignature(html) {
+  return html ? `<div style="margin-top:12px">${html}</div>` : '';
+}
+
+function prepareSignatureHtml(signatur, baseUrl) {
+  const sig = String(signatur || '').trim();
+  if (!sig) return { html: '', plain: '' };
+  if (isHtmlContent(sig)) {
+    const html = prepareSignatureHtmlForSend(absolutizeUploadUrls(sig, baseUrl));
+    return { html: html, plain: htmlToText(html) };
+  }
+  return { html: textToHtml(sig), plain: sig };
+}
+
 function isHtmlContent(value) {
   return /<[a-z][\s\S]*>/i.test(String(value || ''));
 }
 
 function htmlToText(html) {
-  return String(html || '')
+  let out = String(html || '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
     .replace(/<\/tr>/gi, '\n')
-    .replace(/<\/h[1-6]>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .replace(/<[^>]+>/g, '');
+
+  out = decodeHtmlEntities(out);
+  out = out.split('\n').map(function (line) {
+    return line.replace(/[ \t]+/g, ' ').trim();
+  }).join('\n');
+  out = out.replace(/\n{3,}/g, '\n\n');
+  return out.trim();
 }
 
 function textToHtml(text) {
-  return String(text || '')
+  const escaped = String(text || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>');
+    .replace(/>/g, '&gt;');
+  const paragraphs = escaped.split(/\n{2,}/).filter(function (p) { return p.trim(); });
+  if (!paragraphs.length) return '';
+  return paragraphs.map(function (para) {
+    return `<p style="${MAIL_BODY_PARAGRAPH_STYLE};color:${MAIL_BODY_TEXT_COLOR}">${para.replace(/\n/g, '<br>')}</p>`;
+  }).join('');
 }
 
 function absolutizeUploadUrls(html, baseUrl) {
@@ -86,8 +124,8 @@ function splitReplyQuoteHtml(html) {
 }
 
 function prepareMailContent(text, html, signatur, baseUrl, quoteHtml) {
-  const userRaw = String(html || '').trim();
-  const quoteRaw = String(quoteHtml || '').trim();
+  const userRaw = normalizeOutgoingHtml(String(html || '').trim());
+  const quoteRaw = normalizeOutgoingHtml(String(quoteHtml || '').trim());
 
   if (userRaw || quoteRaw) {
     let userHtml = absolutizeUploadUrls(userRaw, baseUrl);
@@ -101,29 +139,19 @@ function prepareMailContent(text, html, signatur, baseUrl, quoteHtml) {
 
     const userText = htmlToText(userHtml);
     const quoteText = quotePart ? htmlToText(quotePart) : '';
-    let sig = String(signatur || '').trim();
+    const preparedSig = prepareSignatureHtml(signatur, baseUrl);
 
-    if (!sig) {
+    if (!preparedSig.html) {
       const merged = `${userHtml}${quotePart}`;
-      const bodyBlock = merged
-        ? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${merged}</div>`
-        : '';
       return {
         text: htmlToText(merged),
-        html: bodyBlock
+        html: wrapMailBody(merged)
       };
     }
 
-    if (isHtmlContent(sig)) {
-      sig = absolutizeUploadUrls(sig, baseUrl);
-    }
-    const sigHtml = isHtmlContent(sig) ? sig : textToHtml(sig);
-    const plainSig = isHtmlContent(sig) ? htmlToText(sig) : sig;
-    const userBlock = userHtml
-      ? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${userHtml}</div>`
-      : '';
-    const sigBlock = `<div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#444;margin-top:12px">${sigHtml}</div>`;
-    const textParts = [userText, plainSig, quoteText].filter(function (part) {
+    const userBlock = wrapMailBody(userHtml);
+    const sigBlock = wrapMailSignature(preparedSig.html);
+    const textParts = [userText, preparedSig.plain, quoteText].filter(function (part) {
       return part && part.trim();
     });
 
@@ -138,45 +166,25 @@ function prepareMailContent(text, html, signatur, baseUrl, quoteHtml) {
 
 function appendSignature(text, signatur, baseUrl) {
   const body = String(text || '').trimEnd();
-  let sig = String(signatur || '').trim();
-  if (!sig) {
+  const preparedSig = prepareSignatureHtml(signatur, baseUrl);
+
+  if (!preparedSig.html) {
     return {
       text: body,
-      html: body ? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">${textToHtml(body)}</div>` : ''
+      html: wrapMailBody(textToHtml(body))
     };
   }
 
-  if (isHtmlContent(sig)) {
-    sig = absolutizeUploadUrls(sig, baseUrl);
-    const plainSig = htmlToText(sig);
-    const fullText = body ? `${body}\n\n${plainSig}` : plainSig;
-    const bodyHtml = body
-      ? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">${textToHtml(body)}</div>`
-      : '';
-    const sigBlock = `<div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#444;margin-top:12px">${sig}</div>`;
-    return { text: fullText, html: bodyHtml ? `${bodyHtml}${sigBlock}` : sigBlock };
-  }
-
-  const fullText = body ? `${body}\n\n${sig}` : sig;
-  const sigBlock = `<div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.5;color:#444;margin-top:12px">${textToHtml(sig)}</div>`;
-  const bodyHtml = body
-    ? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">${textToHtml(body)}</div>`
-    : '';
+  const fullText = body ? `${body}\n\n${preparedSig.plain}` : preparedSig.plain;
+  const bodyHtml = wrapMailBody(textToHtml(body));
+  const sigBlock = wrapMailSignature(preparedSig.html);
   return { text: fullText, html: bodyHtml ? `${bodyHtml}${sigBlock}` : sigBlock };
 }
 
-function accountImapReady(konto) {
-  return !!(konto && konto.aktiv && konto.imapHost && konto.imapUser && konto.imapPass);
-}
-
-function accountSmtpReady(konto) {
-  return !!(konto && konto.aktiv && konto.smtpHost && konto.smtpUser && konto.smtpPass);
-}
-
-function getMailStatus() {
-  const kontoer = getMailKontoer(false);
+async function getMailStatus() {
+  const kontoer = await getMailKontoer(false);
   const active = kontoer.filter(function (k) { return k.aktiv; });
-  const ulest = countUlestEpost();
+  const ulest = await countUlestEpost();
   const lastSync = active
     .map(function (k) { return k.lastSync; })
     .filter(Boolean)
@@ -191,14 +199,14 @@ function getMailStatus() {
     smtpConfigured: active.some(function (k) { return k.smtpConfigured; }),
     lastSync,
     ulest,
-    utkastCount: countEpostUtkast()
+    utkastCount: await countEpostUtkast()
   };
 }
 
-function resolveSendAccount(kontoId) {
+async function resolveSendAccount(kontoId) {
   const konto = kontoId
-    ? getMailKontoById(Number(kontoId), true)
-    : getDefaultMailKonto(true);
+    ? await getMailKontoById(Number(kontoId), true)
+    : await getDefaultMailKonto(true);
 
   if (!accountSmtpReady(konto)) {
     throw new Error('Ingen aktiv mailkonto med SMTP er konfigurert.');
@@ -251,124 +259,34 @@ function getFromAddress(konto) {
   return addr ? `"${name}" <${addr}>` : '';
 }
 
-function storeOutboundMail(record) {
-  const info = db.prepare(`
+async function storeOutboundMail(record, attachmentRecords) {
+  const sentMappe = await getSentMappeForKonto(record.konto_id);
+  const info = await prepare(`
     INSERT INTO eposter (
-      konto_id, message_id, thread_id, in_reply_to, retning,
+      konto_id, mappe_id, message_id, thread_id, in_reply_to, retning,
       fra_navn, fra_epost, til_epost, emne, innhold, innhold_html,
       lest, henvendelse_id, mottatt_dato
     ) VALUES (
-      @konto_id, @message_id, @thread_id, @in_reply_to, 'ut',
+      @konto_id, @mappe_id, @message_id, @thread_id, @in_reply_to, 'ut',
       @fra_navn, @fra_epost, @til_epost, @emne, @innhold, @innhold_html,
-      1, @henvendelse_id, @mottatt_dato
+      @lest, @henvendelse_id, @mottatt_dato
     )
-  `).run(record);
-  return info.lastInsertRowid;
-}
+  `).run({ ...record, mappe_id: sentMappe?.id || null, lest: 1 });
+  const rowId = info.lastInsertRowid;
 
-async function syncAccount(konto) {
-  if (!accountImapReady(konto)) {
-    throw new Error(`IMAP er ikke konfigurert for ${konto.navn}.`);
+  for (const att of attachmentRecords || []) {
+    await saveEpostVedlegg(rowId, att);
   }
 
-  const client = new ImapFlow({
-    host: konto.imapHost,
-    port: Number(konto.imapPort || 993),
-    secure: konto.imapSecure !== false,
-    auth: {
-      user: konto.imapUser,
-      pass: konto.imapPass
-    },
-    logger: false
-  });
-
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO eposter (
-      konto_id, message_id, thread_id, in_reply_to, retning,
-      fra_navn, fra_epost, til_epost, emne, innhold, innhold_html, mottatt_dato
-    ) VALUES (
-      @konto_id, @message_id, @thread_id, @in_reply_to, 'inn',
-      @fra_navn, @fra_epost, @til_epost, @emne, @innhold, @innhold_html, @mottatt_dato
-    )
-  `);
-
-  let imported = 0;
-  await client.connect();
-  const lock = await client.getMailboxLock('INBOX');
-  try {
-    const since = new Date();
-    since.setDate(since.getDate() - 60);
-    const uids = await client.search({ since });
-    const fetchUids = uids.slice(-150);
-
-    if (fetchUids.length) {
-      for await (const msg of client.fetch(fetchUids, { envelope: true, source: true, uid: true })) {
-        const parsed = await simpleParser(msg.source);
-        const messageId = normalizeMessageId(parsed.messageId) || `uid-${konto.id}-${msg.uid}@local`;
-        const inReplyTo = normalizeMessageId(parsed.inReplyTo);
-        const references = String(parsed.references || '').split(/\s+/).map(normalizeMessageId).filter(Boolean);
-        const threadId = inReplyTo || references[0] || messageId;
-        const from = parsed.from?.value?.[0];
-        const to = parsed.to?.value?.[0];
-
-        const info = insert.run({
-          konto_id: konto.id,
-          message_id: messageId,
-          thread_id: threadId,
-          in_reply_to: inReplyTo,
-          fra_navn: from?.name || '',
-          fra_epost: from?.address || '',
-          til_epost: to?.address || konto.epost || konto.imapUser || '',
-          emne: parsed.subject || '(Uten emne)',
-          innhold: parsed.text || '',
-          innhold_html: parsed.html || '',
-          mottatt_dato: (parsed.date || new Date()).toISOString()
-        });
-
-        if (info.changes) imported += 1;
-      }
-    }
-  } finally {
-    lock.release();
-  }
-
-  await client.logout();
-  setMailKontoLastSync(konto.id, new Date().toISOString());
-
-  return { kontoId: konto.id, kontoNavn: konto.navn, imported };
+  return rowId;
 }
 
 async function syncInbox(kontoId) {
-  const accounts = getMailKontoer(true).filter(function (k) {
-    if (!k.aktiv || !accountImapReady(k)) return false;
-    if (kontoId) return k.id === Number(kontoId);
-    return true;
-  });
-
-  if (!accounts.length) {
-    throw new Error('Ingen aktive mailkontoer med IMAP er konfigurert. Legg til konto under Innstillinger.');
-  }
-
-  const results = [];
-  for (const konto of accounts) {
-    results.push(await syncAccount(konto));
-  }
-
-  const imported = results.reduce(function (sum, item) { return sum + item.imported; }, 0);
-  return {
-    imported,
-    accounts: results,
-    total: db.prepare(`
-      SELECT COUNT(*) AS c
-      FROM eposter e
-      INNER JOIN mail_kontoer k ON k.id = e.konto_id
-      WHERE e.retning = 'inn'
-    `).get().c
-  };
+  return syncAllAccounts(kontoId);
 }
 
 async function testMailKonto(kontoId) {
-  const konto = getMailKontoById(Number(kontoId), true);
+  const konto = await getMailKontoById(Number(kontoId), true);
   if (!konto) throw new Error('Mailkonto ikke funnet.');
 
   const result = { imap: null, smtp: null };
@@ -424,7 +342,7 @@ async function sendMail(options) {
     throw new Error('Mottaker, emne og melding er påkrevd.');
   }
 
-  const konto = resolveSendAccount(kontoId);
+  const konto = await resolveSendAccount(kontoId);
   const transporter = createTransporter(konto);
   const from = getFromAddress(konto);
   const merged = prepareMailContent(bodyText, bodyHtml, konto.signatur, ADMIN_PUBLIC_URL, replyQuoteHtml);
@@ -456,11 +374,13 @@ async function sendMail(options) {
   if (bccList) mailOptions.bcc = bccList;
   if (attachments?.length) {
     mailOptions.attachments = attachments.map(function (file) {
-      return {
+      const item = {
         filename: file.filename || file.originalname || 'vedlegg',
-        path: file.path,
         contentType: file.contentType || file.mimetype || undefined
       };
+      if (file.content) item.content = file.content;
+      else if (file.path) item.path = file.path;
+      return item;
     });
   }
 
@@ -469,7 +389,22 @@ async function sendMail(options) {
   });
 
   const messageId = normalizeMessageId(info.messageId) || `sent-${Date.now()}@local`;
-  const rowId = storeOutboundMail({
+  const storedAttachments = [];
+  for (const file of attachments || []) {
+    const content = file.content;
+    if (!content || !Buffer.isBuffer(content)) continue;
+    const filnavn = file.filename || file.originalname || 'vedlegg';
+    const lagringPath = await saveBuffer(makeFilename(filnavn), content, file.contentType || file.mimetype);
+    storedAttachments.push({
+      filnavn,
+      contentType: file.contentType || file.mimetype || 'application/octet-stream',
+      sizeBytes: content.length,
+      lagringPath,
+      contentId: ''
+    });
+  }
+
+  const rowId = await storeOutboundMail({
     konto_id: konto.id,
     message_id: messageId,
     thread_id: replyId || messageId,
@@ -482,7 +417,7 @@ async function sendMail(options) {
     innhold_html: fullHtml || '',
     henvendelse_id: henvendelseId || null,
     mottatt_dato: new Date().toISOString()
-  });
+  }, storedAttachments);
 
   return { messageId, rowId, kontoId: konto.id };
 }
@@ -490,10 +425,11 @@ async function sendMail(options) {
 module.exports = {
   getMailStatus,
   syncInbox,
-  syncAccount,
+  syncAllAccounts,
   sendMail,
   testMailKonto,
   normalizeMessageId,
   accountImapReady,
-  accountSmtpReady
+  accountSmtpReady,
+  startBackgroundMailSync
 };

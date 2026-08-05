@@ -1,8 +1,10 @@
--- X Bilsenter CRM – PostgreSQL schema for Supabase
--- Kjør HELE filen i Supabase Dashboard → SQL Editor → Run
--- (Ikke nødvendig med pgcrypto – brukes ikke i skjemaet)
+-- ═══════════════════════════════════════════════════════════════
+-- X Bilsenter CRM – KOMPLETT SKJEMA (kjør denne filen alene)
+-- Supabase Dashboard → SQL Editor → lim inn → Run
+-- ═══════════════════════════════════════════════════════════════
 
--- ─── Brukere ───
+-- ─── 001: Grunn-tabeller ───
+
 CREATE TABLE IF NOT EXISTS public.users (
   id BIGSERIAL PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
@@ -19,14 +21,12 @@ CREATE TABLE IF NOT EXISTS public.users (
 
 CREATE INDEX IF NOT EXISTS users_username_lower_idx ON public.users (LOWER(username));
 
--- ─── Innstillinger (key-value) ───
 CREATE TABLE IF NOT EXISTS public.innstillinger (
   key TEXT PRIMARY KEY,
   value JSONB NOT NULL DEFAULT '[]'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── Mailkontoer ───
 CREATE TABLE IF NOT EXISTS public.mail_kontoer (
   id BIGSERIAL PRIMARY KEY,
   navn TEXT NOT NULL,
@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS public.mail_kontoer (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── CRM-data ───
 CREATE TABLE IF NOT EXISTS public.henvendelser (
   id BIGSERIAL PRIMARY KEY,
   navn TEXT NOT NULL,
@@ -179,6 +178,106 @@ CREATE TABLE IF NOT EXISTS public.epost_maler (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Gi API-tilgang (viktig for Supabase import)
+-- ─── 002: Kunder, bil_kunder, ekstra kolonner ───
+
+CREATE TABLE IF NOT EXISTS public.kunder (
+  id BIGSERIAL PRIMARY KEY,
+  navn TEXT NOT NULL,
+  epost TEXT NOT NULL DEFAULT '',
+  tlf TEXT DEFAULT '',
+  adresse TEXT DEFAULT '',
+  postnr TEXT DEFAULT '',
+  poststed TEXT DEFAULT '',
+  organisasjonsnummer TEXT DEFAULT '',
+  type TEXT NOT NULL DEFAULT 'Privat',
+  notater TEXT DEFAULT '',
+  kilde TEXT NOT NULL DEFAULT 'Manuell',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_kunder_epost ON public.kunder (epost);
+
+CREATE TABLE IF NOT EXISTS public.bil_kunder (
+  bil_id BIGINT NOT NULL REFERENCES public.biler(id) ON DELETE CASCADE,
+  kunde_id BIGINT NOT NULL REFERENCES public.kunder(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (bil_id, kunde_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bil_kunder_kunde ON public.bil_kunder (kunde_id);
+
+ALTER TABLE public.henvendelser ADD COLUMN IF NOT EXISTS kunde_id BIGINT REFERENCES public.kunder(id) ON DELETE SET NULL;
+ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS kunde_id BIGINT REFERENCES public.kunder(id) ON DELETE SET NULL;
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS kunde_id BIGINT REFERENCES public.kunder(id) ON DELETE SET NULL;
+ALTER TABLE public.kalender ADD COLUMN IF NOT EXISTS kunde_id BIGINT REFERENCES public.kunder(id) ON DELETE SET NULL;
+ALTER TABLE public.eposter ADD COLUMN IF NOT EXISTS kunde_id BIGINT REFERENCES public.kunder(id) ON DELETE SET NULL;
+ALTER TABLE public.eposter ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.eposter ADD COLUMN IF NOT EXISTS ansvarlig TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS sjekklister JSONB DEFAULT NULL;
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS archived INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS archived_at TEXT DEFAULT NULL;
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS finn_kode TEXT DEFAULT '';
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS chassisnr TEXT DEFAULT '';
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS drivstoff TEXT DEFAULT '';
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS girkasse TEXT DEFAULT '';
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS utstyr TEXT DEFAULT '';
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS intern_info TEXT DEFAULT '';
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS kommentarer JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS dokumenter JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- ─── 004: Selg bil (oppkjøp) ───
+
+CREATE TABLE IF NOT EXISTS public.selg_bil (
+  id BIGSERIAL PRIMARY KEY,
+  navn TEXT NOT NULL,
+  epost TEXT NOT NULL,
+  tlf TEXT NOT NULL,
+  regnr TEXT NOT NULL,
+  merke TEXT DEFAULT '',
+  modell TEXT DEFAULT '',
+  arsmodell TEXT DEFAULT '',
+  drivstoff TEXT DEFAULT '',
+  farge TEXT DEFAULT '',
+  kjoretoy_type TEXT DEFAULT '',
+  hjuldrift TEXT DEFAULT '',
+  effekt_hk TEXT DEFAULT '',
+  siste_eu_kontroll TEXT DEFAULT '',
+  neste_eu_kontroll TEXT DEFAULT '',
+  kilometerstand TEXT DEFAULT '',
+  servicehistorikk TEXT DEFAULT '',
+  siste_service TEXT DEFAULT '',
+  utstyr JSONB NOT NULL DEFAULT '[]'::jsonb,
+  sommerdekk TEXT DEFAULT '',
+  vinterdekk TEXT DEFAULT '',
+  forventning TEXT DEFAULT '',
+  kommentar TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'Ny',
+  ansvarlig TEXT DEFAULT '',
+  tilbud TEXT DEFAULT '',
+  kommentarer JSONB NOT NULL DEFAULT '[]'::jsonb,
+  bilder JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS kunde_id BIGINT REFERENCES public.kunder(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_selg_bil_status ON public.selg_bil (status);
+CREATE INDEX IF NOT EXISTS idx_selg_bil_kunde ON public.selg_bil (kunde_id);
+
+-- ─── Tilganger + verifisering ───
+
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO postgres, service_role;
+
+SELECT tablename
+FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename IN (
+    'users', 'innstillinger', 'mail_kontoer', 'henvendelser', 'innbytte', 'selg_bil',
+    'biler', 'kalender', 'eposter', 'epost_utkast', 'epost_maler',
+    'kunder', 'bil_kunder'
+  )
+ORDER BY tablename;

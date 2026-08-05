@@ -16,11 +16,32 @@ async function request(path, options = {}) {
   }
 
   if (!res.ok) {
-    const err = new Error(data.error || 'Forespørsel feilet');
+    let message = data.error;
+    if (!message) {
+      if (res.status === 404) message = 'Fant ikke endepunktet. Restart admin-serveren og prøv igjen.';
+      else if (res.status === 403) message = 'Ingen tilgang.';
+      else message = `Forespørsel feilet (HTTP ${res.status})`;
+    }
+    const err = new Error(message);
     err.status = res.status;
+    if (data.code) err.code = data.code;
     throw err;
   }
 
+  return data;
+}
+
+export async function getPublicStatus() {
+  const res = await fetch(`${BASE}/public/status`);
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    /* ignore */
+  }
+  if (!res.ok) {
+    throw new Error(data.error || 'Kunne ikke hente systemstatus');
+  }
   return data;
 }
 
@@ -50,6 +71,18 @@ export function getDashboard() {
   return request('/dashboard');
 }
 
+export function getNettsideDrift() {
+  return request('/drift/nettside');
+}
+
+export function getSitePreviewUrl() {
+  return request('/drift/preview-url');
+}
+
+export function refreshFinnInventory() {
+  return request('/drift/finn-refresh', { method: 'POST' });
+}
+
 export function getHenvendelser() {
   return request('/henvendelser');
 }
@@ -61,6 +94,10 @@ export function patchHenvendelse(id, body) {
   });
 }
 
+export function deleteHenvendelse(id) {
+  return request(`/henvendelser/${id}`, { method: 'DELETE' });
+}
+
 export function getInnbytte() {
   return request('/innbytte');
 }
@@ -70,6 +107,85 @@ export function patchInnbytte(id, body) {
     method: 'PATCH',
     body: JSON.stringify(body)
   });
+}
+
+export function deleteInnbytte(id) {
+  return request(`/innbytte/${id}`, { method: 'DELETE' });
+}
+
+export function getSelgBil() {
+  return request('/selg-bil');
+}
+
+export function patchSelgBil(id, body) {
+  return request(`/selg-bil/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteSelgBil(id) {
+  return request(`/selg-bil/${id}`, { method: 'DELETE' });
+}
+
+export function sendSelgBilTilbud(id, body) {
+  return request(`/selg-bil/${id}/send-tilbud`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function sendInnbytteTilbud(id, body) {
+  return request(`/innbytte/${id}/send-tilbud`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function lookupFinnAnnonse(ref) {
+  const q = encodeURIComponent(String(ref || '').trim());
+  return request(`/finn/annonse?ref=${q}`);
+}
+
+export function getFinnMarkedssok({ merke, modell, aar, km, kmSlack } = {}) {
+  const params = new URLSearchParams();
+  if (merke) params.set('merke', merke);
+  if (modell) params.set('modell', modell);
+  if (aar != null && aar !== '') params.set('aar', String(aar));
+  if (km != null && km !== '') params.set('km', String(km));
+  if (kmSlack != null && kmSlack !== '') params.set('kmSlack', String(kmSlack));
+  return request(`/finn/markedssok?${params.toString()}`);
+}
+
+export function getKunder(q) {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+  return request(`/kunder${qs}`);
+}
+
+export function getKunde(id) {
+  return request(`/kunder/${id}`);
+}
+
+export function getKundeAktivitet(id) {
+  return request(`/kunder/${id}/aktivitet`);
+}
+
+export function postKunde(body) {
+  return request('/kunder', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function patchKunde(id, body) {
+  return request(`/kunder/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteKunde(id) {
+  return request(`/kunder/${id}`, { method: 'DELETE' });
 }
 
 export function getBiler() {
@@ -90,6 +206,41 @@ export function patchBil(id, body) {
   });
 }
 
+export function reorderBiler(updates) {
+  return request('/biler/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ updates: updates })
+  });
+}
+
+export async function uploadBilDokumenter(id, files) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const form = new FormData();
+  (files || []).forEach(function (file) {
+    form.append('filer', file);
+  });
+  const res = await fetch(`${BASE}/biler/${id}/dokumenter`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form
+  });
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    /* ignore */
+  }
+  if (!res.ok) {
+    let message = data.error;
+    if (!message) {
+      if (res.status === 404) message = 'Opplasting-endepunktet finnes ikke. Restart admin-serveren og prøv igjen.';
+      else message = 'Kunne ikke laste opp filer.';
+    }
+    throw new Error(message);
+  }
+  return data;
+}
+
 export function getKalender() {
   return request('/kalender');
 }
@@ -108,13 +259,53 @@ export function patchKalender(id, body) {
   });
 }
 
+export function deleteKalender(id) {
+  return request(`/kalender/${id}`, { method: 'DELETE' });
+}
+
+export function getInnkjopskalkyle(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.auksjon) qs.set('auksjon', params.auksjon);
+  const query = qs.toString();
+  return request(`/innkjopskalkyle${query ? `?${query}` : ''}`);
+}
+
+export function postInnkjopskalkyle(body) {
+  return request('/innkjopskalkyle', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function patchInnkjopskalkyle(id, body) {
+  return request(`/innkjopskalkyle/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteInnkjopskalkyle(id) {
+  return request(`/innkjopskalkyle/${id}`, { method: 'DELETE' });
+}
+
 export function lookupKjoretoy(regnr) {
   const reg = encodeURIComponent(String(regnr).trim().toUpperCase());
   return request(`/kjoretoy?regnr=${reg}`);
 }
 
+export function lookupOmregistreringsavgift(regnr, dato) {
+  const reg = encodeURIComponent(String(regnr).trim().toUpperCase());
+  const params = new URLSearchParams({ regnr: reg });
+  if (dato) params.set('dato', String(dato).slice(0, 10));
+  return request(`/omregistreringsavgift?${params.toString()}`);
+}
+
 export function getInnstillinger() {
   return request('/innstillinger');
+}
+
+export function getLister() {
+  return request('/lister');
 }
 
 export function patchInnstillinger(body) {
@@ -124,8 +315,55 @@ export function patchInnstillinger(body) {
   });
 }
 
-export function getInnboks() {
-  return request('/innboks');
+export function getInnboks(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.kontoId) qs.set('kontoId', String(params.kontoId));
+  if (params.mappeId) qs.set('mappeId', String(params.mappeId));
+  const query = qs.toString();
+  return request('/innboks' + (query ? `?${query}` : ''));
+}
+
+export function getInnboksMapper(kontoId, refresh) {
+  const qs = new URLSearchParams({ kontoId: String(kontoId) });
+  if (refresh) qs.set('refresh', '1');
+  return request(`/innboks/mapper?${qs.toString()}`);
+}
+
+export function createInnboksMappe(body) {
+  return request('/innboks/mapper', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function flyttEpost(id, mappeId) {
+  return request(`/innboks/${id}/flytt`, {
+    method: 'POST',
+    body: JSON.stringify({ mappeId })
+  });
+}
+
+export function deleteEpost(id) {
+  return request(`/innboks/${id}`, { method: 'DELETE' });
+}
+
+export async function downloadEpostVedlegg(epostId, vedleggId, filnavn) {
+  const token = getToken();
+  const res = await fetch(`${BASE}/innboks/${epostId}/vedlegg/${vedleggId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+  if (!res.ok) throw new Error('Kunne ikke laste ned vedlegg.');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filnavn || 'vedlegg';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function getMailStatus() {
+  return request('/mail/status');
 }
 
 export function syncInnboks(body = {}) {

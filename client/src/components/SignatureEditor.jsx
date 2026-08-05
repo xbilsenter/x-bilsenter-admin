@@ -1,13 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { uploadSignatureImage } from '../api.js';
+import { normalizeOutgoingHtml, prepareSignatureHtmlForSend } from '../mailHtmlNormalize.js';
+
+function escapeHtmlAttr(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function escapeHtmlText(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 const TEMPLATES = {
   enkel: `
-<p style="margin:0 0 4px;font-family:Arial,sans-serif;font-size:14px;line-height:1.5">
+<p style="margin:0 0 4px;font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#000000">
   <strong>Navn Etternavn</strong>
 </p>
-<p style="margin:0 0 4px;font-family:Arial,sans-serif;font-size:13px;color:#587A5A">X Bilsenter AS</p>
-<p style="margin:0;font-family:Arial,sans-serif;font-size:13px;color:#587A5A">post@xbilsenter.no · 64 80 40 40</p>`.trim(),
+<p style="margin:0 0 4px;font-family:Arial,sans-serif;font-size:13px;color:#000000">X Bilsenter AS</p>
+<p style="margin:0;font-family:Arial,sans-serif;font-size:13px;color:#000000">post@xbilsenter.no · 64 80 40 40</p>`.trim(),
   logo: `
 <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:Arial,sans-serif">
   <tr>
@@ -16,9 +31,9 @@ const TEMPLATES = {
     </td>
     <td style="vertical-align:top">
       <p style="margin:0 0 4px;font-size:14px;line-height:1.4"><strong>Navn Etternavn</strong></p>
-      <p style="margin:0 0 4px;font-size:13px;color:#19BA60;font-weight:700">X Bilsenter AS</p>
-      <p style="margin:0 0 4px;font-size:12px;color:#587A5A">AUTOREG-godkjent bilforhandler · Fetsund</p>
-      <p style="margin:0;font-size:12px;color:#587A5A">
+      <p style="margin:0 0 4px;font-size:13px;color:#000000;font-weight:700">X Bilsenter AS</p>
+      <p style="margin:0 0 4px;font-size:12px;color:#000000">AUTOREG-godkjent bilforhandler · Fetsund</p>
+      <p style="margin:0;font-size:12px;color:#000000">
         <a href="mailto:post@xbilsenter.no" style="color:#19BA60;text-decoration:none">post@xbilsenter.no</a>
         · <a href="https://xbilsenter.no" style="color:#19BA60;text-decoration:none">xbilsenter.no</a>
         · 64 80 40 40
@@ -29,8 +44,8 @@ const TEMPLATES = {
   banner: `
 <div style="font-family:Arial,sans-serif;max-width:520px">
   <img src="" alt="Banner" data-placeholder="banner" style="display:block;width:100%;max-width:420px;height:auto;border-radius:10px;margin-bottom:10px" />
-  <p style="margin:0 0 4px;font-size:14px"><strong>Navn Etternavn</strong> · X Bilsenter AS</p>
-  <p style="margin:0;font-size:12px;color:#587A5A">Vi hjelper deg finne riktig bil · Prøvekjøring etter avtale</p>
+  <p style="margin:0 0 4px;font-size:14px;color:#000000"><strong>Navn Etternavn</strong> · X Bilsenter AS</p>
+  <p style="margin:0;font-size:12px;color:#000000">Vi hjelper deg finne riktig bil · Prøvekjøring etter avtale</p>
 </div>`.trim()
 };
 
@@ -80,7 +95,7 @@ export default function SignatureEditor({ value, onChange, accountName, accountE
 
   const emit = () => {
     if (!editorRef.current) return;
-    const html = normalizeUploadUrls(editorRef.current.innerHTML);
+    const html = prepareSignatureHtmlForSend(normalizeUploadUrls(editorRef.current.innerHTML));
     setHtmlSource(html);
     onChange(html);
   };
@@ -104,7 +119,11 @@ export default function SignatureEditor({ value, onChange, accountName, accountE
   const insertLink = () => {
     const url = window.prompt('Lenke (https://...)');
     if (!url) return;
-    run('createLink', url);
+    const sel = window.getSelection();
+    const label = (sel && sel.toString()) || url;
+    insertHtml(
+      `<a href="${escapeHtmlAttr(url)}" style="color:#19BA60;text-decoration:none">${escapeHtmlText(label)}</a>`
+    );
   };
 
   const insertTemplate = (key) => {
@@ -138,7 +157,7 @@ export default function SignatureEditor({ value, onChange, accountName, accountE
   };
 
   const applyHtmlSource = () => {
-    const normalized = normalizeUploadUrls(htmlSource);
+    const normalized = prepareSignatureHtmlForSend(normalizeUploadUrls(htmlSource));
     if (editorRef.current) editorRef.current.innerHTML = expandUploadUrls(normalized);
     onChange(normalized);
     setShowHtml(false);
@@ -166,7 +185,7 @@ export default function SignatureEditor({ value, onChange, accountName, accountE
         <div className="sig-editor__group">
           <label className="sig-color" title="Tekstfarge">
             <span>A</span>
-            <input type="color" defaultValue="#2A4A2C" onChange={e => run('foreColor', e.target.value)} />
+            <input type="color" defaultValue="#000000" onChange={e => run('foreColor', e.target.value)} />
           </label>
           <label className="sig-color sig-color--bg" title="Markering">
             <span>▮</span>

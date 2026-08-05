@@ -1,20 +1,42 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Login from './components/Login.jsx';
+import InnkjopskalkyleView from './components/InnkjopskalkyleView.jsx';
 import SignatureEditor, { buildSignaturePreviewHtml } from './components/SignatureEditor.jsx';
-import MailComposer, { buildMailPreviewHtml, htmlIsEmpty } from './components/MailComposer.jsx';
+import MailComposer, { buildMailPreviewHtml, cleanComposeHtml, htmlIsEmpty } from './components/MailComposer.jsx';
+import {
+  canFinnMarkedsSok,
+  finnMarkedsSokFilterText,
+  finnMarkedsSokLabel,
+  openFinnMarkedsSok
+} from './finnMarkedssok.js';
 import {
   DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess,
-  buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS
+  canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch,
+  normalizeHenvStatusFarger, normalizeBilStatusFarger, DEFAULT_HENV_STATUS_FARGER,
+  DEFAULT_INNBYTTE_STATUS_FARGER, normalizeInnbytteStatusFarger,
+  DEFAULT_BIL_STATUS_FARGER, DEFAULT_SJEKKLISTE_MAL, DEFAULT_BIL_SJEKKLISTER,
+  getAktivSjekkliste, withSjekklisteUpdate, withStatusChange,
+  initBilSjekklister, normalizeBilSjekklister,
+  statusBadgeStyle, statusCardStyle, resolveListStatus,
+  getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
+  getSavedBilerSection, saveBilerSection,
+  buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
+  ansvarligSelectOptions
 } from './constants.js';
 import {
   getToken, logout,
   getMe,
-  getDashboard, getHenvendelser, patchHenvendelse,
-  getInnbytte, patchInnbytte,
-  getBiler, postBil, patchBil,
-  getKalender, postKalender, patchKalender,
-  lookupKjoretoy, getInnstillinger, patchInnstillinger,
-  getInnboks, syncInnboks, patchEpost, sendEpostMultipart, getEpostUtkast, getEpostUtkastById, saveEpostUtkast, deleteEpostUtkast, opprettHenvFraEpost,
+  getDashboard, getNettsideDrift, getSitePreviewUrl, refreshFinnInventory, getHenvendelser, patchHenvendelse, deleteHenvendelse,
+  getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
+  getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
+  getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
+  getBiler, postBil, patchBil, reorderBiler as reorderBilerApi, uploadBilDokumenter,
+  getKalender, postKalender, patchKalender, deleteKalender,
+  getInnkjopskalkyle,
+  lookupKjoretoy, getInnstillinger, getLister, patchInnstillinger,
+  getInnboks, getInnboksMapper, createInnboksMappe, flyttEpost, deleteEpost, downloadEpostVedlegg,
+  getMailStatus,
+  syncInnboks, patchEpost, sendEpostMultipart, getEpostUtkast, getEpostUtkastById, saveEpostUtkast, deleteEpostUtkast, opprettHenvFraEpost,
   sendHenvendelseSvar, getMailKontoer, postMailKonto, patchMailKonto, deleteMailKonto, testMailKonto,
   getEpostMaler, postEpostMal, patchEpostMal, deleteEpostMal,
   getBrukereMeta, getBrukere, postBruker, patchBruker, deleteBruker
@@ -77,7 +99,8 @@ const DAGER = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'];
 
 function formatKalTid(e) {
   if (!e?.tid) return '—';
-  if (e.tidSlutt) return `${e.tid}–${e.tidSlutt}`;
+  const slutt = kalEffectiveSlutt(e);
+  if (slutt && slutt !== e.tid) return `${e.tid}–${slutt}`;
   return e.tid;
 }
 
@@ -93,10 +116,9 @@ function SignaturePreview({ body, signatur, label }) {
 }
 
 // ─── UI HELPERS ──────────────────────────────────────────────────────────────
-export function Badge({ s }) {
-  const c = SFARGE[s] || '#6B7280';
+export function Badge({ s, colors }) {
   return (
-    <span className="badge" style={{ background: c + '18', color: c, border: `1px solid ${c}30` }}>
+    <span className="badge" style={statusBadgeStyle(s, colors)}>
       {s}
     </span>
   );
@@ -130,6 +152,12 @@ function matchesBilRef(ref, reg) {
   return String(ref).trim().toUpperCase() === String(reg).trim().toUpperCase();
 }
 
+function bilStatusFarge(status, lists) {
+  return (lists?.bilStatusFarger && lists.bilStatusFarger[status])
+    || SFARGE[status]
+    || '#888';
+}
+
 function kanbanStatuses(lists, biler) {
   const base = Array.isArray(lists?.bilStatuser) ? [...lists.bilStatuser] : [];
   (biler || []).forEach(function (bil) {
@@ -138,11 +166,80 @@ function kanbanStatuses(lists, biler) {
   return base;
 }
 
-function bilMerker(biler, lists) {
+function sortBilerListe(a, b) {
+  return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || normalizeBilId(a.id) - normalizeBilId(b.id);
+}
+
+function groupBilerByStatus(biler, statuser) {
+  const groups = {};
+  statuser.forEach(function (status) { groups[status] = []; });
+  (biler || []).forEach(function (bil) {
+    const key = bil.status;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(bil);
+  });
+  statuser.forEach(function (status) {
+    groups[status].sort(sortBilerListe);
+  });
+  return groups;
+}
+
+function normalizeBilId(id) {
+  return Number(id);
+}
+
+function computeListeReorder(allBiler, dragId, targetStatus, beforeId) {
+  const dragNum = normalizeBilId(dragId);
+  const dragged = allBiler.find(function (b) { return normalizeBilId(b.id) === dragNum; });
+  if (!dragged) return [];
+
+  const oldStatus = dragged.status;
+  const targetItems = allBiler
+    .filter(function (b) { return b.status === targetStatus && normalizeBilId(b.id) !== dragNum; })
+    .sort(sortBilerListe);
+
+  let insertIdx = beforeId == null
+    ? targetItems.length
+    : targetItems.findIndex(function (b) { return normalizeBilId(b.id) === normalizeBilId(beforeId); });
+  if (insertIdx < 0) insertIdx = targetItems.length;
+
+  targetItems.splice(insertIdx, 0, { ...dragged, status: targetStatus });
+
+  const updates = [];
+  targetItems.forEach(function (b, i) {
+    const sortOrder = (i + 1) * 10;
+    if (normalizeBilId(b.id) === dragNum || b.sortOrder !== sortOrder || b.status !== targetStatus) {
+      updates.push({ id: normalizeBilId(b.id), status: targetStatus, sortOrder: sortOrder });
+    }
+  });
+
+  if (oldStatus !== targetStatus) {
+    allBiler
+      .filter(function (b) { return b.status === oldStatus && normalizeBilId(b.id) !== dragNum; })
+      .sort(sortBilerListe)
+      .forEach(function (b, i) {
+        const sortOrder = (i + 1) * 10;
+        if (b.sortOrder !== sortOrder) {
+          updates.push({ id: normalizeBilId(b.id), status: oldStatus, sortOrder: sortOrder });
+        }
+      });
+  }
+
+  return updates;
+}
+
+function bilLoggEntry(tekst) {
+  return { tekst: tekst, dato: new Date().toLocaleString('nb-NO'), av: 'Admin' };
+}
+
+function isBilAktiv(b) {
+  return !b.archived;
+}
+
+function bilMerker(biler) {
   const names = new Set();
-  (lists?.merker || []).forEach(function (m) { names.add(m); });
   (biler || []).forEach(function (b) {
-    if (b.merke) names.add(b.merke);
+    if (b.merke && isBilAktiv(b) && b.status !== 'Solgt') names.add(b.merke);
   });
   return ['Alle', ...Array.from(names).sort(function (a, b) {
     if (a === 'Annet') return 1;
@@ -155,11 +252,20 @@ function bilMerker(biler, lists) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(!!getToken());
-  const [tab, setTab] = useState('dashboard');
+  const [tab, setTabState] = useState(getSavedTab);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const setTab = useCallback(function (next) {
+    setTabState(next);
+    saveActiveTab(next);
+    setMobileNavOpen(false);
+  }, []);
   const [biler, setBiler] = useState([]);
+  const [kunder, setKunder] = useState([]);
   const [henv, setHenv] = useState([]);
   const [innbytte, setInnbytte] = useState([]);
+  const [selgBil, setSelgBil] = useState([]);
   const [kal, setKal] = useState([]);
+  const [innkjopskalkyle, setInnkjopskalkyle] = useState([]);
   const [epost, setEpost] = useState([]);
   const [mailStatus, setMailStatus] = useState({});
   const [stats, setStats] = useState({});
@@ -192,17 +298,21 @@ export default function App() {
       }
     }
 
-    await Promise.all([
-      safeLoad(getDashboard, (d) => setStats(d.stats || {})),
-      safeLoad(getBiler, (b) => setBiler(b.items || [])),
-      safeLoad(getHenvendelser, (h) => setHenv(h.items || [])),
-      safeLoad(getInnbytte, (i) => setInnbytte(i.items || [])),
-      safeLoad(getKalender, (k) => setKal(k.items || [])),
-      safeLoad(getInnboks, (data) => {
-        setEpost(data.items || []);
-        setMailStatus(data.status || {});
-      })
-    ]);
+    try {
+      await Promise.all([
+        safeLoad(getBiler, (b) => setBiler((b.items || []).map(function (item) {
+          return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
+        }))),
+        safeLoad(getLister, (l) => {
+          if (l.lists) {
+            setInnstillinger(function (prev) { return { ...prev, ...l.lists }; });
+          }
+        }),
+        safeLoad(getMailStatus, (d) => setMailStatus(d.status || {}))
+      ]);
+    } catch {
+      /* ignore */
+    }
 
     if (authError) {
       logout();
@@ -211,13 +321,24 @@ export default function App() {
       return;
     }
 
-    try {
-      const cfg = await getInnstillinger();
-      if (cfg.settings) setInnstillinger(cfg.settings);
-    } catch {
-      setInnstillinger(DEFAULT_INNSTILLINGER);
-    } finally {
-      setLoading(false);
+    setLoading(false);
+
+    await Promise.all([
+      safeLoad(getDashboard, (d) => setStats(d.stats || {})),
+      safeLoad(getKunder, (k) => setKunder(k.items || [])),
+      safeLoad(getHenvendelser, (h) => setHenv(h.items || [])),
+      safeLoad(getInnbytte, (i) => setInnbytte(i.items || [])),
+      safeLoad(getSelgBil, (s) => setSelgBil(s.items || [])),
+      safeLoad(getKalender, (k) => setKal(k.items || [])),
+      safeLoad(getInnkjopskalkyle, (k) => setInnkjopskalkyle(k.items || [])),
+      safeLoad(getInnstillinger, (s) => {
+        if (s.settings) setInnstillinger(s.settings);
+      })
+    ]);
+
+    if (authError) {
+      logout();
+      setUser(null);
     }
   }, []);
 
@@ -260,8 +381,25 @@ export default function App() {
     const fallback = Object.keys(TAB_PERMISSIONS).find(function (id) {
       return canAccess(user, TAB_PERMISSIONS[id]);
     });
-    if (fallback && fallback !== tab) setTab(fallback);
+    if (fallback && fallback !== tab) {
+      setTabState(fallback);
+      saveActiveTab(fallback);
+    }
   }, [user, tab, loading]);
+
+  useEffect(function () {
+    if (!mobileNavOpen) return;
+    document.body.style.overflow = 'hidden';
+    return function () { document.body.style.overflow = ''; };
+  }, [mobileNavOpen]);
+
+  useEffect(function () {
+    function onResize() {
+      if (window.innerWidth > 900) setMobileNavOpen(false);
+    }
+    window.addEventListener('resize', onResize);
+    return function () { window.removeEventListener('resize', onResize); };
+  }, []);
 
   const handleLogin = (u) => {
     setUser(u);
@@ -271,9 +409,12 @@ export default function App() {
   const handleLogout = () => {
     logout();
     setUser(null);
+    setMobileNavOpen(false);
     setBiler([]);
+    setKunder([]);
     setHenv([]);
     setInnbytte([]);
+    setSelgBil([]);
     setKal([]);
     setEpost([]);
     setMailStatus({});
@@ -293,11 +434,12 @@ export default function App() {
 
   const nyeHenv = stats.nyeHenv ?? henv.filter(h => h.status === 'Ny').length;
   const nyeInnbytte = stats.nyeInnbytte ?? innbytte.filter(i => i.status === 'Ny').length;
-  const paaLager = stats.paaLager ?? biler.filter(b => b.status !== 'Solgt').length;
-  const reservert = stats.reservert ?? biler.filter(b => b.status === 'Reservert').length;
+  const nyeSelgBil = stats.nyeSelgBil ?? selgBil.filter(i => i.status === 'Ny').length;
+  const paaLager = stats.paaLager ?? biler.filter(b => isBilAktiv(b) && b.status !== 'Solgt').length;
+  const reservert = stats.reservert ?? biler.filter(b => isBilAktiv(b) && b.status === 'Reservert').length;
   const iDagKal = stats.iDagKal ?? kal.filter(k => k.dato === IDAG).length;
-  const aapneOppgaver = stats.aapneOppgaver ?? biler.reduce(
-    (s, b) => s + (b.sjekkliste || []).filter(x => !x.f).length, 0
+  const aapneOppgaver = stats.aapneOppgaver ?? biler.filter(isBilAktiv).reduce(
+    (s, b) => s + getAktivSjekkliste(b).filter(x => !x.f).length, 0
   );
   const ulestEpost = stats.ulestEpost ?? mailStatus.ulest ?? epost.filter(e => e.retning === 'inn' && !e.lest).length;
 
@@ -307,13 +449,25 @@ export default function App() {
     henvendelser: nyeHenv,
     innboks: ulestEpost || 0,
     innbytte: nyeInnbytte,
+    selgbil: nyeSelgBil,
     oppgaver: aapneOppgaver || 0
   };
 
   const TABS = buildModulTabs(innstillinger.modulOppsett, modulBadges, user);
+  const activeTabLabel = TABS.find(function (t) { return t.id === tab; })?.lbl || 'CRM';
 
   const updateBil = async (id, patch, localMsg) => {
-    setBiler(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    setBiler(prev => prev.map(b => {
+      if (b.id !== id) return b;
+      let next = { ...b, ...patch };
+      if (patch.status && patch.status !== b.status && patch.sjekklister == null) {
+        next = { ...next, ...withStatusChange(b, patch.status, innstillinger.bilSjekklister) };
+      }
+      if (patch.sjekklister) {
+        next.sjekkliste = getAktivSjekkliste({ ...next, status: next.status });
+      }
+      return next;
+    }));
     try {
       const res = await patchBil(id, patch);
       if (res.item) setBiler(prev => prev.map(b => b.id === id ? res.item : b));
@@ -325,6 +479,41 @@ export default function App() {
     }
   };
 
+  const reorderBiler = async (updates, localMsg) => {
+    if (!updates?.length) return;
+    setBiler(function (prev) {
+      const patchMap = Object.fromEntries(updates.map(function (u) {
+        return [normalizeBilId(u.id), u];
+      }));
+      return prev.map(function (b) {
+        const patch = patchMap[normalizeBilId(b.id)];
+        return patch ? { ...b, status: patch.status, sortOrder: patch.sortOrder } : b;
+      });
+    });
+    try {
+      const res = await reorderBilerApi(updates);
+      if (res.items?.length) {
+        setBiler(function (prev) {
+          const itemMap = Object.fromEntries(res.items.map(function (item) {
+            return [normalizeBilId(item.id), { ...item, id: normalizeBilId(item.id) }];
+          }));
+          return prev.map(function (b) {
+            const next = itemMap[normalizeBilId(b.id)];
+            return next || b;
+          });
+        });
+      }
+      if (localMsg) visTost(localMsg);
+    } catch {
+      visTost('Kunne ikke lagre rekkefølge ✗');
+      getBiler().then(function (b) {
+        setBiler((b.items || []).map(function (item) {
+          return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
+        }));
+      }).catch(function () {});
+    }
+  };
+
   const updateHenv = async (id, patch, localMsg) => {
     setHenv(prev => prev.map(h => h.id === id ? { ...h, ...patch } : h));
     try {
@@ -332,9 +521,39 @@ export default function App() {
       if (res.item) setHenv(prev => prev.map(h => h.id === id ? res.item : h));
       if (localMsg) visTost(localMsg);
       refreshStats();
-    } catch {
-      visTost('Kunne ikke lagre henvendelse ✗');
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke lagre henvendelse ✗');
       loadData();
+    }
+  };
+
+  const deleteHenv = async (id) => {
+    if (!window.confirm('Slette denne henvendelsen permanent?')) return false;
+    try {
+      await deleteHenvendelse(id);
+      setHenv(prev => prev.filter(h => h.id !== id));
+      setModal(null);
+      visTost('Henvendelse slettet ✓');
+      refreshStats();
+      return true;
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke slette henvendelse ✗');
+      return false;
+    }
+  };
+
+  const deleteInnbytteItem = async (id) => {
+    if (!window.confirm('Slette denne innbytteforespørselen permanent?')) return false;
+    try {
+      await deleteInnbytte(id);
+      setInnbytte(prev => prev.filter(i => i.id !== id));
+      setModal(null);
+      visTost('Innbytteforespørsel slettet ✓');
+      refreshStats();
+      return true;
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke slette innbytteforespørsel ✗');
+      return false;
     }
   };
 
@@ -348,6 +567,53 @@ export default function App() {
     } catch {
       visTost('Kunne ikke lagre innbytte ✗');
       loadData();
+    }
+  };
+
+  const deleteSelgBilItem = async (id) => {
+    if (!window.confirm('Slette denne oppkjøpsforespørselen permanent?')) return false;
+    try {
+      await deleteSelgBil(id);
+      setSelgBil(prev => prev.filter(i => i.id !== id));
+      setModal(null);
+      visTost('Oppkjøpsforespørsel slettet ✓');
+      refreshStats();
+      return true;
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke slette oppkjøpsforespørsel ✗');
+      return false;
+    }
+  };
+
+  const updateSelgBil = async (id, patch, localMsg) => {
+    setSelgBil(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+    try {
+      const res = await patchSelgBil(id, patch);
+      if (res.item) setSelgBil(prev => prev.map(i => i.id === id ? res.item : i));
+      if (localMsg) visTost(localMsg);
+      refreshStats();
+    } catch {
+      visTost('Kunne ikke lagre oppkjøpsforespørsel ✗');
+      loadData();
+    }
+  };
+
+  const sendSelgBilTilbud = async (id, body) => {
+    try {
+      const res = await sendSelgBilTilbudApi(id, body);
+      if (res.item) {
+        setSelgBil(prev => prev.map(i => i.id === id ? res.item : i));
+        setModal(prev => (
+          prev?.t === 'visSelgBil' && prev.d?.id === id ? { ...prev, d: res.item } : prev
+        ));
+      }
+      visTost(body?.type === 'visning' ? 'Invitasjon til befaring sendt ✓' : 'Oppkjøpstilbud sendt ✓');
+      refreshStats();
+      await reloadInnboks();
+      return res.item;
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke sende e-post ✗');
+      throw err;
     }
   };
 
@@ -367,6 +633,30 @@ export default function App() {
     }
   };
 
+  const deleteKal = async (id, localMsg) => {
+    setKal(prev => prev.filter(k => k.id !== id));
+    try {
+      await deleteKalender(id);
+      if (localMsg) visTost(localMsg);
+      refreshStats();
+    } catch {
+      visTost('Kunne ikke slette avtale ✗');
+      loadData();
+    }
+  };
+
+  const updateKunde = async (id, patch, localMsg) => {
+    setKunder(prev => prev.map(k => k.id === id ? { ...k, ...patch } : k));
+    try {
+      const res = await patchKunde(id, patch);
+      if (res.item) setKunder(prev => prev.map(k => k.id === id ? res.item : k));
+      if (localMsg) visTost(localMsg);
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke lagre kunde ✗');
+      loadData();
+    }
+  };
+
   const sendHenvSvar = async (id, svar) => {
     try {
       const res = await sendHenvendelseSvar(id, { svar });
@@ -381,13 +671,48 @@ export default function App() {
     }
   };
 
+  const sendInnbytteTilbud = async (id, body) => {
+    try {
+      const res = await sendInnbytteTilbudApi(id, body);
+      if (res.item) {
+        setInnbytte(prev => prev.map(i => i.id === id ? res.item : i));
+        setModal(prev => (
+          prev?.t === 'visInb' && prev.d?.id === id ? { ...prev, d: res.item } : prev
+        ));
+      }
+      visTost(body?.type === 'visning' ? 'Invitasjon til visning sendt ✓' : 'Tilbud sendt på e-post ✓');
+      refreshStats();
+      await reloadInnboks();
+      return res.item;
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke sende e-post ✗');
+      throw err;
+    }
+  };
+
   return (
     <>
       <div className="app">
-        <aside className="sb">
+        {mobileNavOpen && (
+          <button
+            type="button"
+            className="sb-backdrop"
+            aria-label="Lukk meny"
+            onClick={function () { setMobileNavOpen(false); }}
+          />
+        )}
+        <aside className={`sb${mobileNavOpen ? ' sb--open' : ''}`}>
           <div className="sb-logo-wrap">
             <div className="sb-logo">X <em>Bilsenter AS</em></div>
             <div className="sb-tagline">Internt driftssystem</div>
+            <button
+              type="button"
+              className="sb-close"
+              aria-label="Lukk meny"
+              onClick={function () { setMobileNavOpen(false); }}
+            >
+              ×
+            </button>
           </div>
           <div className="sb-sec">Navigasjon</div>
           {TABS.map(t => (
@@ -408,19 +733,47 @@ export default function App() {
         </aside>
 
         <main className="main">
+          <div className="mobile-topbar">
+            <button
+              type="button"
+              className="mobile-menu-btn"
+              aria-label="Åpne meny"
+              onClick={function () { setMobileNavOpen(true); }}
+            >
+              ☰
+            </button>
+            <div className="mobile-topbar__title">{activeTabLabel}</div>
+          </div>
           {tab === 'dashboard' && (
             <Dashboard
               biler={biler} henv={henv} kal={kal}
               paaLager={paaLager} reservert={reservert}
               nyeHenv={nyeHenv} nyeInnbytte={nyeInnbytte}
               iDagKal={iDagKal} setTab={setTab}
+              currentUser={user}
+              vedlikeholdModus={innstillinger.vedlikeholdModus}
+              henvStatusFarger={innstillinger.henvStatusFarger}
             />
           )}
           {tab === 'biler' && (
-            <BilerView biler={biler} setModal={setModal} lists={lists} kal={kal} henv={henv} updateBil={updateBil} />
+            <BilerView biler={biler} setModal={setModal} lists={lists} kal={kal} henv={henv} updateBil={updateBil} reorderBiler={reorderBiler} kunder={kunder} />
+          )}
+          {tab === 'kunder' && (
+            <KunderView
+              kunder={kunder}
+              setModal={setModal}
+              visTost={visTost}
+            />
           )}
           {tab === 'henvendelser' && (
-            <HenvendelserView henv={henv} setModal={setModal} updateHenv={updateHenv} visTost={visTost} lists={lists} />
+            <HenvendelserView
+              henv={henv}
+              setModal={setModal}
+              updateHenv={updateHenv}
+              deleteHenv={deleteHenv}
+              lists={lists}
+              kunder={kunder}
+            />
           )}
           {tab === 'innboks' && (
             <InnboksView
@@ -432,13 +785,33 @@ export default function App() {
               visTost={visTost}
               refreshStats={refreshStats}
               setTab={setTab}
+              lists={lists}
             />
           )}
           {tab === 'innbytte' && (
-            <InnbytteView innbytte={innbytte} setModal={setModal} lists={lists} />
+            <InnbytteView innbytte={innbytte} setModal={setModal} lists={lists} kunder={kunder} visTost={visTost} />
+          )}
+          {tab === 'selgbil' && (
+            <SelgBilView selgBil={selgBil} setModal={setModal} lists={lists} visTost={visTost} />
           )}
           {tab === 'kalender' && (
-            <KalenderView kal={kal} setModal={setModal} biler={biler} lists={lists} />
+            <KalenderView
+              kal={kal}
+              setModal={setModal}
+              biler={biler}
+              lists={lists}
+              kunder={kunder}
+              updateKal={updateKal}
+              deleteKal={deleteKal}
+            />
+          )}
+          {tab === 'innkjopskalkyle' && (
+            <InnkjopskalkyleView
+              items={innkjopskalkyle}
+              setItems={setInnkjopskalkyle}
+              visTost={visTost}
+              currentUser={user}
+            />
           )}
           {tab === 'oppgaver' && (
             <OppgaverView biler={biler} updateBil={updateBil} visTost={visTost} />
@@ -469,6 +842,9 @@ export default function App() {
               onModulOppsettChange={(modulOppsett) => setInnstillinger(function (prev) {
                 return { ...prev, modulOppsett };
               })}
+              onVedlikeholdChange={(vedlikeholdModus) => setInnstillinger(function (prev) {
+                return { ...prev, vedlikeholdModus };
+              })}
               onStatusChange={syncMailStatus}
               visTost={visTost}
             />
@@ -486,6 +862,8 @@ export default function App() {
           kal={kal}
           henv={henv}
           setModal={setModal}
+          kunder={kunder}
+          currentUser={user}
         />
       )}
       {modal?.t === 'nyBil' && (
@@ -502,8 +880,8 @@ export default function App() {
               setModal(null);
               visTost('Bil lagt til ✓');
               refreshStats();
-            } catch {
-              visTost('Kunne ikke legge til bil ✗');
+            } catch (err) {
+              visTost(err.message || 'Kunne ikke legge til bil ✗');
             }
           }}
         />
@@ -513,10 +891,14 @@ export default function App() {
           data={modal.d}
           onClose={() => setModal(null)}
           updateHenv={updateHenv}
+          deleteHenv={deleteHenv}
           onSendSvar={sendHenvSvar}
           visTost={visTost}
           lists={lists}
           mailStatus={mailStatus}
+          currentUser={user}
+          kunder={kunder}
+          setModal={setModal}
         />
       )}
       {modal?.t === 'visInb' && (
@@ -524,15 +906,38 @@ export default function App() {
           data={modal.d}
           onClose={() => setModal(null)}
           updateInnbytte={updateInnbytte}
+          deleteInnbytte={deleteInnbytteItem}
+          onSendTilbud={sendInnbytteTilbud}
           visTost={visTost}
           lists={lists}
+          mailStatus={mailStatus}
+          currentUser={user}
+          kunder={kunder}
+          setModal={setModal}
+        />
+      )}
+      {modal?.t === 'visSelgBil' && (
+        <SelgBilModal
+          data={modal.d}
+          onClose={() => setModal(null)}
+          updateSelgBil={updateSelgBil}
+          deleteSelgBil={deleteSelgBilItem}
+          onSendTilbud={sendSelgBilTilbud}
+          visTost={visTost}
+          lists={lists}
+          mailStatus={mailStatus}
+          currentUser={user}
+          kunder={kunder}
+          setModal={setModal}
         />
       )}
       {modal?.t === 'nyKal' && (
         <KalModal
+          data={(modal.dato || modal.tid) ? { dato: modal.dato, tid: modal.tid, tidSlutt: modal.tidSlutt } : null}
           onClose={() => setModal(null)}
           biler={biler}
           lists={lists}
+          kunder={kunder}
           title="Ny kalenderavtale"
           onSave={async (e) => {
             try {
@@ -553,10 +958,55 @@ export default function App() {
           onClose={() => setModal(null)}
           biler={biler}
           lists={lists}
+          kunder={kunder}
           title="Rediger avtale"
           onSave={async (e) => {
             await updateKal(modal.d.id, e, 'Avtale oppdatert ✓');
             setModal(null);
+          }}
+          onDelete={async function () {
+            if (!window.confirm('Slette denne avtalen?')) return;
+            await deleteKal(modal.d.id, 'Avtale slettet ✓');
+            setModal(null);
+          }}
+        />
+      )}
+      {modal?.t === 'visKunde' && (
+        <KundeModal
+          data={modal.d}
+          onClose={() => setModal(null)}
+          updateKunde={updateKunde}
+          deleteKunde={async (id) => {
+            try {
+              await deleteKunde(id);
+              setKunder(prev => prev.filter(k => k.id !== id));
+              setModal(null);
+              visTost('Kunde slettet ✓');
+              return true;
+            } catch (err) {
+              visTost(err.message || 'Kunne ikke slette kunde ✗');
+              return false;
+            }
+          }}
+          setModal={setModal}
+          visTost={visTost}
+          lists={lists}
+        />
+      )}
+      {modal?.t === 'nyKunde' && (
+        <NyKundeModal
+          onClose={() => setModal(null)}
+          onSave={async (body) => {
+            try {
+              const res = await postKunde(body);
+              if (res.item) {
+                setKunder(prev => [res.item, ...prev].sort((a, b) => a.navn.localeCompare(b.navn, 'nb')));
+                setModal({ t: 'visKunde', d: res.item });
+              }
+              visTost('Kunde opprettet ✓');
+            } catch (err) {
+              visTost(err.message || 'Kunne ikke opprette kunde ✗');
+            }
           }}
         />
       )}
@@ -567,7 +1017,181 @@ export default function App() {
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
-function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab }) {
+const DRIFT_POLL_MS = 15000;
+
+function formatDriftTid(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+async function openNettside(url, { preview = false } = {}) {
+  if (preview) {
+    try {
+      const res = await getSitePreviewUrl();
+      window.open(res.url, '_blank', 'noopener,noreferrer');
+      return;
+    } catch (err) {
+      window.alert(err.message || 'Kunne ikke åpne forhåndsvisning.');
+      return;
+    }
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
+  const [drift, setDrift] = useState(null);
+  const [laster, setLaster] = useState(true);
+  const [feil, setFeil] = useState('');
+  const [finnRefresh, setFinnRefresh] = useState(false);
+  const [finnMelding, setFinnMelding] = useState('');
+  const kanAdministrere = canAccess(currentUser, 'innstillinger');
+  const vedlikehold = vedlikeholdModus || DEFAULT_INNSTILLINGER.vedlikeholdModus;
+
+  const oppdater = useCallback(async function (stille) {
+    if (!stille) setLaster(true);
+    try {
+      const res = await getNettsideDrift();
+      setDrift(res.status || null);
+      setFeil('');
+    } catch (err) {
+      setFeil(err.message || 'Kunne ikke hente driftsstatus');
+    } finally {
+      if (!stille) setLaster(false);
+    }
+  }, []);
+
+  useEffect(function () {
+    oppdater(false);
+    const id = setInterval(function () { oppdater(true); }, DRIFT_POLL_MS);
+    return function () { clearInterval(id); };
+  }, [oppdater]);
+
+  async function oppdaterFinnLager() {
+    setFinnRefresh(true);
+    setFinnMelding('');
+    try {
+      const res = await refreshFinnInventory();
+      const tid = res.updatedAt
+        ? new Date(res.updatedAt).toLocaleString('nb-NO')
+        : 'nå';
+      setFinnMelding(`FINN-lager oppdatert · ${res.total || 0} biler · ${tid}`);
+    } catch (err) {
+      setFinnMelding(err.message || 'Kunne ikke oppdatere FINN-lager');
+    } finally {
+      setFinnRefresh(false);
+    }
+  }
+
+  const status = drift?.besokendeStatus || (vedlikehold.aktiv ? 'vedlikehold' : 'live');
+  const statusMeta = {
+    live: {
+      icon: '🌐',
+      title: 'Nettsiden er live',
+      desc: 'Normal drift – besøkende kan bruke nettsiden som vanlig.',
+      chip: 'Live',
+      chipClass: 'chip-green',
+      cardClass: ''
+    },
+    vedlikehold: {
+      icon: '🚧',
+      title: 'Vedlikeholdsmodus aktiv',
+      desc: drift?.vedlikeholdMelding || vedlikehold.melding || 'Besøkende ser vedlikeholdsside.',
+      chip: 'Vedlikehold',
+      chipClass: 'chip-orange',
+      cardClass: ' is-active'
+    },
+    nede: {
+      icon: '⚠',
+      title: 'Nettsiden svarer ikke',
+      desc: drift?.error || 'Kunne ikke nå nettsideserveren. Sjekk at den kjører.',
+      chip: 'Nede',
+      chipClass: 'chip-red',
+      cardClass: ' is-down'
+    }
+  };
+  const meta = statusMeta[status] || statusMeta.live;
+
+  const url = drift?.url || 'http://localhost:8080';
+  const ping = drift?.online && drift.responseMs != null ? `${drift.responseMs} ms` : '—';
+  const sjekket = formatDriftTid(drift?.checkedAt);
+
+  return (
+    <div className={`card maint-dash drift-dash${meta.cardClass}`} style={{ marginBottom: 16 }}>
+      <div className="maint-dash__main">
+        <div className="maint-dash__icon">{meta.icon}</div>
+        <div className="drift-dash__body">
+          <div className="drift-dash__head">
+            <div>
+              <div className="maint-dash__title">{meta.title}</div>
+              <div className="maint-dash__desc">{meta.desc}</div>
+            </div>
+          </div>
+          <div className="drift-dash__meta">
+            <span>{url}</span>
+            <span>·</span>
+            <span>Svar: {ping}</span>
+            <span>·</span>
+            <span>Sjekket {sjekket}{laster ? ' …' : ''}</span>
+            {drift?.adminOk === false && (
+              <>
+                <span>·</span>
+                <span style={{ color: 'var(--orange)' }}>Admin-kobling feil</span>
+              </>
+            )}
+          </div>
+          {feil && !drift && (
+            <div className="drift-dash__err">{feil}</div>
+          )}
+          {finnMelding && (
+            <div className="drift-dash__err" style={{ color: finnMelding.startsWith('FINN-lager') ? 'var(--green)' : 'var(--red)' }}>
+              {finnMelding}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="drift-dash__actions">
+        <div className="drift-dash__status-wrap">
+          <span className={`drift-dot drift-dot--${status}${laster ? ' is-pulse' : ''}`} />
+          <span className={`chip ${meta.chipClass}`}>{meta.chip}</span>
+        </div>
+        {status === 'vedlikehold' ? (
+          <button
+            type="button"
+            className="btn btn-g btn-sm"
+            onClick={function () { openNettside(url, { preview: true }); }}
+          >
+            Forhåndsvis nettsiden
+          </button>
+        ) : (
+          <a className="btn btn-g btn-sm" href={url} target="_blank" rel="noopener noreferrer">Åpne nettside</a>
+        )}
+        <button type="button" className="btn btn-g btn-sm" onClick={function () { oppdater(false); }}>
+          Oppdater
+        </button>
+        {kanAdministrere && (
+          <button
+            type="button"
+            className="btn btn-g btn-sm"
+            onClick={oppdaterFinnLager}
+            disabled={finnRefresh || drift?.finn === 'missing'}
+          >
+            {finnRefresh ? 'Oppdaterer FINN…' : 'Oppdater FINN-lager'}
+          </button>
+        )}
+        {kanAdministrere && (
+          <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innstillinger'); }}>
+            Vedlikehold
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, currentUser, vedlikeholdModus, henvStatusFarger }) {
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
 
   return (
@@ -578,9 +1202,16 @@ function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte
           <div className="ph-sub">{formatDatoLang()} · X Bilsenter AS · Fetsund · AUTOREG-godkjent forhandler</div>
         </div>
       </div>
+
+      <NettsideDriftPanel
+        setTab={setTab}
+        currentUser={currentUser}
+        vedlikeholdModus={vedlikeholdModus}
+      />
+
       <div className="stats">
         {[
-          { ico: '🚗', lbl: 'Biler på lager', val: paaLager, sub: 'av 75 kapasitet' },
+          { ico: '🚗', lbl: 'Biler på lager', val: paaLager },
           { ico: '🔴', lbl: 'Nye henvendelser', val: nyeHenv, sub: 'Krever svar', red: true },
           { ico: '⇄', lbl: 'Innbytte (nye)', val: nyeInnbytte, sub: 'Venter på tilbud', orange: true },
           { ico: '✅', lbl: 'Reserverte biler', val: reservert, sub: 'Klar for utlevering', green: true },
@@ -620,7 +1251,7 @@ function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte
                   </td>
                   <td><span className="tag">{h.bilRef || '—'}</span></td>
                   <td><span className="tag">{h.kilde}</span></td>
-                  <td><Badge s={h.status} /></td>
+                  <td><Badge s={h.status} colors={henvStatusFarger} /></td>
                 </tr>
               ))}
               {henv.filter(h => h.status === 'Ny').length === 0 && (
@@ -658,15 +1289,75 @@ function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte
 }
 
 // ─── BILER VIEW ──────────────────────────────────────────────────────────────
-function BilerView({ biler, setModal, lists, kal, henv, updateBil }) {
+function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler }) {
   const [mFilter, setMFilter] = useState('Alle');
+  const [sFilter, setSFilter] = useState('Alle');
+  const [search, setSearch] = useState('');
+  const [view, setViewState] = useState(getSavedBilerView);
+  const [section, setSectionState] = useState(getSavedBilerSection);
   const [dragId, setDragId] = useState(null);
   const [dropStatus, setDropStatus] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
   const skipClick = useRef(false);
-  const merker = bilMerker(biler, lists);
-  const vis = mFilter === 'Alle' ? biler : biler.filter(b => b.merke === mFilter);
-  const statuser = kanbanStatuses(lists, biler);
-  const skjult = biler.length - vis.length;
+  const aktiveBiler = biler.filter(isBilAktiv);
+  const arkivBiler = biler.filter(function (b) { return b.archived; });
+  const sourceBiler = section === 'arkiv' ? arkivBiler : aktiveBiler;
+  const merker = bilMerker(aktiveBiler);
+  const pipelineStatuser = kanbanStatuses(lists, aktiveBiler);
+  const filterStatuser = kanbanStatuses(lists, sourceBiler);
+  const merkeFiltered = mFilter === 'Alle'
+    ? sourceBiler
+    : sourceBiler.filter(function (b) { return b.merke === mFilter; });
+  const vis = sFilter === 'Alle'
+    ? merkeFiltered
+    : merkeFiltered.filter(function (b) { return b.status === sFilter; });
+  const visibleStatuser = sFilter === 'Alle'
+    ? pipelineStatuser
+    : pipelineStatuser.filter(function (status) { return status === sFilter; });
+  const statusCounts = {};
+  merkeFiltered.forEach(function (b) {
+    statusCounts[b.status] = (statusCounts[b.status] || 0) + 1;
+  });
+  const grouped = groupBilerByStatus(vis, visibleStatuser);
+  const skjult = sourceBiler.length - vis.length;
+  const filterActive = mFilter !== 'Alle' || sFilter !== 'Alle';
+  const searchQuery = search.trim();
+  const searchHits = searchQuery
+    ? biler.filter(function (b) { return bilMatchesSearch(b, searchQuery); })
+    : [];
+  const searchActive = searchQuery.length > 0;
+
+  useEffect(function () {
+    if (mFilter !== 'Alle' && !merker.includes(mFilter)) setMFilter('Alle');
+  }, [merker, mFilter]);
+
+  const setView = useCallback(function (next) {
+    setViewState(next);
+    saveBilerView(next);
+  }, []);
+
+  const setSection = useCallback(function (next) {
+    setSectionState(next);
+    saveBilerSection(next);
+    setDragId(null);
+    setDropStatus(null);
+    setDropTarget(null);
+  }, []);
+
+  const archiveBil = (bil) => {
+    if (!window.confirm(`Arkivere ${bil.reg}? Bilen fjernes fra lageroversikten, men kan gjenopprettes fra arkiv.`)) return;
+    updateBil(bil.id, {
+      archived: true,
+      logg: [...(bil.logg || []), bilLoggEntry('Arkivert fra lager')]
+    }, 'Arkivert ✓');
+  };
+
+  const restoreBil = (bil) => {
+    updateBil(bil.id, {
+      archived: false,
+      logg: [...(bil.logg || []), bilLoggEntry('Gjenopprettet fra arkiv')]
+    }, 'Gjenopprettet til lager ✓');
+  };
 
   const handleDragStart = (e, bil) => {
     skipClick.current = false;
@@ -678,17 +1369,49 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil }) {
   const handleDragEnd = () => {
     setDragId(null);
     setDropStatus(null);
+    setDropTarget(null);
     skipClick.current = true;
     window.setTimeout(function () { skipClick.current = false; }, 0);
   };
 
-  const handleDrop = (e, status) => {
+  const handleKanbanDrop = (e, status) => {
     e.preventDefault();
     setDropStatus(null);
     const id = Number(e.dataTransfer.getData('text/plain'));
-    const bil = biler.find(function (b) { return b.id === id; });
-    if (!bil || bil.status === status) return;
-    updateBil(id, { status: status }, 'Flyttet til ' + status + ' ✓');
+    const bil = aktiveBiler.find(function (b) { return normalizeBilId(b.id) === id; });
+    if (!bil) {
+      setDragId(null);
+      return;
+    }
+    const updates = computeListeReorder(aktiveBiler, id, status, null);
+    if (!updates.length) {
+      setDragId(null);
+      return;
+    }
+    const msg = bil.status !== status ? 'Flyttet til ' + status + ' ✓' : 'Rekkefølge oppdatert ✓';
+    reorderBiler(updates, msg);
+    setDragId(null);
+  };
+
+  const handleListeDrop = (e, status, beforeId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropTarget(null);
+    const id = Number(e.dataTransfer.getData('text/plain'));
+    if (!id || beforeId === id) {
+      setDragId(null);
+      return;
+    }
+    const updates = computeListeReorder(aktiveBiler, id, status, beforeId);
+    if (!updates.length) {
+      setDragId(null);
+      return;
+    }
+    const moved = aktiveBiler.find(function (b) { return normalizeBilId(b.id) === id; });
+    const msg = moved && moved.status !== status
+      ? 'Flyttet til ' + status + ' ✓'
+      : 'Rekkefølge oppdatert ✓';
+    reorderBiler(updates, msg);
     setDragId(null);
   };
 
@@ -697,40 +1420,324 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil }) {
     setModal({ t: 'visBil', d: bil });
   };
 
-  return (
-    <>
-      <div className="ph">
-        <div>
-          <div className="ph-title">Biler på lager</div>
-          <div className="ph-sub">
-            {biler.length} biler totalt · {biler.filter(b => b.status !== 'Solgt').length} aktive ·{' '}
-            {biler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · dra bil mellom kolonner
+  const renderBilKanbanCard = (bil) => {
+    const list = getAktivSjekkliste(bil);
+    const f = list.filter(s => s.f).length;
+    const t = list.length;
+    const pst = t ? Math.round(f / t * 100) : 0;
+    const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
+    const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
+    return (
+      <div
+        className={`bil-card${dragId === bil.id ? ' bil-card--dragging' : ''}`}
+        key={bil.id}
+        draggable
+        onDragStart={(e) => handleDragStart(e, bil)}
+        onDragEnd={handleDragEnd}
+        onClick={() => openBil(bil)}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+          <div className="bil-reg">{bil.reg}</div>
+          <button
+            type="button"
+            className="bil-archive-btn"
+            title="Arkiver bil"
+            onClick={(e) => { e.stopPropagation(); archiveBil(bil); }}
+          >
+            📦
+          </button>
+        </div>
+        <div className="bil-name">{bil.merke} {bil.modell}</div>
+        <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {bil.farge}</div>
+        {(linkKal > 0 || linkHenv > 0) && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            {linkKal > 0 && <span className="chip chip-gray">{linkKal} avtale{linkKal > 1 ? 'r' : ''}</span>}
+            {linkHenv > 0 && <span className="chip chip-gray">{linkHenv} henv.</span>}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }}>
+          <span className="bil-pris">{nok(bil.salg)}</span>
+          <span className="bil-ans">{bil.ansvarlig}</span>
+        </div>
+        {t > 0 && (
+          <>
+            <div className="prog-lbl" style={{ marginTop: 7 }}>{f}/{t} oppgaver · {pst}%</div>
+            <div className="prog-bar"><div className="prog-fill" style={{ width: pst + '%' }} /></div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderBilPipelineRow = (bil, status) => {
+    const list = getAktivSjekkliste(bil);
+    const f = list.filter(function (s) { return s.f; }).length;
+    const t = list.length;
+    const pst = t ? Math.round(f / t * 100) : 0;
+    const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
+    const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
+    return (
+      <div
+        key={bil.id}
+        className={`bil-pipeline-row${dragId === bil.id ? ' bil-pipeline-row--dragging' : ''}`}
+        draggable
+        onDragStart={(e) => handleDragStart(e, bil)}
+        onDragEnd={handleDragEnd}
+        onDragOver={(e) => {
+          if (dragId === bil.id) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          setDropTarget({ status: status, beforeId: bil.id });
+        }}
+        onDrop={(e) => handleListeDrop(e, status, bil.id)}
+        onClick={() => openBil(bil)}
+      >
+        <span className="bil-pipeline-grip" aria-hidden="true">⋮⋮</span>
+        <div className="bil-pipeline-main">
+          <div className="bil-pipeline-ident">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="bil-reg">{bil.reg}</div>
+              <button
+                type="button"
+                className="bil-archive-btn"
+                title="Arkiver bil"
+                onClick={(e) => { e.stopPropagation(); archiveBil(bil); }}
+              >
+                📦
+              </button>
+            </div>
+            <div className="bil-name">{bil.merke} {bil.modell}</div>
+          </div>
+          <div className="bil-pipeline-meta">{bil.aar} · {fmtKm(bil.km)} km · {bil.farge || '—'}</div>
+          <div className="bil-pipeline-pris">{nok(bil.salg)}</div>
+          <div className="bil-pipeline-ans">{bil.ansvarlig || '—'}</div>
+          <div className="bil-pipeline-prog">
+            {t > 0 ? (
+              <>
+                <div className="prog-lbl">{f}/{t} · {pst}%</div>
+                <div className="prog-bar"><div className="prog-fill" style={{ width: pst + '%' }} /></div>
+              </>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--t4)' }}>—</span>
+            )}
+          </div>
+          <div className="bil-pipeline-links">
+            {linkKal > 0 && <span className="chip chip-gray">{linkKal} avt.</span>}
+            {linkHenv > 0 && <span className="chip chip-gray">{linkHenv} henv.</span>}
+            {linkKal === 0 && linkHenv === 0 && <span style={{ fontSize: 11, color: 'var(--t4)' }}>—</span>}
           </div>
         </div>
-        <button type="button" className="btn btn-p" onClick={() => setModal({ t: 'nyBil' })}>+ Legg til bil</button>
       </div>
-      {skjult > 0 && (
+    );
+  };
+
+  return (
+    <>
+      <div className="ph ph--biler">
+        <div>
+          <div className="ph-title">{section === 'arkiv' ? 'Arkiv' : 'Biler på lager'}</div>
+          <div className="ph-sub">
+            {section === 'arkiv'
+              ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
+              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
+          </div>
+        </div>
+      </div>
+      <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
+        <div className="fl">Søk i alle biler</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            value={search}
+            onChange={function (e) { setSearch(e.target.value); }}
+            placeholder="Reg.nr, merke, modell, status, notater, dokumenter…"
+            style={{ flex: 1 }}
+          />
+          {searchActive && (
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setSearch(''); }}>
+              Nullstill
+            </button>
+          )}
+        </div>
+        {searchActive && (
+          <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>
+            {searchHits.length} treff på tvers av lager, løype og arkiv
+          </div>
+        )}
+      </div>
+      {skjult > 0 && !searchActive && (
         <div style={{ fontSize: 11, color: 'var(--orange)', marginBottom: 10 }}>
-          {skjult} bil{skjult > 1 ? 'er' : ''} skjult av merke-filter · <button type="button" className="btn btn-g btn-sm" onClick={() => setMFilter('Alle')}>Vis alle</button>
+          {skjult} bil{skjult > 1 ? 'er' : ''} skjult av filter
+          {' · '}
+          <button
+            type="button"
+            className="btn btn-g btn-sm"
+            onClick={function () { setMFilter('Alle'); setSFilter('Alle'); }}
+          >
+            Vis alle
+          </button>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {merker.map(m => (
-          <button key={m} type="button" className={`btn btn-sm ${mFilter === m ? 'btn-p' : 'btn-g'}`} onClick={() => setMFilter(m)}>{m}</button>
-        ))}
+      <div className="bil-sticky-bar">
+        {section === 'lager' && (
+          <button type="button" className="btn btn-p bil-add-btn" onClick={() => setModal({ t: 'nyBil' })}>+ Legg til bil</button>
+        )}
+        <div className="bil-toolbar">
+          <div className="view-toggle" role="group" aria-label="Område">
+            <button
+              type="button"
+              className={`btn btn-sm ${section === 'lager' ? 'btn-p' : 'btn-g'}`}
+              onClick={() => setSection('lager')}
+            >
+              Lager{aktiveBiler.length > 0 ? ` (${aktiveBiler.length})` : ''}
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${section === 'arkiv' ? 'btn-p' : 'btn-g'}`}
+              onClick={() => setSection('arkiv')}
+            >
+              Arkiv{arkivBiler.length > 0 ? ` (${arkivBiler.length})` : ''}
+            </button>
+          </div>
+          {section === 'lager' && (
+          <div className="view-toggle" role="group" aria-label="Visning">
+            <button
+              type="button"
+              className={`btn btn-sm ${view === 'kanban' ? 'btn-p' : 'btn-g'}`}
+              onClick={() => setView('kanban')}
+              title="Kolonner side om side"
+            >
+              Kolonner
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${view === 'liste' ? 'btn-p' : 'btn-g'}`}
+              onClick={() => setView('liste')}
+              title="Pipeline nedover"
+            >
+              Liste
+            </button>
+          </div>
+          )}
+          <label className="bil-status-filter">
+            <span className="bil-status-filter__lbl">Status</span>
+            <select
+              value={sFilter}
+              onChange={function (e) { setSFilter(e.target.value); }}
+              aria-label="Filtrer etter lagerstatus"
+            >
+              <option value="Alle">Alle statuser ({merkeFiltered.length})</option>
+              {filterStatuser.map(function (status) {
+                const count = statusCounts[status] || 0;
+                return (
+                  <option key={status} value={status} disabled={count === 0}>
+                    {status}{count > 0 ? ` (${count})` : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          {merker.length > 1 && (
+            <div className="bil-filters-wrap">
+              <div className="bil-filters">
+                {merker.map(m => (
+                  <button key={m} type="button" className={`btn btn-sm ${mFilter === m ? 'btn-p' : 'btn-g'}`} onClick={() => setMFilter(m)}>{m}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      {biler.length === 0 ? (
+      <div className="biler-content">
+      {searchActive ? (
+        searchHits.length === 0 ? (
+          <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--t3)' }}>
+            Ingen biler matcher «{searchQuery}».
+          </div>
+        ) : (
+          <div className="bil-arkiv">
+            {searchHits.sort(function (a, b) {
+              return String(a.reg || '').localeCompare(String(b.reg || ''));
+            }).map(function (bil) {
+              return (
+                <div className="bil-arkiv-row" key={bil.id}>
+                  <div className="bil-arkiv-main">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <span className="bil-reg">{bil.reg}</span>
+                      <Badge s={bil.status} />
+                      {bil.archived
+                        ? <span className="chip chip-gray">Arkivert</span>
+                        : <span className="chip chip-green">I lager</span>}
+                    </div>
+                    <div className="bil-name">{bil.merke} {bil.modell}</div>
+                    <div className="bil-sub">
+                      {bil.aar} · {fmtKm(bil.km)} km · {bil.status}
+                      {(bil.dokumenter || []).length > 0 ? ` · ${bil.dokumenter.length} dokument${bil.dokumenter.length === 1 ? '' : 'er'}` : ''}
+                    </div>
+                  </div>
+                  <div className="bil-arkiv-actions">
+                    <button type="button" className="btn btn-p btn-sm" onClick={function () { openBil(bil); }}>Åpne</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : section === 'arkiv' ? (
+        vis.length === 0 ? (
+          <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--t3)' }}>
+            {arkivBiler.length === 0
+              ? 'Arkivet er tomt. Arkiver biler fra lageroversikten når de ikke lenger skal vises der.'
+              : filterActive
+                ? 'Ingen arkiverte biler matcher filteret.'
+                : 'Ingen arkiverte biler matcher merke-filteret.'}
+          </div>
+        ) : (
+          <div className="bil-arkiv">
+            {[...vis].sort(function (a, b) {
+              return String(b.archivedAt || '').localeCompare(String(a.archivedAt || '')) || b.id - a.id;
+            }).map(function (bil) {
+              const archivedLabel = bil.archivedAt
+                ? new Date(bil.archivedAt).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })
+                : '—';
+              return (
+                <div className="bil-arkiv-row" key={bil.id}>
+                  <div className="bil-arkiv-main">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <span className="bil-reg">{bil.reg}</span>
+                      <Badge s={bil.status} />
+                    </div>
+                    <div className="bil-name">{bil.merke} {bil.modell}</div>
+                    <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · Arkivert {archivedLabel}</div>
+                  </div>
+                  <div className="bil-arkiv-actions">
+                    <button type="button" className="btn btn-g btn-sm" onClick={() => openBil(bil)}>Åpne</button>
+                    <button type="button" className="btn btn-p btn-sm" onClick={() => restoreBil(bil)}>Gjenopprett</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : aktiveBiler.length === 0 ? (
         <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--t3)' }}>
           Ingen biler i lager ennå. Legg til via <strong>+ Legg til bil</strong> eller importer fra <strong>Vegvesen-oppslag</strong>.
         </div>
-      ) : (
+      ) : vis.length === 0 ? (
+        <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--t3)' }}>
+          Ingen biler matcher filteret.
+          {' '}
+          <button type="button" className="btn btn-g btn-sm" onClick={function () { setMFilter('Alle'); setSFilter('Alle'); }}>
+            Vis alle
+          </button>
+        </div>
+      ) : view === 'kanban' ? (
       <div className="kanban">
-        {statuser.map(status => {
+        {visibleStatuser.map(status => {
           const kbiler = vis.filter(b => b.status === status);
           return (
             <div className="kan-col" key={status}>
               <div className="kan-hd">
-                <div className="kan-dot" style={{ background: SFARGE[status] || '#888' }} />
+                <div className="kan-dot" style={{ background: bilStatusFarge(status, lists) }} />
                 <span className="kan-title">{status}</span>
                 <span className="kan-n">{kbiler.length}</span>
               </div>
@@ -741,61 +1748,66 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil }) {
                 onDragLeave={(e) => {
                   if (!e.currentTarget.contains(e.relatedTarget)) setDropStatus(null);
                 }}
-                onDrop={(e) => handleDrop(e, status)}
+                onDrop={(e) => handleKanbanDrop(e, status)}
               >
-                {kbiler.map(bil => {
-                  const list = bil.sjekkliste || [];
-                  const f = list.filter(s => s.f).length;
-                  const t = list.length;
-                  const pst = t ? Math.round(f / t * 100) : 0;
-                  const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
-                  const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
+                {kbiler.sort(sortBilerListe).map(renderBilKanbanCard)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      ) : (
+      <div className="bil-pipeline">
+        {visibleStatuser.map(function (status) {
+          const sbiler = grouped[status] || [];
+          const showEndDrop = dragId && dropTarget?.status === status && dropTarget.beforeId == null;
+          return (
+            <div className="bil-pipeline-section" key={status}>
+              <div className="bil-pipeline-hd">
+                <div className="kan-dot" style={{ background: bilStatusFarge(status, lists) }} />
+                <span className="kan-title">{status}</span>
+                <span className="kan-n">{sbiler.length}</span>
+              </div>
+              <div
+                className={`bil-pipeline-body${showEndDrop ? ' bil-pipeline-body--drop' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setDropTarget({ status: status, beforeId: null });
+                }}
+                onDrop={(e) => handleListeDrop(e, status, null)}
+              >
+                {sbiler.length === 0 && !dragId && (
+                  <div className="bil-pipeline-empty">Ingen biler i denne stasjonen</div>
+                )}
+                {sbiler.map(function (bil) {
+                  const showDropBefore = dragId && dropTarget?.status === status && dropTarget.beforeId === bil.id;
                   return (
-                    <div
-                      className={`bil-card${dragId === bil.id ? ' bil-card--dragging' : ''}`}
-                      key={bil.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, bil)}
-                      onDragEnd={handleDragEnd}
-                      onClick={() => openBil(bil)}
-                    >
-                      <div className="bil-reg">{bil.reg}</div>
-                      <div className="bil-name">{bil.merke} {bil.modell}</div>
-                      <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {bil.farge}</div>
-                      {(linkKal > 0 || linkHenv > 0) && (
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                          {linkKal > 0 && <span className="chip chip-gray">{linkKal} avtale{linkKal > 1 ? 'r' : ''}</span>}
-                          {linkHenv > 0 && <span className="chip chip-gray">{linkHenv} henv.</span>}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }}>
-                        <span className="bil-pris">{nok(bil.salg)}</span>
-                        <span className="bil-ans">{bil.ansvarlig}</span>
-                      </div>
-                      {t > 0 && (
-                        <>
-                          <div className="prog-lbl" style={{ marginTop: 7 }}>{f}/{t} oppgaver · {pst}%</div>
-                          <div className="prog-bar"><div className="prog-fill" style={{ width: pst + '%' }} /></div>
-                        </>
-                      )}
+                    <div key={bil.id}>
+                      {showDropBefore && <div className="bil-pipeline-drop-line" />}
+                      {renderBilPipelineRow(bil, status)}
                     </div>
                   );
                 })}
+                {showEndDrop && <div className="bil-pipeline-drop-line" />}
               </div>
             </div>
           );
         })}
       </div>
       )}
+      </div>
     </>
   );
 }
 
 // ─── BIL MODAL ───────────────────────────────────────────────────────────────
-function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal }) {
+function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal, kunder, currentUser }) {
   const [bil, setBil] = useState(data);
   const [nyOppg, setNyOppg] = useState('');
   const [nyLogg, setNyLogg] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const uploadRef = useRef(null);
 
   const avtaler = (kal || [])
     .filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); })
@@ -805,30 +1817,84 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
     .sort(function (a, b) { return String(b.dato || '').localeCompare(String(a.dato || '')); });
 
   const oppdater = (k, v, msg) => {
+    if (k === 'status' && v !== bil.status) {
+      const next = withStatusChange(bil, v, lists.bilSjekklister);
+      setBil({ ...bil, ...next });
+      updateBil(bil.id, next, msg);
+      return;
+    }
+    if (k === 'sjekkliste') {
+      const next = withSjekklisteUpdate(bil, v);
+      setBil({ ...bil, ...next });
+      updateBil(bil.id, { sjekklister: next.sjekklister, sjekkliste: next.sjekkliste }, msg);
+      return;
+    }
     const ny = { ...bil, [k]: v };
     setBil(ny);
     updateBil(bil.id, { [k]: v }, msg);
   };
 
   const toggleSjekk = (i) => {
-    const ny = bil.sjekkliste.map((s, idx) => idx === i ? { ...s, f: !s.f } : s);
+    const list = getAktivSjekkliste(bil);
+    const ny = list.map((s, idx) => idx === i ? { ...s, f: !s.f } : s);
     oppdater('sjekkliste', ny, 'Oppgave oppdatert ✓');
   };
 
   const leggTilOppg = () => {
     if (!nyOppg.trim()) return;
-    oppdater('sjekkliste', [...(bil.sjekkliste || []), { t: nyOppg, f: false }]);
+    oppdater('sjekkliste', [...getAktivSjekkliste(bil), { t: nyOppg, f: false }]);
     setNyOppg('');
   };
 
   const leggTilLogg = () => {
     if (!nyLogg.trim()) return;
     const dato = new Date().toLocaleString('nb-NO');
-    oppdater('logg', [...(bil.logg || []), { tekst: nyLogg, dato, av: 'Waleed' }]);
+    const av = currentUser?.name || currentUser?.username || 'Ukjent';
+    oppdater('logg', [...(bil.logg || []), { tekst: nyLogg, dato, av }]);
     setNyLogg('');
   };
 
-  const list = bil.sjekkliste || [];
+  const slettLoggPost = (index) => {
+    if (!currentUser?.isAdmin) return;
+    if (!window.confirm('Slette denne loggposten?')) return;
+    const logg = (bil.logg || []).filter(function (_item, i) { return i !== index; });
+    oppdater('logg', logg, 'Loggpost slettet ✓');
+  };
+
+  const lastOppDokumenter = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const res = await uploadBilDokumenter(bil.id, files);
+      if (res.item) {
+        setBil(res.item);
+        updateBil(bil.id, { dokumenter: res.item.dokumenter }, 'Dokumenter lastet opp ✓');
+      }
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke laste opp filer ✗');
+    } finally {
+      setUploading(false);
+      if (uploadRef.current) uploadRef.current.value = '';
+    }
+  };
+
+  const slettDokument = (docKey) => {
+    if (!window.confirm('Slette dette dokumentet?')) return;
+    const dokumenter = (bil.dokumenter || []).filter(function (item) {
+      return (item.id || item.path) !== docKey;
+    });
+    oppdater('dokumenter', dokumenter, 'Dokument slettet ✓');
+  };
+
+  const formatFileSize = (bytes) => {
+    const size = Number(bytes) || 0;
+    if (size < 1024) return size + ' B';
+    if (size < 1024 * 1024) return Math.round(size / 1024) + ' KB';
+    return (size / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const list = getAktivSjekkliste(bil);
   const f = list.filter(s => s.f).length;
   const t = list.length;
 
@@ -839,9 +1905,26 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
     }
   };
 
+  const arkiver = () => {
+    if (!window.confirm(`Arkivere ${bil.reg}? Bilen fjernes fra lageroversikten, men kan gjenopprettes fra arkiv.`)) return;
+    updateBil(bil.id, {
+      archived: true,
+      logg: [...(bil.logg || []), bilLoggEntry('Arkivert fra lager')]
+    }, 'Arkivert ✓');
+    onClose();
+  };
+
+  const gjenopprett = () => {
+    updateBil(bil.id, {
+      archived: false,
+      logg: [...(bil.logg || []), bilLoggEntry('Gjenopprettet fra arkiv')]
+    }, 'Gjenopprettet til lager ✓');
+    onClose();
+  };
+
   return (
     <div className="ov" onClick={onClose}>
-      <div className="modal lg" onClick={e => e.stopPropagation()}>
+      <div className="modal lg bil-modal" onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
             <div className="modal-title" style={{ marginBottom: 4 }}>
@@ -850,11 +1933,12 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Badge s={bil.status} />
+              {bil.archived && <span className="chip chip-gray">Arkivert</span>}
               {bil.euKontroll && <span className="chip chip-orange">EU-kontroll: {bil.euKontroll}</span>}
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
             </div>
           </div>
-          {bil.status !== 'Solgt' && bil.status !== 'Etteroppfølging' && (
+          {bil.status !== 'Solgt' && bil.status !== 'Etteroppfølging' && !bil.archived && (
             <button type="button" className="btn btn-p btn-sm" onClick={nesteStatus}>
               → {lists.bilStatuser[lists.bilStatuser.indexOf(bil.status) + 1]}
             </button>
@@ -932,6 +2016,13 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 {lists.ansatte.map(a => <option key={a}>{a}</option>)}
               </select>
             </div>
+            <BilKunderVelger
+              label="Kunder på bilen"
+              kundeIds={bil.kundeIds || (bil.kundeId ? [bil.kundeId] : [])}
+              kunder={kunder}
+              setModal={setModal}
+              onChange={function (ids) { oppdater('kundeIds', ids, 'Kunder oppdatert ✓'); }}
+            />
             <div className="gap">
               <div className="fl">Frist</div>
               <input type="date" value={bil.frist || ''} onChange={e => oppdater('frist', e.target.value)} />
@@ -941,13 +2032,95 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               <textarea rows={3} value={bil.notater || ''} onChange={e => oppdater('notater', e.target.value)} />
             </div>
 
-            <div className="modal-sec">Intern logg</div>
-            {(bil.logg || []).map((l, i) => (
-              <div className="logg-item" key={i}>
-                <div className="logg-tekst">{l.tekst}</div>
-                <div className="logg-meta">{l.dato} · {l.av}</div>
+            <div className="modal-sec">Utvidet informasjon</div>
+            <div className="form-row gap">
+              <div>
+                <div className="fl">FINN-kode / annonse-ID</div>
+                <input value={bil.finnKode || ''} onChange={e => oppdater('finnKode', e.target.value)} placeholder="F.eks. 123456789" />
               </div>
-            ))}
+              <div>
+                <div className="fl">Chassisnummer (VIN)</div>
+                <input value={bil.chassisnr || ''} onChange={e => oppdater('chassisnr', e.target.value.toUpperCase())} />
+              </div>
+            </div>
+            <div className="form-row gap">
+              <div>
+                <div className="fl">Drivstoff</div>
+                <input value={bil.drivstoff || ''} onChange={e => oppdater('drivstoff', e.target.value)} />
+              </div>
+              <div>
+                <div className="fl">Girkasse</div>
+                <input value={bil.girkasse || ''} onChange={e => oppdater('girkasse', e.target.value)} />
+              </div>
+            </div>
+            <div className="gap">
+              <div className="fl">Utstyr / ekstra info</div>
+              <textarea rows={3} value={bil.utstyr || ''} onChange={e => oppdater('utstyr', e.target.value)} placeholder="Utstyrspakke, hengerfeste, vinterdekk medfølger…" />
+            </div>
+            <div className="gap">
+              <div className="fl">Intern info</div>
+              <textarea rows={3} value={bil.internInfo || ''} onChange={e => oppdater('internInfo', e.target.value)} placeholder="Kun internt — synlig for teamet" />
+            </div>
+
+            <InternKommentarerSeksjon
+              kommentarer={bil.kommentarer}
+              currentUser={currentUser}
+              onChange={function (next, msg) { oppdater('kommentarer', next, msg); }}
+            />
+
+            <div className="modal-sec">Dokumenter · {(bil.dokumenter || []).length}</div>
+            {(bil.dokumenter || []).length === 0 && (
+              <div style={{ fontSize: 11, color: 'var(--t4)', marginBottom: 8 }}>Ingen dokumenter lastet opp ennå.</div>
+            )}
+            {(bil.dokumenter || []).map(function (doc) {
+              const docKey = doc.id || doc.path;
+              return (
+                <div className="logg-item" key={docKey}>
+                  <div className="logg-tekst">
+                    <a href={doc.path} target="_blank" rel="noreferrer">{doc.name || 'Dokument'}</a>
+                  </div>
+                  <div className="logg-meta logg-meta--row">
+                    <span>
+                      {formatFileSize(doc.size)}
+                      {doc.uploadedBy ? ` · ${doc.uploadedBy}` : ''}
+                      {formatKommentarDato(doc.uploadedAt) ? ` · ${formatKommentarDato(doc.uploadedAt)}` : ''}
+                    </span>
+                    <button type="button" className="btn btn-red btn-xs" onClick={function () { slettDokument(docKey); }}>
+                      Slett
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, marginBottom: 16 }}>
+              <input
+                ref={uploadRef}
+                type="file"
+                multiple
+                onChange={lastOppDokumenter}
+                disabled={uploading}
+              />
+              <span style={{ fontSize: 11, color: 'var(--t4)' }}>
+                {uploading ? 'Laster opp…' : 'PDF, Word, bilder m.m. (maks 8 MB per fil)'}
+              </span>
+            </div>
+
+            <div className="modal-sec">Intern logg</div>
+            {(bil.logg || []).map(function (l, i) {
+              return (
+                <div className="logg-item" key={i + '-' + (l.dato || '') + '-' + (l.tekst || '')}>
+                  <div className="logg-tekst">{l.tekst}</div>
+                  <div className="logg-meta logg-meta--row">
+                    <span>{l.dato} · {l.av}</span>
+                    {currentUser?.isAdmin && (
+                      <button type="button" className="btn btn-red btn-xs" onClick={function () { slettLoggPost(i); }}>
+                        Slett
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               <input placeholder="Legg til loggpost..." value={nyLogg} onChange={e => setNyLogg(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilLogg()} />
               <button type="button" className="btn btn-g btn-sm" onClick={leggTilLogg}>+</button>
@@ -955,7 +2128,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
           </div>
 
           <div>
-            <div className="modal-sec">Sjekkliste ({f}/{t} fullført)</div>
+            <div className="modal-sec">Sjekkliste — {bil.status} ({f}/{t} fullført)</div>
             <div style={{ marginBottom: 10 }}>
               <div className="prog-bar" style={{ height: 5 }}>
                 <div className="prog-fill" style={{ width: (t ? f / t * 100 : 0) + '%', height: 5 }} />
@@ -1015,7 +2188,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                     onClick={() => setModal({ t: 'visHenv', d: h })}
                   >
                     <div className="bil-link-item__top">
-                      <Badge s={h.status} />
+                      <Badge s={h.status} colors={lists.henvStatusFarger} />
                       <span className="bil-link-item__meta">{h.dato}</span>
                     </div>
                     <div className="bil-link-item__title">{h.navn} · {h.emne}</div>
@@ -1028,6 +2201,11 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
         </div>
 
         <div className="modal-footer">
+          {bil.archived ? (
+            <button type="button" className="btn btn-p" onClick={gjenopprett}>Gjenopprett til lager</button>
+          ) : (
+            <button type="button" className="btn btn-g" onClick={arkiver}>Arkiver bil</button>
+          )}
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
@@ -1074,7 +2252,12 @@ function NyBilModal({ onClose, onSave, lists }) {
         <div className="gap"><div className="fl">Frist</div><input type="date" value={f.frist} onChange={e => s('frist', e.target.value)} /></div>
         <div className="gap"><div className="fl">Notater</div><textarea rows={2} value={f.notater} onChange={e => s('notater', e.target.value)} /></div>
         <div className="modal-footer">
-          <button type="button" className="btn btn-p" onClick={() => f.reg && f.modell && onSave({ ...f, sjekkliste: [], logg: [], svvData: null })}>Lagre bil</button>
+          <button type="button" className="btn btn-p" onClick={() => f.reg && f.modell && onSave({
+            ...f,
+            ...initBilSjekklister(f.status || 'Innkjøpt', lists.bilSjekklister),
+            logg: [],
+            svvData: null
+          })}>Lagre bil</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
       </div>
@@ -1187,17 +2370,17 @@ function clearReplyDraft(id) {
   }
 }
 
-const EMPTY_REPLY_BODY = '<p><br></p><p><br></p>';
+const EMPTY_REPLY_BODY = '<p><br></p>';
 
 function isEmptyComposeBody(html) {
   return htmlIsEmpty(html) || String(html || '').trim() === EMPTY_REPLY_BODY.trim();
 }
 
 function insertTemplateContent(currentHtml, templateHtml) {
-  const insert = String(templateHtml || '').trim();
+  const insert = cleanComposeHtml(templateHtml);
   if (!insert) return currentHtml || '';
   if (isEmptyComposeBody(currentHtml)) return insert;
-  return `${insert}<p><br></p>${String(currentHtml || '').trim()}`;
+  return `${insert}${String(currentHtml || '').trim() ? cleanComposeHtml(currentHtml) : ''}`.trim();
 }
 
 function stripReplyQuoteFromHtml(html) {
@@ -1239,8 +2422,6 @@ function buildReplyQuoteHtml(mail) {
   }
 
   return [
-    '<p><br></p>',
-    '<p><br></p>',
     '<div class="mail-reply-quote" data-xbilsenter-quote="1" style="margin-top:16px;padding-top:12px;border-top:1px solid #d9d9d9;">',
     '<div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#666;margin-bottom:10px;">',
     `<div><strong>Fra:</strong> ${fromLine}</div>`,
@@ -1289,26 +2470,53 @@ function buildReplyDefaults(mail) {
   };
 }
 
+function buildForwardDefaults(mail) {
+  if (!mail) return null;
+  const emne = String(mail.emne || 'Melding');
+  const subject = /^(Fwd|Fw):/i.test(emne) ? emne : `Fwd: ${emne}`;
+  return {
+    to: '',
+    cc: '',
+    bcc: '',
+    subject,
+    kontoId: mail.kontoId || null,
+    html: ''
+  };
+}
+
+function buildForwardQuoteHtml(mail) {
+  if (!mail) return '';
+  const quote = buildReplyQuoteHtml(mail);
+  return quote.replace(
+    'data-xbilsenter-quote="1"',
+    'data-xbilsenter-quote="1" data-xbilsenter-forward="1"'
+  );
+}
+
 function formatDraftTime(iso) {
   if (!iso) return '';
   return iso.replace('T', ' ').slice(0, 16);
 }
 
-function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, onSent, onDraftChange, visTost }) {
+function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, forwardFrom, onClose, onSent, onDraftChange, visTost }) {
   const sendKontoer = kontoer.filter(function (k) { return k.smtpConfigured; });
   const defaultKonto = pickDefaultSendKonto(sendKontoer);
   const replyDefaults = replyTo ? buildReplyDefaults(replyTo) : null;
-  const replyQuoteHtml = replyTo ? buildReplyQuoteHtml(replyTo) : '';
+  const forwardDefaults = forwardFrom ? buildForwardDefaults(forwardFrom) : null;
+  const composeDefaults = replyDefaults || forwardDefaults;
+  const quoteHtml = forwardFrom
+    ? buildForwardQuoteHtml(forwardFrom)
+    : (replyTo ? buildReplyQuoteHtml(replyTo) : '');
   const [draftId, setDraftId] = useState(initialDraftId || null);
   const [kontoId, setKontoId] = useState(
-    replyDefaults?.kontoId
-      ? String(replyDefaults.kontoId)
+    composeDefaults?.kontoId
+      ? String(composeDefaults.kontoId)
       : (defaultKonto ? String(defaultKonto.id) : '')
   );
-  const [to, setTo] = useState(replyDefaults?.to || '');
+  const [to, setTo] = useState(composeDefaults?.to || '');
   const [cc, setCc] = useState('');
   const [bcc, setBcc] = useState('');
-  const [subject, setSubject] = useState(replyDefaults?.subject || '');
+  const [subject, setSubject] = useState(composeDefaults?.subject || '');
   const [bodyHtml, setBodyHtml] = useState(replyTo ? EMPTY_REPLY_BODY : '');
   const [attachments, setAttachments] = useState([]);
   const [sending, setSending] = useState(false);
@@ -1477,13 +2685,13 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
       return;
     }
     setBodyHtml(function (prev) { return insertTemplateContent(prev, mal.html); });
-    if (mal.emne && !replyTo && !subject.trim()) setSubject(mal.emne);
+    if (mal.emne && !replyTo && !forwardFrom && !subject.trim()) setSubject(mal.emne);
     visTost(`Mal «${mal.navn}» satt inn ✓`);
   };
 
   const send = async () => {
     const bodyEmpty = replyTo ? isReplyBodyEmpty(bodyHtml) : htmlIsEmpty(bodyHtml);
-    if (!to.trim() || !subject.trim() || bodyEmpty || sending) return;
+    if (!to.trim() || !subject.trim() || (bodyEmpty && !forwardFrom) || sending) return;
     if (!valgtKonto) {
       visTost('Ingen sendekonto med SMTP er konfigurert ✗');
       return;
@@ -1495,13 +2703,15 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
       form.append('cc', cc.trim());
       form.append('bcc', bcc.trim());
       form.append('subject', subject.trim());
-      form.append('html', bodyHtml);
+      form.append('html', cleanComposeHtml(bodyHtml));
       form.append('kontoId', String(valgtKonto.id));
       if (replyTo) {
         form.append('replyToId', String(replyTo.id));
-        form.append('replyQuoteHtml', replyQuoteHtml);
+        form.append('replyQuoteHtml', quoteHtml);
         if (replyTo.fraNavn) form.append('toName', replyTo.fraNavn);
         if (replyTo.henvendelseId) form.append('henvendelseId', String(replyTo.henvendelseId));
+      } else if (forwardFrom) {
+        form.append('replyQuoteHtml', quoteHtml);
       }
       if (draftId) form.append('draftId', String(draftId));
       attachments.forEach(function (item) {
@@ -1517,7 +2727,7 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
           onDraftChange(utkastRes);
         } catch { /* ignore */ }
       }
-      if (res.item && onSent) onSent(res.item);
+      if (res.item && onSent) onSent(res);
       onClose();
     } catch (err) {
       visTost(err.message || 'Kunne ikke sende e-post ✗');
@@ -1526,7 +2736,7 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
     }
   };
 
-  const previewHtml = buildMailPreviewHtml(bodyHtml, valgtKonto?.signatur || '', replyQuoteHtml);
+  const previewHtml = buildMailPreviewHtml(bodyHtml, valgtKonto?.signatur || '', quoteHtml);
 
   const slettUtkast = async () => {
     if (replyTo) {
@@ -1604,8 +2814,10 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
 
   const modalTitle = replyTo
     ? 'Svar på e-post'
-    : (initialDraftId ? 'Rediger utkast' : 'Ny e-post');
-  const sendLabel = replyTo ? 'Send svar' : 'Send e-post';
+    : (forwardFrom
+      ? 'Videresend e-post'
+      : (initialDraftId ? 'Rediger utkast' : 'Ny e-post'));
+  const sendLabel = replyTo ? 'Send svar' : (forwardFrom ? 'Videresend' : 'Send e-post');
 
   return (
     <div className="ov" onClick={onClose}>
@@ -1630,6 +2842,12 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
           <div className="compose-reply-context">
             Svar til <strong>{replyTo.fraNavn || replyTo.fraEpost}</strong>
             {replyTo.emne ? ` · ${replyTo.emne}` : ''}
+          </div>
+        )}
+        {forwardFrom && (
+          <div className="compose-reply-context">
+            Videresender melding fra <strong>{forwardFrom.fraNavn || forwardFrom.fraEpost || forwardFrom.tilEpost || 'Ukjent'}</strong>
+            {forwardFrom.emne ? ` · ${forwardFrom.emne}` : ''}
           </div>
         )}
 
@@ -1688,15 +2906,17 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
                 onChange={setBodyHtml}
                 placeholder={replyTo
                   ? 'Skriv svaret ditt her. Original e-post vises nedenfor og legges automatisk til ved sending.'
-                  : 'Skriv meldingen her. Bruk verktøylinjen for teksttype, avstand, lister, farger, bilder og mer…'}
+                  : (forwardFrom
+                    ? 'Skriv en kort melding over videresendt e-post. Originalen legges til automatisk under signatur.'
+                    : 'Skriv meldingen her. Bruk verktøylinjen for teksttype, avstand, lister, farger, bilder og mer…')}
               />
             </div>
-            {replyQuoteHtml && (
+            {quoteHtml && (
               <div className="compose-field">
-                <div className="fl">Original e-post (legges til automatisk under signatur)</div>
+                <div className="fl">{forwardFrom ? 'Videresendt e-post (legges til automatisk under signatur)' : 'Original e-post (legges til automatisk under signatur)'}</div>
                 <div
                   className="compose-reply-quote-readonly"
-                  dangerouslySetInnerHTML={{ __html: replyQuoteHtml }}
+                  dangerouslySetInnerHTML={{ __html: quoteHtml }}
                 />
               </div>
             )}
@@ -1775,9 +2995,296 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, onClose, 
   );
 }
 
-function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visTost, refreshStats, setTab }) {
-  const [filter, setFilter] = useState('Inngående');
+function InboxMetaFields({ mail, lists, colors, onChange, compact, stopClick = true }) {
+  const statuser = lists?.henvStatuser || [];
+  const ansatte = lists?.ansatte || [];
+  const statusColor = mail.status ? (colors[mail.status] || '#6B7280') : undefined;
+
+  const fields = (
+    <>
+      <select
+        className="inbox-meta-select"
+        value={mail.status || ''}
+        style={statusColor ? { borderColor: statusColor, color: statusColor, background: statusColor + '10' } : undefined}
+        onChange={(e) => onChange(mail.id, { status: e.target.value })}
+      >
+        <option value="">Status</option>
+        {statuser.map(function (s) {
+          return <option key={s} value={s}>{s}</option>;
+        })}
+      </select>
+      <select
+        className="inbox-meta-select"
+        value={mail.ansvarlig || ''}
+        onChange={(e) => onChange(mail.id, { ansvarlig: e.target.value })}
+      >
+        <option value="">Ansvarlig</option>
+        {ansatte.map(function (a) {
+          return <option key={a} value={a}>{a}</option>;
+        })}
+      </select>
+    </>
+  );
+
+  if (!stopClick) {
+    return <div className={`inbox-meta-fields${compact ? ' inbox-meta-fields--compact' : ''}`}>{fields}</div>;
+  }
+
+  return (
+    <div
+      className={`inbox-meta-fields${compact ? ' inbox-meta-fields--compact' : ''}`}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {fields}
+    </div>
+  );
+}
+
+const MAPPE_TYPE_ICONS = {
+  inbox: '📥',
+  sent: '📤',
+  drafts: '📝',
+  trash: '🗑',
+  junk: '⚠',
+  archive: '📦',
+  custom: '📁'
+};
+
+const MAPPE_TYPE_LABELS = {
+  inbox: 'Innboks',
+  sent: 'Sendt',
+  drafts: 'Utkast',
+  trash: 'Søppel',
+  junk: 'Søppelpost',
+  archive: 'Arkiv'
+};
+
+function mappeDisplayName(mappe) {
+  if (!mappe) return 'Alle';
+  return MAPPE_TYPE_LABELS[mappe.mappeType] || mappe.navn || 'Mappe';
+}
+
+function epostSortKey(item) {
+  const raw = item?.sortDato || item?.updatedAt || item?.createdAt || '';
+  const ts = Date.parse(String(raw));
+  if (!Number.isNaN(ts)) return ts;
+  return Number(item?.id || 0);
+}
+
+function sortEpostNyestFirst(items) {
+  return (items || []).slice().sort(function (a, b) {
+    const diff = epostSortKey(b) - epostSortKey(a);
+    if (diff !== 0) return diff;
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
+}
+
+function groupEpostThreads(items) {
+  const groups = {};
+  sortEpostNyestFirst(items).forEach(function (item) {
+    const key = item.threadId || item.messageId || String(item.id);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  });
+  return Object.keys(groups).map(function (key) {
+    const messages = sortEpostNyestFirst(groups[key]);
+    return { threadId: key, latest: messages[0], count: messages.length, messages };
+  }).sort(function (a, b) {
+    return epostSortKey(b.latest) - epostSortKey(a.latest);
+  });
+}
+
+function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
+  const menuRef = useRef(null);
+  const [submenu, setSubmenu] = useState(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  useEffect(function () {
+    if (!menu) {
+      setSubmenu(null);
+      return;
+    }
+    setSubmenu(null);
+    const margin = 8;
+    const maxW = 260;
+    const maxH = 420;
+    let x = menu.x;
+    let y = menu.y;
+    if (typeof window !== 'undefined') {
+      if (x + maxW > window.innerWidth - margin) x = Math.max(margin, window.innerWidth - maxW - margin);
+      if (y + maxH > window.innerHeight - margin) y = Math.max(margin, window.innerHeight - maxH - margin);
+    }
+    setPos({ x, y });
+  }, [menu]);
+
+  useEffect(function () {
+    if (!menu) return;
+    const close = function () { onClose(); };
+    const onKey = function (e) {
+      if (e.key === 'Escape') close();
+    };
+    const onPointer = function (e) {
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      close();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return function () {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [menu, onClose]);
+
+  if (!menu) return null;
+
+  const mail = menu.mail || null;
+  const draft = menu.draft || null;
+  const vedlegg = mail?.vedlegg || [];
+  const flyttMapper = mapper.filter(function (m) {
+    return !mail || m.id !== mail.mappeId;
+  });
+  const canReply = mail && mail.retning === 'inn' && mailStatus.smtpConfigured;
+  const canForward = mail && mailStatus.smtpConfigured;
+  const canCreateHenv = mail && mail.retning === 'inn' && !mail.henvendelseId;
+
+  const run = function (action, payload) {
+    onAction(action, payload);
+    onClose();
+  };
+
+  const MenuItem = function ({ label, onClick, disabled, danger, hasSub, active }) {
+    return (
+      <button
+        type="button"
+        className={`inbox-ctx-item${disabled ? ' disabled' : ''}${danger ? ' danger' : ''}${active ? ' active' : ''}`}
+        disabled={disabled}
+        onClick={disabled ? undefined : onClick}
+        onMouseEnter={hasSub && !disabled ? function () { setSubmenu(hasSub); } : undefined}
+      >
+        <span>{label}</span>
+        {hasSub && <span className="inbox-ctx-arrow">›</span>}
+      </button>
+    );
+  };
+
+  const Sep = () => <div className="inbox-ctx-sep" />;
+
+  return (
+    <div
+      ref={menuRef}
+      className="inbox-ctx-menu"
+      style={{ left: pos.x, top: pos.y }}
+      onContextMenu={function (e) { e.preventDefault(); }}
+    >
+      {menu.type === 'draft' ? (
+        <>
+          <MenuItem label="Fortsett redigering" onClick={() => run('continueDraft', draft)} />
+          <Sep />
+          <MenuItem label="Slett utkast" danger onClick={() => run('deleteDraft', draft)} />
+        </>
+      ) : (
+        <>
+          <MenuItem label="Åpne melding" onClick={() => run('open', mail)} />
+          <Sep />
+          <MenuItem label="Svar" disabled={!canReply} onClick={() => run('reply', mail)} />
+          <MenuItem label="Videresend" disabled={!canForward} onClick={() => run('forward', mail)} />
+          <Sep />
+          <MenuItem
+            label={mail?.lest ? 'Marker som ulest' : 'Marker som lest'}
+            onClick={() => run('toggleRead', mail)}
+          />
+          <MenuItem
+            label={mail?.flagged ? 'Fjern stjerne' : 'Stjerne'}
+            onClick={() => run('toggleFlag', mail)}
+          />
+          <Sep />
+          <div
+            className="inbox-ctx-submenu-wrap"
+            onMouseEnter={() => setSubmenu('vedlegg')}
+            onMouseLeave={() => setSubmenu(function (prev) { return prev === 'vedlegg' ? null : prev; })}
+          >
+            <MenuItem
+              label="Vedlegg"
+              disabled={!vedlegg.length}
+              hasSub="vedlegg"
+              active={submenu === 'vedlegg'}
+            />
+            {submenu === 'vedlegg' && vedlegg.length > 0 && (
+              <div className="inbox-ctx-submenu">
+                {vedlegg.map(function (v) {
+                  const kb = Math.max(1, Math.round((v.sizeBytes || 0) / 1024));
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      className="inbox-ctx-item"
+                      onClick={() => run('downloadAttachment', { mail, vedlegg: v })}
+                    >
+                      <span>📎 {v.filnavn} ({kb} KB)</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div
+            className="inbox-ctx-submenu-wrap"
+            onMouseEnter={() => setSubmenu('flytt')}
+            onMouseLeave={() => setSubmenu(function (prev) { return prev === 'flytt' ? null : prev; })}
+          >
+            <MenuItem
+              label="Flytt til"
+              disabled={!flyttMapper.length}
+              hasSub="flytt"
+              active={submenu === 'flytt'}
+            />
+            {submenu === 'flytt' && flyttMapper.length > 0 && (
+              <div className="inbox-ctx-submenu">
+                {flyttMapper.map(function (m) {
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className="inbox-ctx-item"
+                      onClick={() => run('move', { mail, mappeId: m.id })}
+                    >
+                      <span>{MAPPE_TYPE_ICONS[m.mappeType] || MAPPE_TYPE_ICONS.custom} {mappeDisplayName(m)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {canCreateHenv && (
+            <>
+              <Sep />
+              <MenuItem label="Opprett henvendelse" onClick={() => run('createHenv', mail)} />
+            </>
+          )}
+          <Sep />
+          <MenuItem label="Slett" danger onClick={() => run('delete', mail)} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visTost, refreshStats, setTab, lists }) {
+  const [filter, setFilter] = useState('Meldinger');
+  const [statusFilter, setStatusFilter] = useState('Alle');
   const [kontoFilter, setKontoFilter] = useState('alle');
+  const [mapper, setMapper] = useState([]);
+  const [valgtMappeId, setValgtMappeId] = useState(null);
+  const [listeEpost, setListeEpost] = useState([]);
+  const [lasterEpost, setLasterEpost] = useState(false);
+  const [threadView, setThreadView] = useState(true);
+  const [nyMappeNavn, setNyMappeNavn] = useState('');
+  const [visNyMappe, setVisNyMappe] = useState(false);
   const [valgt, setValgt] = useState(null);
   const [valgtUtkast, setValgtUtkast] = useState(null);
   const [utkast, setUtkast] = useState([]);
@@ -1785,7 +3292,50 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeDraftId, setComposeDraftId] = useState(null);
   const [composeReplyTo, setComposeReplyTo] = useState(null);
+  const [composeForwardFrom, setComposeForwardFrom] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const epostCacheRef = useRef({});
+  const fetchSeqRef = useRef(0);
   const kontoer = mailStatus.kontoer || [];
+  const statusReady = Array.isArray(mailStatus.kontoer);
+  const colors = lists?.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER;
+
+  useEffect(function () {
+    if (statusReady) return;
+    getMailStatus()
+      .then(function (res) {
+        if (res.status) setMailStatus(res.status);
+      })
+      .catch(function () { /* ignore */ });
+  }, [statusReady, setMailStatus]);
+
+  const cacheKey = function (kontoId, mappeId) {
+    return String(kontoId || '0') + ':' + String(mappeId || '0');
+  };
+
+  const applyListeEpost = useCallback(function (items) {
+    setListeEpost(items);
+    setEpost(items);
+  }, [setEpost]);
+
+  const patchListeEpost = useCallback(function (fn) {
+    setListeEpost(function (prev) {
+      const next = typeof fn === 'function' ? fn(prev) : fn;
+      setEpost(next);
+      return next;
+    });
+  }, [setEpost]);
+
+  const invalidateEpostCache = useCallback(function (kontoId) {
+    if (!kontoId) {
+      epostCacheRef.current = {};
+      return;
+    }
+    const prefix = String(kontoId) + ':';
+    Object.keys(epostCacheRef.current).forEach(function (key) {
+      if (key.startsWith(prefix)) delete epostCacheRef.current[key];
+    });
+  }, []);
 
   const loadUtkast = async () => {
     try {
@@ -1801,6 +3351,84 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     loadUtkast();
   }, []);
 
+  const aktivKontoId = kontoFilter !== 'alle'
+    ? Number(kontoFilter)
+    : (kontoer.find(function (k) { return k.aktiv; })?.id || kontoer[0]?.id || null);
+
+  const loadMapper = async function (forceRefresh) {
+    if (!aktivKontoId) {
+      setMapper([]);
+      setValgtMappeId(null);
+      return;
+    }
+    try {
+      const res = await getInnboksMapper(aktivKontoId, !!forceRefresh);
+      const items = res.items || [];
+      setMapper(items);
+      setValgtMappeId(function (prev) {
+        if (prev && items.some(function (m) { return m.id === prev; })) return prev;
+        const inbox = items.find(function (m) { return m.mappeType === 'inbox'; });
+        return inbox?.id || items[0]?.id || null;
+      });
+    } catch (err) {
+      setMapper([]);
+      visTost(err.message || 'Kunne ikke hente mapper ✗');
+    }
+  };
+
+  const reloadInnboks = useCallback(async function (mappeIdOverride, kontoIdOverride) {
+    const kid = kontoIdOverride ?? aktivKontoId;
+    const mid = mappeIdOverride ?? valgtMappeId;
+    if (!kid) {
+      applyListeEpost([]);
+      return;
+    }
+
+    const key = cacheKey(kid, mid);
+    const cached = epostCacheRef.current[key];
+    if (cached) {
+      applyListeEpost(cached);
+    } else {
+      setLasterEpost(true);
+    }
+
+    const seq = ++fetchSeqRef.current;
+    try {
+      const params = { kontoId: kid };
+      if (mid) params.mappeId = mid;
+      const data = await getInnboks(params);
+      if (seq !== fetchSeqRef.current) return;
+      const items = sortEpostNyestFirst(data.items || []);
+      epostCacheRef.current[key] = items;
+      applyListeEpost(items);
+      if (data.status) setMailStatus(data.status);
+      return data;
+    } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
+      if (!cached) applyListeEpost([]);
+      visTost(err.message || 'Kunne ikke laste e-post ✗');
+    } finally {
+      if (seq === fetchSeqRef.current) setLasterEpost(false);
+    }
+  }, [aktivKontoId, valgtMappeId, applyListeEpost, setMailStatus, visTost]);
+
+  const selectMappe = useCallback(function (mappeId) {
+    setValgt(null);
+    setValgtMappeId(mappeId);
+    reloadInnboks(mappeId, aktivKontoId);
+  }, [aktivKontoId, reloadInnboks]);
+
+  useEffect(function () {
+    if (!aktivKontoId) {
+      setMapper([]);
+      setValgtMappeId(null);
+      applyListeEpost([]);
+      return;
+    }
+    loadMapper();
+    reloadInnboks(null, aktivKontoId);
+  }, [aktivKontoId]);
+
   useEffect(function () {
     if (kontoFilter !== 'alle' && !kontoer.some(function (k) { return String(k.id) === String(kontoFilter); })) {
       setKontoFilter('alle');
@@ -1808,10 +3436,10 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   }, [kontoer, kontoFilter]);
 
   useEffect(function () {
-    if (valgt && !epost.some(function (e) { return e.id === valgt.id; })) {
+    if (valgt && !listeEpost.some(function (e) { return e.id === valgt.id; })) {
       setValgt(null);
     }
-  }, [epost, valgt]);
+  }, [listeEpost, valgt]);
 
   useEffect(function () {
     if (valgtUtkast && !utkast.some(function (u) { return u.id === valgtUtkast.id; })) {
@@ -1828,22 +3456,30 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const vis = epost.filter(function (e) {
-    if (kontoFilter !== 'alle' && String(e.kontoId) !== String(kontoFilter)) return false;
-    if (filter === 'Ulest') return e.retning === 'inn' && !e.lest;
-    if (filter === 'Utgående') return e.retning === 'ut';
-    if (filter === 'Inngående') return e.retning === 'inn';
-    return true;
-  });
+  const valgtMappe = mapper.find(function (m) { return m.id === valgtMappeId; }) || null;
 
-  const visUtkast = utkast.filter(function (u) {
+  const vis = sortEpostNyestFirst(listeEpost.filter(function (e) {
+    if (kontoFilter !== 'alle' && String(e.kontoId) !== String(kontoFilter)) return false;
+    if (filter === 'Ulest' && !(e.retning === 'inn' && !e.lest)) return false;
+    if (statusFilter !== 'Alle' && (e.status || '') !== statusFilter) return false;
+    return true;
+  }));
+
+  const visTråder = threadView
+    ? groupEpostThreads(vis)
+    : vis.map(function (e) {
+      return { threadId: String(e.id), latest: e, count: 1, messages: [e] };
+    });
+
+  const visUtkast = sortEpostNyestFirst(utkast.filter(function (u) {
     if (kontoFilter !== 'alle' && String(u.kontoId) !== String(kontoFilter)) return false;
     return true;
-  });
+  }));
 
   const openNewCompose = () => {
     setComposeDraftId(null);
     setComposeReplyTo(null);
+    setComposeForwardFrom(null);
     setComposeOpen(true);
   };
 
@@ -1851,6 +3487,15 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     if (!mail || mail.retning !== 'inn') return;
     setComposeDraftId(null);
     setComposeReplyTo(mail);
+    setComposeForwardFrom(null);
+    setComposeOpen(true);
+  };
+
+  const openForwardCompose = (mail) => {
+    if (!mail) return;
+    setComposeDraftId(null);
+    setComposeReplyTo(null);
+    setComposeForwardFrom(mail);
     setComposeOpen(true);
   };
 
@@ -1858,6 +3503,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     setComposeOpen(false);
     setComposeDraftId(null);
     setComposeReplyTo(null);
+    setComposeForwardFrom(null);
   };
 
   const openDraftEditor = (draft) => {
@@ -1890,7 +3536,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
       try {
         const res = await patchEpost(mail.id, { lest: true });
         if (res.item) {
-          setEpost(prev => prev.map(e => e.id === mail.id ? res.item : e));
+          patchListeEpost(function (prev) { return prev.map(function (e) { return e.id === mail.id ? res.item : e; }); });
           setValgt(res.item);
           refreshStats();
         }
@@ -1903,14 +3549,14 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const syncMail = async () => {
     setSyncing(true);
     try {
-      const body = kontoFilter !== 'alle' ? { kontoId: Number(kontoFilter) } : {};
+      const body = aktivKontoId ? { kontoId: aktivKontoId } : {};
       const res = await syncInnboks(body);
       if (res.status) setMailStatus(res.status);
-      const data = await getInnboks();
-      setEpost(data.items || []);
-      if (data.status) setMailStatus(data.status);
+      invalidateEpostCache(aktivKontoId);
+      await loadMapper(true);
+      await reloadInnboks(valgtMappeId, aktivKontoId);
       refreshStats();
-      visTost(`${res.imported || 0} nye e-poster hentet ✓`);
+      visTost(`${res.imported || 0} nye · ${res.updated || 0} oppdatert ✓`);
     } catch (err) {
       visTost(err.message || 'Synkronisering feilet ✗');
     } finally {
@@ -1918,13 +3564,72 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const opprettHenv = async () => {
-    if (!valgt) return;
+  const opprettMappe = async () => {
+    const navn = String(nyMappeNavn || '').trim();
+    if (!navn || !aktivKontoId) return;
     try {
-      const res = await opprettHenvFraEpost(valgt.id);
+      const res = await createInnboksMappe({ kontoId: aktivKontoId, navn });
+      setNyMappeNavn('');
+      setVisNyMappe(false);
+      await loadMapper();
+      if (res.item?.id) selectMappe(res.item.id);
+      visTost('Mappe opprettet ✓');
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke opprette mappe ✗');
+    }
+  };
+
+  const slettValgtEpost = async () => {
+    if (!valgt) return;
+    await slettEpostItem(valgt);
+  };
+
+  const slettEpostItem = async (mail) => {
+    if (!mail) return;
+    try {
+      await deleteEpost(mail.id);
+      patchListeEpost(function (prev) { return prev.filter(function (e) { return e.id !== mail.id; }); });
+      invalidateEpostCache(aktivKontoId);
+      setValgt(function (prev) { return prev?.id === mail.id ? null : prev; });
+      await loadMapper();
+      refreshStats();
+      visTost('E-post slettet ✓');
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke slette ✗');
+    }
+  };
+
+  const flyttValgtEpost = async (mappeId) => {
+    if (!valgt || !mappeId) return;
+    await flyttEpostItem(valgt, mappeId);
+  };
+
+  const flyttEpostItem = async (mail, mappeId) => {
+    if (!mail || !mappeId) return;
+    try {
+      const res = await flyttEpost(mail.id, mappeId);
+      if (res.item) {
+        patchListeEpost(function (prev) {
+          return prev.map(function (e) { return e.id === mail.id ? res.item : e; });
+        });
+        setValgt(function (prev) { return prev?.id === mail.id ? res.item : prev; });
+      }
+      invalidateEpostCache(aktivKontoId);
+      await reloadInnboks(valgtMappeId, aktivKontoId);
+      await loadMapper();
+      visTost('E-post flyttet ✓');
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke flytte ✗');
+    }
+  };
+
+  const opprettHenvForMail = async (mail) => {
+    if (!mail) return;
+    try {
+      const res = await opprettHenvFraEpost(mail.id);
       if (res.epost) {
-        setEpost(prev => prev.map(e => e.id === valgt.id ? res.epost : e));
-        setValgt(res.epost);
+        patchListeEpost(function (prev) { return prev.map(function (e) { return e.id === mail.id ? res.epost : e; }); });
+        setValgt(function (prev) { return prev?.id === mail.id ? res.epost : prev; });
       }
       if (res.henvendelse) setHenv(prev => [res.henvendelse, ...prev]);
       visTost('Henvendelse opprettet ✓');
@@ -1934,9 +3639,117 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const kontoLabel = kontoer.length
-    ? `${kontoer.filter(k => k.aktiv).length} aktive kontoer`
-    : 'Ingen mailkontoer';
+  const opprettHenv = async () => {
+    await opprettHenvForMail(valgt);
+  };
+
+  const handleContextMenuAction = async (action, payload) => {
+    if (action === 'open') {
+      openMail(payload);
+      return;
+    }
+    if (action === 'reply') {
+      openReplyCompose(payload);
+      return;
+    }
+    if (action === 'forward') {
+      openForwardCompose(payload);
+      return;
+    }
+    if (action === 'toggleRead') {
+      const mail = payload;
+      updateEpostMeta(mail.id, { lest: !mail.lest }, mail.lest ? 'Markert som ulest ✓' : 'Markert som lest ✓');
+      return;
+    }
+    if (action === 'toggleFlag') {
+      const mail = payload;
+      updateEpostMeta(mail.id, { flagged: !mail.flagged }, mail.flagged ? 'Stjerne fjernet ✓' : 'Merket med stjerne ✓');
+      return;
+    }
+    if (action === 'downloadAttachment') {
+      const { mail, vedlegg: v } = payload;
+      try {
+        await downloadEpostVedlegg(mail.id, v.id, v.filnavn);
+      } catch (err) {
+        visTost(err.message || 'Kunne ikke laste ned ✗');
+      }
+      return;
+    }
+    if (action === 'move') {
+      await flyttEpostItem(payload.mail, payload.mappeId);
+      return;
+    }
+    if (action === 'createHenv') {
+      await opprettHenvForMail(payload);
+      return;
+    }
+    if (action === 'delete') {
+      await slettEpostItem(payload);
+      return;
+    }
+    if (action === 'continueDraft') {
+      openDraftEditor(payload);
+      return;
+    }
+    if (action === 'deleteDraft') {
+      if (payload?.id) await slettUtkast(payload.id);
+    }
+  };
+
+  const showMailContextMenu = (e, mail) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, type: 'mail', mail });
+  };
+
+  const showDraftContextMenu = (e, draft) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, type: 'draft', draft });
+  };
+
+  const updateEpostMeta = async (id, patch, msg) => {
+    const applyPatch = function (item) {
+      return { ...item, ...patch };
+    };
+
+    patchListeEpost(function (prev) {
+      return prev.map(function (e) { return e.id === id ? applyPatch(e) : e; });
+    });
+    setValgt(function (prev) {
+      return prev?.id === id ? applyPatch(prev) : prev;
+    });
+
+    try {
+      const res = await patchEpost(id, patch);
+      if (res.item) {
+        patchListeEpost(function (prev) {
+          return prev.map(function (e) { return e.id === id ? res.item : e; });
+        });
+        setValgt(function (prev) {
+          return prev?.id === id ? res.item : prev;
+        });
+      }
+      if (msg) visTost(msg);
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke lagre e-post ✗');
+      try {
+        await reloadInnboks(valgtMappeId, aktivKontoId);
+        const fresh = listeEpost.find(function (e) { return e.id === id; });
+        if (fresh) {
+          setValgt(function (prev) { return prev?.id === id ? fresh : prev; });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const kontoLabel = !statusReady
+    ? 'Laster…'
+    : (kontoer.length
+      ? `${kontoer.filter(k => k.aktiv).length} aktive kontoer`
+      : 'Ingen mailkontoer');
 
   return (
     <>
@@ -1944,7 +3757,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         <div>
           <div className="ph-title">E-postinnboks</div>
           <div className="ph-sub">
-            {kontoLabel} · {epost.filter(e => e.retning === 'inn' && !e.lest).length} ulest
+            {kontoLabel} · {mailStatus.ulest ?? 0} ulest
             {mailStatus.lastSync ? ` · Sist synk: ${mailStatus.lastSync.replace('T', ' ').slice(0, 16)}` : ''}
           </div>
         </div>
@@ -1964,7 +3777,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         </div>
       </div>
 
-      {(!mailStatus.imapConfigured || !mailStatus.smtpConfigured) && (
+      {statusReady && (!mailStatus.imapConfigured || !mailStatus.smtpConfigured) && (
         <div className="inbox-config">
           {!mailStatus.kontoCount && (
             <div><strong>Ingen mailkontoer</strong> – gå til <button type="button" className="btn btn-g btn-xs" style={{ marginLeft: 6 }} onClick={() => setTab('innstillinger')}>Innstillinger</button> og legg til minst én konto.</div>
@@ -1978,17 +3791,24 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {['Inngående', 'Ulest', 'Utgående', 'Utkast', 'Alle'].map(function (s) {
-          const count = s === 'Utkast' ? (mailStatus.utkastCount || visUtkast.length || 0) : 0;
-          return (
-            <button key={s} type="button" className={`btn btn-sm ${filter === s ? 'btn-p' : 'btn-g'}`} onClick={() => setInboxFilter(s)}>
-              {s}{count ? ` (${count})` : ''}
+      <div className="inbox-toolbar">
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {['Meldinger', 'Ulest', 'Utkast'].map(function (s) {
+            const count = s === 'Utkast' ? (mailStatus.utkastCount || visUtkast.length || 0) : 0;
+            return (
+              <button key={s} type="button" className={`btn btn-sm ${filter === s ? 'btn-p' : 'btn-g'}`} onClick={() => setInboxFilter(s)}>
+                {s}{count ? ` (${count})` : ''}
+              </button>
+            );
+          })}
+          {filter !== 'Utkast' && (
+            <button type="button" className={`btn btn-sm ${threadView ? 'btn-p' : 'btn-g'}`} onClick={() => setThreadView(function (v) { return !v; })}>
+              Trådvis
             </button>
-          );
-        })}
+          )}
+        </div>
         {kontoer.length > 0 && (
-          <select value={kontoFilter} onChange={e => setKontoFilter(e.target.value)} style={{ marginLeft: 'auto', minWidth: 180 }}>
+          <select value={kontoFilter} onChange={e => setKontoFilter(e.target.value)} className="inbox-konto-select">
             <option value="alle">Alle kontoer</option>
             {kontoer.map(function (k) {
               return <option key={k.id} value={k.id}>{k.navn} ({k.epost})</option>;
@@ -1997,11 +3817,71 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         )}
       </div>
 
+      {filter !== 'Utkast' && (
+        <div className="henv-filters" style={{ marginTop: -6 }}>
+          <HenvStatusFilter
+            label="Alle statuser"
+            active={statusFilter === 'Alle'}
+            color="var(--acc)"
+            onClick={() => setStatusFilter('Alle')}
+          />
+          {(lists?.henvStatuser || []).map(function (s) {
+            return (
+              <HenvStatusFilter
+                key={s}
+                label={s}
+                active={statusFilter === s}
+                color={colors[s] || '#6B7280'}
+                onClick={() => setStatusFilter(s)}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      <div className="inbox-shell">
+        {filter !== 'Utkast' && (
+          <aside className="inbox-folders">
+            <div className="inbox-folders-hd">
+              <span className="card-ht">Mapper</span>
+              <button type="button" className="btn btn-g btn-xs" onClick={() => setVisNyMappe(function (v) { return !v; })} disabled={!aktivKontoId}>+</button>
+            </div>
+            {visNyMappe && (
+              <div className="inbox-folder-create">
+                <input
+                  type="text"
+                  value={nyMappeNavn}
+                  onChange={e => setNyMappeNavn(e.target.value)}
+                  placeholder="Nytt mappenavn"
+                />
+                <button type="button" className="btn btn-p btn-xs" onClick={opprettMappe}>Opprett</button>
+              </div>
+            )}
+            <div className="inbox-folders-body">
+              {!mapper.length && <div className="inbox-empty" style={{ padding: '16px 10px' }}>Synkroniser for å hente mapper.</div>}
+              {mapper.map(function (m) {
+                const icon = MAPPE_TYPE_ICONS[m.mappeType] || MAPPE_TYPE_ICONS.custom;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`inbox-folder-item${valgtMappeId === m.id ? ' on' : ''}`}
+                    onClick={() => selectMappe(m.id)}
+                  >
+                    <span>{icon} {mappeDisplayName(m)}</span>
+                    <span className="inbox-folder-count">{m.unreadCount > 0 ? m.unreadCount : (m.totalCount || '')}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        )}
+
       <div className="inbox-layout">
         <div className="inbox-list">
           <div className="inbox-list-hd">
-            <span className="card-ht">{filter === 'Utkast' ? 'Utkast' : 'Meldinger'}</span>
-            <span style={{ fontSize: 10, color: 'var(--t4)' }}>{filter === 'Utkast' ? visUtkast.length : vis.length}</span>
+            <span className="card-ht">{filter === 'Utkast' ? 'Utkast' : (valgtMappe ? mappeDisplayName(valgtMappe) : 'Meldinger')}</span>
+            <span style={{ fontSize: 10, color: 'var(--t4)' }}>{filter === 'Utkast' ? visUtkast.length : visTråder.length}</span>
           </div>
           <div className="inbox-list-body">
             {filter === 'Utkast' ? (
@@ -2013,6 +3893,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                       key={u.id}
                       className={`inbox-item draft${valgtUtkast?.id === u.id ? ' on' : ''}`}
                       onClick={() => setValgtUtkast(u)}
+                      onContextMenu={(e) => showDraftContextMenu(e, u)}
                     >
                       <div className="inbox-item-top">
                         <div className="inbox-item-from">{u.to ? `Til ${u.to}` : '(Ingen mottaker)'}</div>
@@ -2027,22 +3908,43 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
               </>
             ) : (
               <>
-                {vis.length === 0 && <div className="inbox-empty">Ingen e-poster i denne visningen.</div>}
-                {vis.map(function (e) {
+                {lasterEpost && visTråder.length === 0 && (
+                  <div className="inbox-empty">Laster e-poster…</div>
+                )}
+                {!lasterEpost && visTråder.length === 0 && (
+                  <div className="inbox-empty">Ingen e-poster i denne mappen.</div>
+                )}
+                {visTråder.map(function (tråd) {
+                  const e = tråd.latest;
+                  const statusColor = e.status ? (colors[e.status] || '#6B7280') : null;
+                  const unread = tråd.messages.some(function (m) { return m.retning === 'inn' && !m.lest; });
                   return (
                     <div
-                      key={e.id}
-                      className={`inbox-item${valgt?.id === e.id ? ' on' : ''}${e.retning === 'inn' && !e.lest ? ' unread' : ''}`}
+                      key={tråd.threadId}
+                      className={`inbox-item${valgt?.id === e.id ? ' on' : ''}${unread ? ' unread' : ''}${e.status ? ' has-status' : ''}`}
+                      style={statusColor ? { borderLeft: `3px solid ${statusColor}` } : undefined}
                       onClick={() => openMail(e)}
+                      onContextMenu={(ev) => showMailContextMenu(ev, e)}
                     >
                       <div className="inbox-item-top">
                         <div className="inbox-item-from">
                           {e.retning === 'ut' ? `Til ${e.tilEpost}` : (e.fraNavn || e.fraEpost || 'Ukjent')}
+                          {tråd.count > 1 && <span className="inbox-thread-count">{tråd.count}</span>}
                         </div>
                         <div className="inbox-item-date">{e.dato}</div>
                       </div>
                       {e.kontoNavn && <div className="inbox-konto-tag">{e.kontoNavn}</div>}
-                      <div className="inbox-item-subj">{e.emne}</div>
+                      <div className="inbox-item-subj">
+                        {e.flagged ? '★ ' : ''}{e.emne}
+                        {(e.vedleggCount > 0 || (e.vedlegg && e.vedlegg.length)) && <span className="inbox-attach-badge">📎</span>}
+                      </div>
+                      <InboxMetaFields
+                        mail={e}
+                        lists={lists}
+                        colors={colors}
+                        onChange={updateEpostMeta}
+                        compact
+                      />
                       <div className="inbox-item-snippet">{e.innhold || e.innholdHtml || ''}</div>
                     </div>
                   );
@@ -2121,6 +4023,36 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                       ↩ Svar{hasReplyDraft(valgt.id) ? ' · utkast' : ''}
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="btn btn-g btn-sm"
+                    onClick={() => openForwardCompose(valgt)}
+                    disabled={!mailStatus.smtpConfigured}
+                  >
+                    ↪ Videresend
+                  </button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => updateEpostMeta(valgt.id, { flagged: !valgt.flagged }, valgt.flagged ? 'Stjerne fjernet ✓' : 'Merket med stjerne ✓')}>
+                    {valgt.flagged ? '★ Fjern stjerne' : '☆ Stjerne'}
+                  </button>
+                  {!valgt.lest && (
+                    <button type="button" className="btn btn-g btn-sm" onClick={() => updateEpostMeta(valgt.id, { lest: true }, 'Markert som lest ✓')}>Markér lest</button>
+                  )}
+                  {mapper.filter(function (m) { return m.id !== valgt.mappeId; }).length > 0 && (
+                    <select
+                      className="inbox-meta-select"
+                      defaultValue=""
+                      onChange={function (e) {
+                        if (e.target.value) flyttValgtEpost(Number(e.target.value));
+                        e.target.value = '';
+                      }}
+                    >
+                      <option value="">Flytt til…</option>
+                      {mapper.filter(function (m) { return m.id !== valgt.mappeId; }).map(function (m) {
+                        return <option key={m.id} value={m.id}>{mappeDisplayName(m)}</option>;
+                      })}
+                    </select>
+                  )}
+                  <button type="button" className="btn btn-g btn-sm" onClick={slettValgtEpost}>Slett</button>
                 </div>
               </div>
               <div className="inbox-detail-body">
@@ -2129,6 +4061,24 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                   <div><strong>Til:</strong> {valgt.tilEpost || valgt.kontoEpost || '—'}</div>
                   {valgt.kontoNavn && <div><strong>Konto:</strong> {valgt.kontoNavn} ({valgt.kontoEpost})</div>}
                 </div>
+
+                <div className="inbox-behavior">
+                  <div className="modal-sec">Merking</div>
+                  <InboxMetaFields
+                    mail={valgt}
+                    lists={lists}
+                    colors={colors}
+                    onChange={(id, patch) => updateEpostMeta(id, patch, 'Lagret ✓')}
+                    stopClick={false}
+                  />
+                  {(valgt.status || valgt.ansvarlig) && (
+                    <div className="inbox-item-tags" style={{ marginTop: 10 }}>
+                      {valgt.status && <Badge s={valgt.status} colors={colors} />}
+                      {valgt.ansvarlig && <span className="tag">{valgt.ansvarlig}</span>}
+                    </div>
+                  )}
+                </div>
+
                 <div className="inbox-body">
                   {valgt.innholdHtml ? (
                     <div className="inbox-body--html" dangerouslySetInnerHTML={{ __html: valgt.innholdHtml }} />
@@ -2136,6 +4086,30 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                     valgt.innhold || '(Tom melding)'
                   )}
                 </div>
+
+                {!!(valgt.vedlegg && valgt.vedlegg.length) && (
+                  <div className="inbox-attachments">
+                    <div className="modal-sec">Vedlegg</div>
+                    <div className="inbox-attachments-list">
+                      {valgt.vedlegg.map(function (v) {
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            className="inbox-attachment-link"
+                            onClick={function () {
+                              downloadEpostVedlegg(valgt.id, v.id, v.filnavn).catch(function (err) {
+                                visTost(err.message || 'Kunne ikke laste ned ✗');
+                              });
+                            }}
+                          >
+                            📎 {v.filnavn} ({Math.max(1, Math.round(v.sizeBytes / 1024))} KB)
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {valgt.retning === 'inn' && (
                   <div className="inbox-reply-hint">
@@ -2148,32 +4122,553 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
           )}
         </div>
       </div>
+      </div>
 
       {composeOpen && (
         <ComposeMailModal
           kontoer={kontoer}
-          draftId={composeReplyTo ? null : composeDraftId}
+          draftId={composeReplyTo || composeForwardFrom ? null : composeDraftId}
           replyTo={composeReplyTo}
+          forwardFrom={composeForwardFrom}
           onClose={closeCompose}
           onDraftChange={handleDraftChange}
           visTost={visTost}
-          onSent={function (item) {
-            setEpost(function (prev) { return [item, ...prev]; });
-            setFilter('Utgående');
-            setValgt(item);
+          onSent={function (res) {
+            const item = res.item;
+            if (!item) return;
+            invalidateEpostCache(aktivKontoId);
+            patchListeEpost(function (prev) {
+              let next = [item, ...prev];
+              if (res.replyToItem) {
+                next = next.map(function (e) {
+                  return e.id === res.replyToItem.id ? res.replyToItem : e;
+                });
+              }
+              return next;
+            });
+            if (res.replyToItem) {
+              setValgt(function (prev) {
+                return prev?.id === res.replyToItem.id ? res.replyToItem : prev;
+              });
+            } else {
+              setValgt(item);
+            }
+            if (res.henvendelseItem && setHenv) {
+              setHenv(function (prev) {
+                return prev.map(function (h) {
+                  return h.id === res.henvendelseItem.id ? res.henvendelseItem : h;
+                });
+              });
+            }
+            setFilter('Meldinger');
             refreshStats();
             loadUtkast();
+            reloadInnboks(valgtMappeId, aktivKontoId).catch(function () { /* ignore */ });
           }}
         />
       )}
+
+      <InboxContextMenu
+        menu={contextMenu}
+        mapper={mapper}
+        mailStatus={mailStatus}
+        onClose={() => setContextMenu(null)}
+        onAction={handleContextMenuAction}
+      />
     </>
   );
 }
 
+// ─── KUNDER ──────────────────────────────────────────────────────────────────
+function kundeLabel(k) {
+  if (!k) return '—';
+  const extra = k.epost || k.tlf || '';
+  return extra ? `${k.navn} (${extra})` : k.navn;
+}
+
+function BilKunderVelger({ kundeIds, kunder, onChange, setModal, label = 'Kunder' }) {
+  const ids = Array.isArray(kundeIds) ? kundeIds : (kundeIds ? [kundeIds] : []);
+  const valgte = ids.map(function (id) {
+    return (kunder || []).find(function (k) { return k.id === id; });
+  }).filter(Boolean);
+  const tilgjengelige = (kunder || []).filter(function (k) { return !ids.includes(k.id); });
+
+  const leggTil = function (id) {
+    if (!id || ids.includes(id)) return;
+    onChange([...ids, id]);
+  };
+
+  const fjern = function (id) {
+    onChange(ids.filter(function (x) { return x !== id; }));
+  };
+
+  return (
+    <div className="gap">
+      <div className="fl">{label}</div>
+      <div className="bil-kunder-list">
+        {valgte.length === 0 && (
+          <span style={{ fontSize: 11, color: 'var(--t4)' }}>Ingen kunder koblet til bilen</span>
+        )}
+        {valgte.map(function (k) {
+          return (
+            <span className="bil-kunde-tag" key={k.id}>
+              <button
+                type="button"
+                className="bil-kunde-tag__navn"
+                onClick={function () { if (setModal) setModal({ t: 'visKunde', d: k }); }}
+              >
+                {k.navn}
+              </button>
+              <button type="button" className="bil-kunde-tag__fjern" onClick={function () { fjern(k.id); }} aria-label="Fjern kunde">
+                ×
+              </button>
+            </span>
+          );
+        })}
+      </div>
+      {tilgjengelige.length > 0 && (
+        <select
+          value=""
+          onChange={function (e) {
+            const id = Number(e.target.value);
+            if (id) leggTil(id);
+            e.target.value = '';
+          }}
+        >
+          <option value="">+ Legg til kunde</option>
+          {tilgjengelige.map(function (k) {
+            return <option key={k.id} value={k.id}>{kundeLabel(k)}</option>;
+          })}
+        </select>
+      )}
+    </div>
+  );
+}
+
+function KundeVelger({ kundeId, kunder, onChange, setModal, label = 'Kunde' }) {
+  const valgt = (kunder || []).find(function (k) { return k.id === kundeId; });
+  return (
+    <div className="gap">
+      <div className="fl">{label}</div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select
+          style={{ flex: 1, minWidth: 180 }}
+          value={kundeId || ''}
+          onChange={function (e) { onChange(e.target.value ? Number(e.target.value) : null); }}
+        >
+          <option value="">Ingen kunde</option>
+          {(kunder || []).map(function (k) {
+            return <option key={k.id} value={k.id}>{kundeLabel(k)}</option>;
+          })}
+        </select>
+        {valgt && setModal && (
+          <button type="button" className="btn btn-g btn-xs" onClick={function () { setModal({ t: 'visKunde', d: valgt }); }}>
+            Profil
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KunderView({ kunder, setModal, visTost }) {
+  const [q, setQ] = useState('');
+  const [sokResultat, setSokResultat] = useState(null);
+  const [laster, setLaster] = useState(false);
+
+  useEffect(function () {
+    const term = q.trim();
+    if (!term) {
+      setSokResultat(null);
+      return;
+    }
+    const t = setTimeout(function () {
+      setLaster(true);
+      getKunder(term)
+        .then(function (res) { setSokResultat(res.items || []); })
+        .catch(function () { visTost('Søk feilet ✗'); })
+        .finally(function () { setLaster(false); });
+    }, 250);
+    return function () { clearTimeout(t); };
+  }, [q, visTost]);
+
+  const vis = sokResultat != null ? sokResultat : kunder;
+
+  return (
+    <>
+      <div className="ph">
+        <div>
+          <div className="ph-title">Kunder</div>
+          <div className="ph-sub">{kunder.length} kunder i databasen</div>
+        </div>
+        <button type="button" className="btn btn-p" onClick={function () { setModal({ t: 'nyKunde' }); }}>
+          + Ny kunde
+        </button>
+      </div>
+      <div style={{ marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          style={{ maxWidth: 320 }}
+          placeholder="Søk navn, e-post eller telefon..."
+          value={q}
+          onChange={function (e) { setQ(e.target.value); }}
+        />
+        {laster && <span style={{ fontSize: 11, color: 'var(--t4)' }}>Søker…</span>}
+      </div>
+      <div className="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Navn</th>
+              <th>Kontakt</th>
+              <th>Type</th>
+              <th>Kilde</th>
+              <th>Aktivitet</th>
+              <th>Opprettet</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {vis.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: 'var(--t4)', padding: 24 }}>
+                  Ingen kunder funnet.
+                </td>
+              </tr>
+            )}
+            {vis.map(function (k) {
+              const stats = k.stats || {};
+              const aktivitet = (stats.henvendelser || 0) + (stats.innbytte || 0) + (stats.eposter || 0)
+                + (stats.kalender || 0) + (stats.biler || 0);
+              return (
+                <tr key={k.id}>
+                  <td>
+                    <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{k.navn}</div>
+                    {k.organisasjonsnummer && (
+                      <div style={{ fontSize: 10, color: 'var(--t4)' }}>Org.nr {k.organisasjonsnummer}</div>
+                    )}
+                  </td>
+                  <td>
+                    <div style={{ fontSize: 11 }}>{k.epost || '—'}</div>
+                    <div style={{ fontSize: 10, color: 'var(--t4)' }}>{k.tlf || '—'}</div>
+                  </td>
+                  <td><span className="tag">{k.type || 'Privat'}</span></td>
+                  <td><span className="tag">{k.kilde || 'Manuell'}</span></td>
+                  <td style={{ fontSize: 11 }}>{aktivitet} koblinger</td>
+                  <td style={{ fontSize: 10, color: 'var(--t4)', whiteSpace: 'nowrap' }}>{k.dato}</td>
+                  <td>
+                    <button type="button" className="btn btn-p btn-xs" onClick={function () { setModal({ t: 'visKunde', d: k }); }}>
+                      Åpne
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function NyKundeModal({ onClose, onSave }) {
+  const [f, setF] = useState({
+    navn: '',
+    epost: '',
+    tlf: '',
+    adresse: '',
+    postnr: '',
+    poststed: '',
+    organisasjonsnummer: '',
+    type: 'Privat',
+    notater: ''
+  });
+  const [err, setErr] = useState('');
+  const s = function (k, v) { setF(function (p) { return { ...p, [k]: v }; }); };
+
+  const lagre = function () {
+    if (!f.navn.trim()) {
+      setErr('Navn er påkrevd.');
+      return;
+    }
+    setErr('');
+    onSave(f);
+  };
+
+  return (
+    <div className="ov" onClick={onClose}>
+      <div className="modal sm" onClick={function (e) { e.stopPropagation(); }}>
+        <div className="modal-title">Ny kunde</div>
+        <div><div className="fl">Navn *</div><input value={f.navn} onChange={function (e) { s('navn', e.target.value); }} /></div>
+        <div className="form-row gap">
+          <div><div className="fl">E-post</div><input value={f.epost} onChange={function (e) { s('epost', e.target.value); }} /></div>
+          <div><div className="fl">Telefon</div><input value={f.tlf} onChange={function (e) { s('tlf', e.target.value); }} /></div>
+        </div>
+        <div className="form-row gap">
+          <div><div className="fl">Type</div>
+            <select value={f.type} onChange={function (e) { s('type', e.target.value); }}>
+              <option value="Privat">Privat</option>
+              <option value="Bedrift">Bedrift</option>
+            </select>
+          </div>
+          <div><div className="fl">Org.nr</div><input value={f.organisasjonsnummer} onChange={function (e) { s('organisasjonsnummer', e.target.value); }} /></div>
+        </div>
+        <div><div className="fl">Adresse</div><input value={f.adresse} onChange={function (e) { s('adresse', e.target.value); }} /></div>
+        <div className="form-row gap">
+          <div><div className="fl">Postnr</div><input value={f.postnr} onChange={function (e) { s('postnr', e.target.value); }} /></div>
+          <div><div className="fl">Poststed</div><input value={f.poststed} onChange={function (e) { s('poststed', e.target.value); }} /></div>
+        </div>
+        <div className="gap"><div className="fl">Notater</div><textarea rows={2} value={f.notater} onChange={function (e) { s('notater', e.target.value); }} /></div>
+        {err && <div className="login-err" style={{ marginTop: 10 }}>{err}</div>}
+        <div className="modal-footer">
+          <button type="button" className="btn btn-p" onClick={lagre}>Opprett</button>
+          <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KundeModal({ data, onClose, updateKunde, deleteKunde, setModal, visTost, lists }) {
+  const [k, setK] = useState(data);
+  const [aktivitet, setAktivitet] = useState(null);
+  const [laster, setLaster] = useState(true);
+  const [tab, setTab] = useState('info');
+
+  useEffect(function () {
+    setK(data);
+    setLaster(true);
+    getKundeAktivitet(data.id)
+      .then(function (res) { setAktivitet(res.aktivitet || {}); })
+      .catch(function () { visTost('Kunne ikke laste aktivitet ✗'); })
+      .finally(function () { setLaster(false); });
+  }, [data.id]);
+
+  const opp = function (patch, msg) {
+    setK(function (prev) {
+      updateKunde(prev.id, patch, msg);
+      return { ...prev, ...patch };
+    });
+  };
+
+  const slett = async function () {
+    if (!window.confirm('Slette denne kunden permanent?')) return;
+    await deleteKunde(k.id);
+  };
+
+  const a = aktivitet || {};
+
+  return (
+    <div className="ov" onClick={onClose}>
+      <div className="modal lg" onClick={function (e) { e.stopPropagation(); }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <div>
+            <div className="modal-title">{k.navn}</div>
+            <div style={{ fontSize: 11, color: 'var(--t4)' }}>
+              Kunde siden {k.dato} · {k.kilde || 'Manuell'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" className="btn btn-red btn-sm" onClick={slett}>Slett</button>
+          </div>
+        </div>
+
+        <div className="henv-filters" style={{ marginBottom: 16 }}>
+          {['info', 'henvendelser', 'innbytte', 'eposter', 'kalender', 'biler'].map(function (id) {
+            const labels = {
+              info: 'Profil',
+              henvendelser: `Henvendelser (${(a.henvendelser || []).length})`,
+              innbytte: `Innbytte (${(a.innbytte || []).length})`,
+              eposter: `E-post (${(a.eposter || []).length})`,
+              kalender: `Kalender (${(a.kalender || []).length})`,
+              biler: `Biler (${(a.biler || []).length})`
+            };
+            return (
+              <button
+                key={id}
+                type="button"
+                className="henv-filter"
+                style={tab === id
+                  ? { background: 'var(--accl)', color: 'var(--acc2)', border: '1px solid rgba(25,186,96,.25)' }
+                  : { background: 'var(--s1)', color: 'var(--t3)', border: '1px solid var(--b2)' }}
+                onClick={function () { setTab(id); }}
+              >
+                {labels[id]}
+              </button>
+            );
+          })}
+        </div>
+
+        {laster && tab !== 'info' && (
+          <div style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Laster…</div>
+        )}
+
+        {tab === 'info' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div>
+              <div className="modal-sec">Kontaktinformasjon</div>
+              <div><div className="fl">Navn</div><input value={k.navn || ''} onChange={function (e) { opp({ navn: e.target.value }); }} /></div>
+              <div className="form-row gap">
+                <div><div className="fl">E-post</div><input value={k.epost || ''} onChange={function (e) { opp({ epost: e.target.value }); }} /></div>
+                <div><div className="fl">Telefon</div><input value={k.tlf || ''} onChange={function (e) { opp({ tlf: e.target.value }); }} /></div>
+              </div>
+              <div className="form-row gap">
+                <div><div className="fl">Type</div>
+                  <select value={k.type || 'Privat'} onChange={function (e) { opp({ type: e.target.value }, 'Type oppdatert ✓'); }}>
+                    <option value="Privat">Privat</option>
+                    <option value="Bedrift">Bedrift</option>
+                  </select>
+                </div>
+                <div><div className="fl">Org.nr</div><input value={k.organisasjonsnummer || ''} onChange={function (e) { opp({ organisasjonsnummer: e.target.value }); }} /></div>
+              </div>
+            </div>
+            <div>
+              <div className="modal-sec">Adresse</div>
+              <div><div className="fl">Gateadresse</div><input value={k.adresse || ''} onChange={function (e) { opp({ adresse: e.target.value }); }} /></div>
+              <div className="form-row gap">
+                <div><div className="fl">Postnr</div><input value={k.postnr || ''} onChange={function (e) { opp({ postnr: e.target.value }); }} /></div>
+                <div><div className="fl">Poststed</div><input value={k.poststed || ''} onChange={function (e) { opp({ poststed: e.target.value }); }} /></div>
+              </div>
+              <div className="modal-sec">Notater</div>
+              <textarea rows={4} value={k.notater || ''} onChange={function (e) { opp({ notater: e.target.value }); }} />
+            </div>
+          </div>
+        )}
+
+        {tab === 'henvendelser' && !laster && (
+          <div className="card" style={{ margin: 0 }}>
+            <table>
+              <thead><tr><th>Emne</th><th>Status</th><th>Dato</th><th></th></tr></thead>
+              <tbody>
+                {(a.henvendelser || []).map(function (h) {
+                  return (
+                    <tr key={h.id}>
+                      <td>{h.emne}</td>
+                      <td><Badge s={h.status} colors={lists.henvStatusFarger} /></td>
+                      <td style={{ fontSize: 10, color: 'var(--t4)' }}>{h.dato}</td>
+                      <td><button type="button" className="btn btn-p btn-xs" onClick={function () { setModal({ t: 'visHenv', d: h }); }}>Åpne</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === 'innbytte' && !laster && (
+          <div className="card" style={{ margin: 0 }}>
+            <table>
+              <thead><tr><th>Kjøretøy</th><th>Status</th><th>Dato</th><th></th></tr></thead>
+              <tbody>
+                {(a.innbytte || []).map(function (i) {
+                  return (
+                    <tr key={i.id}>
+                      <td>{i.merke} {i.modell} ({i.reg})</td>
+                      <td><Badge s={i.status} colors={lists.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER} /></td>
+                      <td style={{ fontSize: 10, color: 'var(--t4)' }}>{i.dato}</td>
+                      <td><button type="button" className="btn btn-p btn-xs" onClick={function () { setModal({ t: 'visInb', d: i }); }}>Åpne</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === 'eposter' && !laster && (
+          <div className="card" style={{ margin: 0 }}>
+            <table>
+              <thead><tr><th>Emne</th><th>Retning</th><th>Dato</th></tr></thead>
+              <tbody>
+                {(a.eposter || []).map(function (e) {
+                  return (
+                    <tr key={e.id}>
+                      <td>{e.emne}</td>
+                      <td><span className="tag">{e.retning === 'ut' ? 'Ut' : 'Inn'}</span></td>
+                      <td style={{ fontSize: 10, color: 'var(--t4)' }}>{e.dato}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === 'kalender' && !laster && (
+          <div className="card" style={{ margin: 0 }}>
+            <table>
+              <thead><tr><th>Avtale</th><th>Type</th><th>Dato</th><th></th></tr></thead>
+              <tbody>
+                {(a.kalender || []).map(function (ev) {
+                  return (
+                    <tr key={ev.id}>
+                      <td>{ev.tittel}</td>
+                      <td><span className="tag">{ev.type}</span></td>
+                      <td style={{ fontSize: 10, color: 'var(--t4)' }}>{ev.dato} {ev.tid}</td>
+                      <td><button type="button" className="btn btn-p btn-xs" onClick={function () { setModal({ t: 'visKal', d: ev }); }}>Åpne</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === 'biler' && !laster && (
+          <div className="card" style={{ margin: 0 }}>
+            <table>
+              <thead><tr><th>Bil</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                {(a.biler || []).map(function (b) {
+                  return (
+                    <tr key={b.id}>
+                      <td>{b.reg} – {b.merke} {b.modell}</td>
+                      <td><Badge s={b.status} /></td>
+                      <td><button type="button" className="btn btn-p btn-xs" onClick={function () { setModal({ t: 'visBil', d: b }); }}>Åpne</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="modal-footer">
+          <button type="button" className="btn btn-p" onClick={onClose}>Lukk</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── HENVENDELSER ────────────────────────────────────────────────────────────
-function HenvendelserView({ henv, setModal, updateHenv, visTost, lists }) {
+function HenvStatusFilter({ label, active, color, onClick }) {
+  let style;
+  if (active) {
+    style = label === 'Alle'
+      ? { background: 'var(--accl)', color: 'var(--acc2)', border: '1px solid rgba(25,186,96,.25)' }
+      : statusBadgeStyle(label, { [label]: color });
+  } else {
+    style = { background: 'var(--s1)', color: 'var(--t3)', border: '1px solid var(--b2)' };
+  }
+
+  return (
+    <button type="button" className="henv-filter" style={style} onClick={onClick}>
+      {label}
+    </button>
+  );
+}
+
+function HenvendelserView({ henv, setModal, updateHenv, deleteHenv, lists }) {
   const [filter, setFilter] = useState('Alle');
   const vis = filter === 'Alle' ? henv : henv.filter(h => h.status === filter);
+  const colors = lists.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER;
+
+  const slett = async (h) => {
+    const ok = await deleteHenv(h.id);
+    if (ok && filter !== 'Alle' && !henv.filter(item => item.id !== h.id).some(item => item.status === filter)) {
+      setFilter('Alle');
+    }
+  };
 
   return (
     <>
@@ -2183,10 +4678,24 @@ function HenvendelserView({ henv, setModal, updateHenv, visTost, lists }) {
           <div className="ph-sub">{henv.filter(h => h.status === 'Ny').length} nye · {henv.length} totalt</div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {['Alle', ...lists.henvStatuser].map(s => (
-          <button key={s} type="button" className={`btn btn-sm ${filter === s ? 'btn-p' : 'btn-g'}`} onClick={() => setFilter(s)}>{s}</button>
-        ))}
+      <div className="henv-filters">
+        <HenvStatusFilter
+          label="Alle"
+          active={filter === 'Alle'}
+          color="var(--acc)"
+          onClick={() => setFilter('Alle')}
+        />
+        {lists.henvStatuser.map(function (s) {
+          return (
+            <HenvStatusFilter
+              key={s}
+              label={s}
+              active={filter === s}
+              color={colors[s] || '#6B7280'}
+              onClick={() => setFilter(s)}
+            />
+          );
+        })}
       </div>
       <div className="card">
         <table>
@@ -2204,7 +4713,7 @@ function HenvendelserView({ henv, setModal, updateHenv, visTost, lists }) {
                 <td><span className="tag">{h.bilRef || '—'}</span></td>
                 <td><span className="tag">{h.kilde}</span></td>
                 <td style={{ fontSize: 10, color: 'var(--t4)', whiteSpace: 'nowrap' }}>{h.dato}</td>
-                <td><Badge s={h.status} /></td>
+                <td><Badge s={h.status} colors={colors} /></td>
                 <td style={{ fontSize: 11 }}>{h.ansvarlig || <span style={{ color: 'var(--t4)' }}>Ikke tildelt</span>}</td>
                 <td>
                   <div className="row-act">
@@ -2218,6 +4727,7 @@ function HenvendelserView({ henv, setModal, updateHenv, visTost, lists }) {
                         Tildel meg
                       </button>
                     )}
+                    <button type="button" className="btn btn-red btn-xs" onClick={() => slett(h)}>Slett</button>
                   </div>
                 </td>
               </tr>
@@ -2229,11 +4739,11 @@ function HenvendelserView({ henv, setModal, updateHenv, visTost, lists }) {
   );
 }
 
-function HenvModal({ data, onClose, updateHenv, onSendSvar, visTost, lists, mailStatus }) {
+function HenvModal({ data, onClose, updateHenv, deleteHenv, onSendSvar, visTost, lists, mailStatus, currentUser, kunder, setModal }) {
   const [h, setH] = useState(data);
   const [svar, setSvar] = useState(h.svar || '');
-  const [nyKom, setNyKom] = useState('');
   const [sending, setSending] = useState(false);
+  const colors = lists.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER;
   const sendKonto = (mailStatus?.kontoer || []).find(function (k) { return k.standard; })
     || (mailStatus?.kontoer || [])[0];
 
@@ -2249,22 +4759,20 @@ function HenvModal({ data, onClose, updateHenv, onSendSvar, visTost, lists, mail
       setSending(true);
       try {
         const updated = await onSendSvar(h.id, svar);
-        if (updated) setH(updated);
+        if (updated) {
+          setH({
+            ...updated,
+            ansvarlig: updated.ansvarlig || currentUser?.name || currentUser?.username || h.ansvarlig || ''
+          });
+        }
       } finally {
         setSending(false);
       }
       return;
     }
-    const ny = { ...h, svar, status: 'Besvart' };
+    const ny = { ...h, svar, status: 'Besvart', ansvarlig: currentUser?.name || currentUser?.username || h.ansvarlig || '' };
     setH(ny);
-    updateHenv(h.id, { svar, status: 'Besvart' }, 'Svar registrert ✓');
-  };
-
-  const leggKom = () => {
-    if (!nyKom.trim()) return;
-    const kommentarer = [...(h.kommentarer || []), `${new Date().toLocaleString('nb-NO')}: ${nyKom}`];
-    opp('kommentarer', kommentarer);
-    setNyKom('');
+    updateHenv(h.id, { svar, status: 'Besvart', ansvarlig: currentUser?.name || currentUser?.username || '' }, 'Svar registrert ✓');
   };
 
   return (
@@ -2279,29 +4787,42 @@ function HenvModal({ data, onClose, updateHenv, onSendSvar, visTost, lists, mail
               <div><div className="fl">Telefon</div><div className="fv">{h.tlf}</div></div>
             </div>
             <div className="gap"><div className="fl">E-post</div><div className="fv">{h.epost}</div></div>
+            <KundeVelger
+              kundeId={h.kundeId}
+              kunder={kunder}
+              setModal={setModal}
+              onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
+            />
             <div className="gap"><div className="fl">Tilknyttet bil</div><span className="tag">{h.bilRef || '—'}</span></div>
             <div className="modal-sec">Mottatt melding</div>
             <div style={{ background: 'var(--s2)', borderRadius: 8, padding: 12, fontSize: 12, color: 'var(--t2)', lineHeight: 1.65 }}>{h.melding}</div>
-            <div className="modal-sec">Interne kommentarer</div>
-            {(h.kommentarer || []).map((k, i) => <div className="logg-item" key={i}><div className="logg-tekst">{k}</div></div>)}
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <input placeholder="Intern kommentar..." value={nyKom} onChange={e => setNyKom(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggKom()} />
-              <button type="button" className="btn btn-g btn-sm" onClick={leggKom}>+</button>
-            </div>
+            <InternKommentarerSeksjon
+              kommentarer={h.kommentarer}
+              currentUser={currentUser}
+              onChange={function (next, msg) { opp('kommentarer', next, msg); }}
+              marginBottom={0}
+            />
           </div>
           <div>
             <div className="modal-sec">Behandling</div>
             <div>
               <div className="fl">Status</div>
               <select value={h.status} onChange={e => opp('status', e.target.value)}>
-                {lists.henvStatuser.map(s => <option key={s}>{s}</option>)}
+                {lists.henvStatuser.map(function (s) {
+                  return (
+                    <option key={s} value={s}>{s}</option>
+                  );
+                })}
               </select>
+              <div style={{ marginTop: 8 }}>
+                <Badge s={h.status} colors={colors} />
+              </div>
             </div>
             <div className="gap">
               <div className="fl">Ansvarlig</div>
               <select value={h.ansvarlig || ''} onChange={e => opp('ansvarlig', e.target.value)}>
                 <option value="">Ikke tildelt</option>
-                {lists.ansatte.map(a => <option key={a}>{a}</option>)}
+                {ansvarligSelectOptions(lists, h.ansvarlig).map(a => <option key={a}>{a}</option>)}
               </select>
             </div>
             <div className="modal-sec">Svar til kunde</div>
@@ -2325,6 +4846,7 @@ function HenvModal({ data, onClose, updateHenv, onSendSvar, visTost, lists, mail
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
+          <button type="button" className="btn btn-red" onClick={() => deleteHenv(h.id)}>Slett henvendelse</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
       </div>
@@ -2333,7 +4855,241 @@ function HenvModal({ data, onClose, updateHenv, onSendSvar, visTost, lists, mail
 }
 
 // ─── INNBYTTE ────────────────────────────────────────────────────────────────
-function InnbytteView({ innbytte, setModal, lists }) {
+function isIngestImageFile(file) {
+  const type = String(file?.type || '').toLowerCase();
+  if (type.startsWith('image/')) return true;
+  const name = String(file?.name || file?.path || '').toLowerCase();
+  return /\.(jpe?g|png|gif|webp|heic|heif|bmp|avif)$/i.test(name);
+}
+
+function InfoGrid({ items }) {
+  const visible = (items || []).filter(function (item) {
+    const value = item[1];
+    return value != null && String(value).trim() !== '' && value !== '—';
+  });
+
+  if (!visible.length) {
+    return <div className="fv" style={{ fontSize: 12, color: 'var(--t4)' }}>—</div>;
+  }
+
+  return (
+    <div className="info-grid">
+      {visible.map(function (item) {
+        return (
+          <div key={item[0]} className="info-grid__item">
+            <div className="fl">{item[0]}</div>
+            <div className="fv">{item[1]}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ModalTabs({ tabs, active, onChange }) {
+  return (
+    <div className="modal-tabs" role="tablist" aria-label="Visning">
+      {tabs.map(function (tab) {
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={active === tab.id}
+            className={`modal-tabs__btn${active === tab.id ? ' is-active' : ''}`}
+            onClick={function () { onChange(tab.id); }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function InternKommentarerSeksjon({ kommentarer, currentUser, onChange, title, placeholder, marginBottom }) {
+  const [nyKom, setNyKom] = useState('');
+  const items = normalizeInternKommentarer(kommentarer);
+
+  const leggKom = () => {
+    if (!nyKom.trim()) return;
+    onChange([...items, createHenvKommentar(nyKom, currentUser)], 'Kommentar lagt til ✓');
+    setNyKom('');
+  };
+
+  const slettKom = (commentId) => {
+    const target = items.find(function (item) { return item.id === commentId; });
+    if (!target || !canDeleteHenvKommentar(target, currentUser)) return;
+    onChange(items.filter(function (item) { return item.id !== commentId; }), 'Kommentar slettet ✓');
+  };
+
+  return (
+    <>
+      <div className="modal-sec">{title || 'Interne kommentarer'}</div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--t4)', marginBottom: 8 }}>Ingen interne kommentarer ennå.</div>
+      ) : null}
+      {items.map(function (k) {
+        const kanSlette = canDeleteHenvKommentar(k, currentUser);
+        return (
+          <div className="logg-item logg-item--comment" key={k.id}>
+            <div className="logg-tekst">{k.text}</div>
+            <div className="logg-meta logg-meta--row">
+              <span>{k.userName}{formatKommentarDato(k.createdAt) ? ` · ${formatKommentarDato(k.createdAt)}` : ''}</span>
+              {kanSlette ? (
+                <button type="button" className="btn btn-red btn-xs" onClick={function () { slettKom(k.id); }}>
+                  Slett
+                </button>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, marginBottom: marginBottom ?? 16 }}>
+        <input
+          placeholder={placeholder || 'Intern kommentar...'}
+          value={nyKom}
+          onChange={e => setNyKom(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && leggKom()}
+        />
+        <button type="button" className="btn btn-g btn-sm" onClick={leggKom}>+</button>
+      </div>
+    </>
+  );
+}
+
+function IngestBilderSeksjon({ bilder }) {
+  const files = Array.isArray(bilder) ? bilder : [];
+
+  if (!files.length) {
+    return (
+      <>
+        <div className="modal-sec">Bilder fra kunde</div>
+        <div style={{ fontSize: 11, color: 'var(--t4)', marginBottom: 8 }}>Ingen bilder eller filer lastet opp.</div>
+      </>
+    );
+  }
+
+  const images = files.filter(isIngestImageFile);
+  const other = files.filter(function (file) { return !isIngestImageFile(file); });
+
+  return (
+    <>
+      <div className="modal-sec">Bilder fra kunde · {files.length}</div>
+      {images.length ? (
+        <div className="ingest-bilder-grid">
+          {images.map(function (file, index) {
+            const key = file.path || file.name || String(index);
+            return (
+              <a
+                key={key}
+                className="ingest-bilder-grid__item"
+                href={file.path}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={file.name || 'Bilde'}
+              >
+                <img src={file.path} alt={file.name || 'Opplastet bilde'} loading="lazy" />
+              </a>
+            );
+          })}
+        </div>
+      ) : null}
+      {other.map(function (file, index) {
+        const key = file.path || file.name || String(index);
+        return (
+          <div className="logg-item" key={key}>
+            <div className="logg-tekst">
+              <a href={file.path} target="_blank" rel="noopener noreferrer">{file.name || 'Fil'}</a>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function buildInnbytteIntroAvsnitt(inn, finnMeta) {
+  const kundeBil = innbytteKundeBil(inn);
+  const varBil = innbytteVarBil(inn, finnMeta);
+  return `Viser til innbytteskjema hvor du ønsker å bytte inn din ${kundeBil} med ${varBil}.`;
+}
+
+function buildInnbytteTilbudMelding(inn, tilbudKr, finnMeta) {
+  const pris = tilbudKr ? nok(tilbudKr) : '…';
+  return [
+    `Hei ${inn.navn || ''},`,
+    '',
+    buildInnbytteIntroAvsnitt(inn, finnMeta),
+    '',
+    `Vi er nærmere ${pris} for din bil i innbytte.`,
+    '',
+    'Ønsker du å avtale visning av vår bil?'
+  ].join('\n');
+}
+
+function innbytteKundeBil(inn) {
+  const bil = [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ');
+  if (bil && inn.reg) return `${bil} (${inn.reg})`;
+  return bil || inn.reg || 'bilen din';
+}
+
+function parseFinnItemId(input) {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  const urlMatch = s.match(/finn\.no\/mobility\/item\/(\d+)/i);
+  if (urlMatch) return urlMatch[1];
+  const digits = s.replace(/\D/g, '');
+  return digits.length >= 6 ? digits : null;
+}
+
+function finnItemUrl(id) {
+  return id ? `https://www.finn.no/mobility/item/${id}` : null;
+}
+
+function formatVarBilForEpost(finnMeta, rawFinn) {
+  const id = finnMeta?.id || parseFinnItemId(rawFinn);
+  const url = finnMeta?.url || finnItemUrl(id);
+  const navn = finnMeta?.title ? String(finnMeta.title).trim() : '';
+  if (navn && url) return `vår ${navn} (${url})`;
+  if (navn) return `vår ${navn}`;
+  if (url) return `vår bil (${url})`;
+  return 'vår bil';
+}
+
+function innbytteVarBil(inn, finnMeta) {
+  return formatVarBilForEpost(finnMeta, inn.onsketBil);
+}
+
+function buildInnbytteVisningMelding(inn, finnMeta) {
+  return [
+    `Hei ${inn.navn || ''},`,
+    '',
+    buildInnbytteIntroAvsnitt(inn, finnMeta),
+    '',
+    'Vi er nok ikke så langt unna hverandre på innbytteverdi av din bil. Kom gjerne innom for å titte på vår bil – faller den i smak blir vi enige.',
+    '',
+    'Ønsker du å avtale visning av vår bil?'
+  ].join('\n');
+}
+
+function InnbytteView({ innbytte, setModal, lists, visTost }) {
+  const [finnSokLasterId, setFinnSokLasterId] = useState(null);
+  const innbytteColors = lists?.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+
+  async function handleFinnMarkedsSok(inn) {
+    if (!canFinnMarkedsSok(inn) || finnSokLasterId != null) return;
+    setFinnSokLasterId(inn.id);
+    try {
+      const ok = await openFinnMarkedsSok(inn);
+      if (!ok) visTost('Fant ikke merke/modell på FINN – sjekk stavemåte ✗');
+    } catch (err) {
+      visTost((err?.message || 'Kunne ikke åpne FINN-markedssøk') + ' ✗');
+    } finally {
+      setFinnSokLasterId(null);
+    }
+  }
+
   return (
     <>
       <div className="ph">
@@ -2347,7 +5103,7 @@ function InnbytteView({ innbytte, setModal, lists }) {
         <code style={{ background: '#0000001A', padding: '1px 5px', borderRadius: 3 }}>POST /api/ingest/innbytte</code>
       </div>
       {innbytte.map(inn => (
-        <div className="inb-card" key={inn.id}>
+        <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, innbytteColors)}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{inn.navn}</div>
@@ -2356,7 +5112,18 @@ function InnbytteView({ innbytte, setModal, lists }) {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Badge s={inn.status} />
+              <Badge s={inn.status} colors={innbytteColors} />
+              <button
+                type="button"
+                className="btn btn-g btn-sm"
+                disabled={!canFinnMarkedsSok(inn) || finnSokLasterId === inn.id}
+                title={canFinnMarkedsSok(inn)
+                  ? `Filtrer ${finnMarkedsSokLabel(inn)} på FINN.no – pris lav til høy`
+                  : 'Mangler merke/modell på innbyttebilen'}
+                onClick={() => handleFinnMarkedsSok(inn)}
+              >
+                {finnSokLasterId === inn.id ? 'Åpner FINN…' : 'Sammenlign på FINN'}
+              </button>
               <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ t: 'visInb', d: inn })}>Behandle</button>
             </div>
           </div>
@@ -2378,10 +5145,506 @@ function InnbytteView({ innbytte, setModal, lists }) {
   );
 }
 
-function InbModal({ data, onClose, updateInnbytte, visTost, lists }) {
+function selgBilLabel(inn) {
+  return [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ') || 'bilen din';
+}
+
+function buildSelgBilTilbudMelding(inn, pris) {
+  const bil = selgBilLabel(inn);
+  const fornavn = String(inn.navn || '').trim().split(/\s+/)[0] || 'du';
+  const prisTekst = pris ? Number(pris).toLocaleString('nb-NO') : '…';
+  return [
+    `Hei ${fornavn},`,
+    '',
+    `Takk for henvendelsen om salg av ${bil}${inn.reg ? ' (' + inn.reg + ')' : ''}.`,
+    '',
+    `Vi kan tilby kr ${prisTekst} for direkte oppkjøp av bilen.`,
+    '',
+    'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale tid for gjennomgang.',
+    '',
+    'Med vennlig hilsen',
+    'X Bilsenter AS'
+  ].join('\n');
+}
+
+function buildSelgBilVisningMelding(inn) {
+  const bil = selgBilLabel(inn);
+  const fornavn = String(inn.navn || '').trim().split(/\s+/)[0] || 'du';
+  return [
+    `Hei ${fornavn},`,
+    '',
+    `Takk for henvendelsen om salg av ${bil}${inn.reg ? ' (' + inn.reg + ')' : ''}.`,
+    '',
+    'Vi er nok ikke så langt unna hverandre på pris. Kom gjerne innom så vi kan se på bilen sammen – da finner vi raskt ut om vi blir enige.',
+    '',
+    'Ønsker du å avtale tid for befaring?',
+    '',
+    'Med vennlig hilsen',
+    'X Bilsenter AS'
+  ].join('\n');
+}
+
+function SelgBilView({ selgBil, setModal, lists, visTost }) {
+  const [finnSokLasterId, setFinnSokLasterId] = useState(null);
+  const statusColors = lists?.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+
+  async function handleFinnMarkedsSok(inn) {
+    if (!canFinnMarkedsSok(inn) || finnSokLasterId != null) return;
+    setFinnSokLasterId(inn.id);
+    try {
+      const ok = await openFinnMarkedsSok(inn);
+      if (!ok) visTost('Fant ikke merke/modell på FINN – sjekk stavemåte ✗');
+    } catch (err) {
+      visTost((err?.message || 'Kunne ikke åpne FINN-markedssøk') + ' ✗');
+    } finally {
+      setFinnSokLasterId(null);
+    }
+  }
+
+  return (
+    <>
+      <div className="ph">
+        <div>
+          <div className="ph-title">Selg din bil</div>
+          <div className="ph-sub">Fra xbilsenter.no/selg-bil · {selgBil.filter(i => i.status === 'Ny').length} nye</div>
+        </div>
+      </div>
+      <div style={{ background: 'var(--orangel)', border: '1px solid #FDE68A', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 11, color: 'var(--orange)' }}>
+        <strong>Nettside-kobling:</strong> Nye oppkjøpsforespørsler fra xbilsenter.no nettside opprettes automatisk her via API. Skjemaet sender til{' '}
+        <code style={{ background: '#0000001A', padding: '1px 5px', borderRadius: 3 }}>POST /api/ingest/selg-bil/json</code>
+      </div>
+      {selgBil.map(inn => (
+        <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, statusColors)}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{inn.navn}</div>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>
+                {inn.merke} {inn.modell} {inn.aar} · {fmtKm(inn.km)} km · {inn.reg}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Badge s={inn.status} colors={statusColors} />
+              <button
+                type="button"
+                className="btn btn-g btn-sm"
+                disabled={!canFinnMarkedsSok(inn) || finnSokLasterId === inn.id}
+                title={canFinnMarkedsSok(inn)
+                  ? `Filtrer ${finnMarkedsSokLabel(inn)} på FINN.no – pris lav til høy`
+                  : 'Mangler merke/modell på bilen'}
+                onClick={() => handleFinnMarkedsSok(inn)}
+              >
+                {finnSokLasterId === inn.id ? 'Åpner FINN…' : 'Sammenlign på FINN'}
+              </button>
+              <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ t: 'visSelgBil', d: inn })}>Behandle</button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            {[['Forventning', inn.forventning || '—'], ['Tilstand', inn.tilstand], ['Tilbud', inn.tilbud ? nok(inn.tilbud) : 'Ikke gitt'], ['Ansvarlig', inn.ansvarlig || 'Ikke tildelt'], ['Dato', inn.dato]].map(([l, v]) => (
+              <div key={l}>
+                <div className="fl">{l}</div>
+                <div className="fv" style={{ fontSize: 12, color: l === 'Tilbud' && inn.tilbud ? 'var(--gold)' : 'var(--t2)' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          {inn.beskrivelse && <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 8, fontStyle: 'italic' }}>{inn.beskrivelse}</div>}
+        </div>
+      ))}
+      {selgBil.length === 0 && (
+        <div style={{ textAlign: 'center', color: 'var(--t4)', padding: 40, fontSize: 13 }}>Ingen oppkjøpsforespørsler ennå.</div>
+      )}
+    </>
+  );
+}
+
+function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbud, visTost, lists, mailStatus, currentUser, kunder, setModal }) {
   const [inn, setInn] = useState(data);
+  const [activeTab, setActiveTab] = useState('foresporsel');
+  const [svarType, setSvarType] = useState('tilbud');
   const [tilbud, setTilbud] = useState(inn.tilbud || '');
-  const [nyKom, setNyKom] = useState('');
+  const [finnSokLaster, setFinnSokLaster] = useState(false);
+  const [melding, setMelding] = useState(function () {
+    return buildSelgBilTilbudMelding(data, data.tilbud || '');
+  });
+  const [sending, setSending] = useState(false);
+  const sendKonto = (mailStatus?.kontoer || []).find(function (k) { return k.standard; })
+    || (mailStatus?.kontoer || [])[0];
+
+  useEffect(function () {
+    if (svarType === 'visning') {
+      setMelding(buildSelgBilVisningMelding(inn));
+    } else {
+      setMelding(buildSelgBilTilbudMelding(inn, tilbud));
+    }
+  }, [svarType, tilbud, inn]);
+
+  const setSvarModus = (type) => {
+    setSvarType(type);
+    setMelding(type === 'visning'
+      ? buildSelgBilVisningMelding(inn)
+      : buildSelgBilTilbudMelding(inn, tilbud));
+  };
+
+  const oppdaterMelding = () => {
+    setMelding(svarType === 'visning'
+      ? buildSelgBilVisningMelding(inn)
+      : buildSelgBilTilbudMelding(inn, tilbud));
+  };
+
+  const opp = (k, v, msg) => {
+    const ny = { ...inn, [k]: v };
+    setInn(ny);
+    updateSelgBil(inn.id, { [k]: v }, msg);
+  };
+
+  const sendSvar = async () => {
+    if (svarType === 'tilbud' && !String(tilbud || '').trim()) {
+      visTost('Skriv inn tilbudspris først ✗');
+      return;
+    }
+    if (!melding.trim()) {
+      visTost('Meldingen kan ikke være tom ✗');
+      return;
+    }
+    const nyStatus = svarType === 'visning'
+      ? resolveListStatus(lists.innbytteStatuser, 'Under vurdering')
+      : resolveListStatus(lists.innbytteStatuser, 'Tilbud sendt');
+    if (!mailStatus?.smtpConfigured) {
+      const ansvarlig = currentUser?.name || currentUser?.username || '';
+      const patch = { status: nyStatus, ansvarlig };
+      if (svarType === 'tilbud') patch.tilbud = String(tilbud).trim();
+      setInn({ ...inn, ...patch });
+      updateSelgBil(inn.id, patch,
+        svarType === 'visning' ? 'Befaring registrert (e-post ikke konfigurert) ✓' : 'Tilbud registrert (e-post ikke konfigurert) ✓');
+      return;
+    }
+    if (!onSendTilbud || sending) return;
+    setSending(true);
+    try {
+      const updated = await onSendTilbud(inn.id, {
+        type: svarType,
+        tilbud: svarType === 'tilbud' ? String(tilbud).trim() : undefined,
+        melding: melding.trim()
+      });
+      if (updated) {
+        const sender = currentUser?.name || currentUser?.username || '';
+        setInn({
+          ...updated,
+          status: updated.status || nyStatus,
+          ansvarlig: updated.ansvarlig || sender || inn.ansvarlig
+        });
+        if (updated.tilbud) setTilbud(updated.tilbud);
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const statusColors = lists?.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+  const kommentarCount = (inn.kommentarer || []).length;
+  const utstyr = Array.isArray(inn.utstyr) ? inn.utstyr : [];
+
+  return (
+    <div className="ov" onClick={onClose}>
+      <div className="modal xl inb-modal" onClick={e => e.stopPropagation()}>
+        <div className="inb-modal__head">
+          <div>
+            <div className="modal-title" style={{ marginBottom: 4 }}>
+              Oppkjøp · {inn.merke} {inn.modell} {inn.aar}
+            </div>
+            <div className="inb-modal__meta">
+              {inn.navn} · {inn.reg} · {fmtKm(inn.km)} km · mottatt {inn.dato}
+            </div>
+          </div>
+          <Badge s={inn.status} colors={statusColors} />
+        </div>
+
+        <div className="inb-modal__toolbar">
+          <div className="inb-modal__toolbar-fields">
+            <label className="inb-modal__field">
+              <span className="fl">Status</span>
+              <select value={inn.status} onChange={e => opp('status', e.target.value)}>
+                {lists.innbytteStatuser.map(s => <option key={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="inb-modal__field">
+              <span className="fl">Ansvarlig</span>
+              <select value={inn.ansvarlig || ''} onChange={e => opp('ansvarlig', e.target.value)}>
+                <option value="">Ikke tildelt</option>
+                {ansvarligSelectOptions(lists, inn.ansvarlig).map(a => <option key={a}>{a}</option>)}
+              </select>
+            </label>
+          </div>
+          <button
+            type="button"
+            className="btn btn-p btn-sm"
+            disabled={!canFinnMarkedsSok(inn) || finnSokLaster}
+            title="Åpner FINN.no filtrert på merke og modell, sortert pris lav til høy"
+            onClick={async function () {
+              if (!canFinnMarkedsSok(inn) || finnSokLaster) return;
+              setFinnSokLaster(true);
+              try {
+                const ok = await openFinnMarkedsSok(inn);
+                if (!ok) visTost('Fant ikke merke/modell på FINN – sjekk stavemåte ✗');
+              } catch (err) {
+                visTost((err?.message || 'Kunne ikke åpne FINN-markedssøk') + ' ✗');
+              } finally {
+                setFinnSokLaster(false);
+              }
+            }}
+          >
+            {finnSokLaster ? 'Åpner FINN…' : 'Sammenlign mot FINN'}
+          </button>
+        </div>
+
+        <ModalTabs
+          active={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { id: 'foresporsel', label: 'Forespørsel' },
+            { id: 'autosys', label: 'Autosys' },
+            { id: 'svar', label: 'Svar til kunde' },
+            { id: 'intern', label: kommentarCount ? `Intern · ${kommentarCount}` : 'Intern' }
+          ]}
+        />
+
+        <div className="inb-modal__body">
+          {activeTab === 'foresporsel' ? (
+            <div className="inb-modal__grid">
+              <section className="inb-modal__panel">
+                <div className="modal-sec">Kundens bil</div>
+                <InfoGrid items={[
+                  ['Registreringsnr.', inn.reg],
+                  ['Merke / modell', [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ')],
+                  ['Kilometerstand', inn.km ? `${fmtKm(inn.km)} km` : ''],
+                  ['Drivstoff', inn.drivstoff],
+                  ['Farge', inn.farge],
+                  ['Kjøretøytype', inn.kjoretoyType],
+                  ['Servicehistorikk', inn.servicehistorikk || inn.tilstand],
+                  ['Siste service', inn.sisteService],
+                  ['Sommerdekk', inn.sommerdekk],
+                  ['Vinterdekk', inn.vinterdekk]
+                ]} />
+                {utstyr.length ? (
+                  <div className="gap" style={{ marginTop: 12 }}>
+                    <div className="fl">Utstyr</div>
+                    <div className="tag-list">
+                      {utstyr.map(function (item) {
+                        return <span key={item} className="tag">{item}</span>;
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 12, lineHeight: 1.45 }}>
+                  {canFinnMarkedsSok(inn)
+                    ? <>FINN-markedssøk: {finnMarkedsSokLabel(inn)}{finnMarkedsSokFilterText(inn) ? ` (${finnMarkedsSokFilterText(inn)})` : ''} · pris lav → høy</>
+                    : 'Legg inn merke og modell for å sammenligne mot FINN.'}
+                </div>
+              </section>
+
+              <section className="inb-modal__panel">
+                <div className="modal-sec">Oppkjøp</div>
+                {inn.forventning ? (
+                  <div className="gap">
+                    <div className="fl">Kundens prisforventning</div>
+                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inn.forventning}</div>
+                  </div>
+                ) : (
+                  <div className="fv">Ingen prisforventning oppgitt.</div>
+                )}
+                {inn.tilbud ? (
+                  <div className="gap" style={{ marginTop: 14 }}>
+                    <div className="fl">Gitt tilbud</div>
+                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{nok(inn.tilbud)}</div>
+                  </div>
+                ) : null}
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 14, lineHeight: 1.45 }}>
+                  Direkte oppkjøp fra xbilsenter.no/selg-bil · vurder bilen mot markedet på FINN før du sender tilbud.
+                </div>
+              </section>
+
+              <section className="inb-modal__panel inb-modal__panel--full">
+                <div className="modal-sec">Fra kunden</div>
+                <div className="gap">
+                  <div className="fl">Beskrivelse / kommentar</div>
+                  <div className="inb-modal__quote">{inn.beskrivelse || '—'}</div>
+                </div>
+                <IngestBilderSeksjon bilder={inn.bilder} />
+
+                <div className="modal-sec">Kontakt</div>
+                <InfoGrid items={[
+                  ['Navn', inn.navn],
+                  ['Telefon', inn.tlf],
+                  ['E-post', inn.epost]
+                ]} />
+                <div style={{ marginTop: 12 }}>
+                  <KundeVelger
+                    kundeId={inn.kundeId}
+                    kunder={kunder}
+                    setModal={setModal}
+                    onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
+                  />
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {activeTab === 'autosys' ? (
+            <div className="inb-modal__panel">
+              <KjoretoyAutosysPanel regnr={inn.reg} active={activeTab === 'autosys'} />
+            </div>
+          ) : null}
+
+          {activeTab === 'svar' ? (
+            <div className="inb-modal__panel inb-modal__panel--svar">
+              <div className="view-toggle" role="group" aria-label="Svartype" style={{ marginBottom: 12 }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${svarType === 'visning' ? 'btn-p' : 'btn-g'}`}
+                  onClick={() => setSvarModus('visning')}
+                >
+                  Foreslå befaring
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${svarType === 'tilbud' ? 'btn-p' : 'btn-g'}`}
+                  onClick={() => setSvarModus('tilbud')}
+                >
+                  Send tilbud
+                </button>
+              </div>
+              {svarType === 'visning' ? (
+                <p className="inb-modal__hint">
+                  Når dere er nærme hverandre på pris – inviter kunden inn til befaring i stedet for å sende et konkret oppkjøpstilbud på e-post.
+                </p>
+              ) : (
+                <div className="gap" style={{ marginBottom: 10 }}>
+                  <div className="fl">Tilbudspris (kr)</div>
+                  <input type="number" placeholder="f.eks. 85000" value={tilbud} onChange={e => setTilbud(e.target.value)} />
+                </div>
+              )}
+              <div className="gap">
+                <div className="inb-modal__svar-head">
+                  <div className="fl" style={{ marginBottom: 0 }}>E-post til kunde</div>
+                  <button type="button" className="btn btn-g btn-sm" onClick={oppdaterMelding}>
+                    Oppdater tekst
+                  </button>
+                </div>
+                {!mailStatus?.smtpConfigured && (
+                  <div className="inb-modal__hint inb-modal__hint--warn">
+                    SMTP er ikke satt opp – svaret lagres kun i CRM.
+                  </div>
+                )}
+                <textarea
+                  rows={12}
+                  value={melding}
+                  onChange={e => setMelding(e.target.value)}
+                  placeholder="Skriv e-post til kunden..."
+                  style={{ marginTop: 6, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}
+                />
+                {sendKonto?.signatur && mailStatus?.smtpConfigured && (
+                  <SignaturePreview
+                    body={melding}
+                    signatur={sendKonto.signatur}
+                    label={`Signatur fra ${sendKonto.navn} legges til automatisk`}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="btn btn-p"
+                  style={{ marginTop: 10 }}
+                  onClick={sendSvar}
+                  disabled={sending || !melding.trim() || (svarType === 'tilbud' && !String(tilbud || '').trim())}
+                >
+                  {sending ? 'Sender…' : (
+                    mailStatus?.smtpConfigured
+                      ? (svarType === 'visning' ? 'Send invitasjon til befaring' : 'Send oppkjøpstilbud på e-post')
+                      : (svarType === 'visning' ? 'Lagre befaring' : 'Lagre tilbud')
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === 'intern' ? (
+            <div className="inb-modal__panel">
+              <InternKommentarerSeksjon
+                kommentarer={inn.kommentarer}
+                currentUser={currentUser}
+                onChange={function (next, msg) { opp('kommentarer', next, msg); }}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
+          <button type="button" className="btn btn-red" onClick={() => deleteSelgBil(inn.id)}>Slett forespørsel</button>
+          <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud, visTost, lists, mailStatus, currentUser, kunder, setModal }) {
+  const [inn, setInn] = useState(data);
+  const [activeTab, setActiveTab] = useState('foresporsel');
+  const [svarType, setSvarType] = useState('tilbud');
+  const [tilbud, setTilbud] = useState(inn.tilbud || '');
+  const [finnMeta, setFinnMeta] = useState(null);
+  const [finnLaster, setFinnLaster] = useState(false);
+  const [finnSokLaster, setFinnSokLaster] = useState(false);
+  const [melding, setMelding] = useState(function () {
+    return buildInnbytteTilbudMelding(data, data.tilbud || '', null);
+  });
+  const [sending, setSending] = useState(false);
+  const sendKonto = (mailStatus?.kontoer || []).find(function (k) { return k.standard; })
+    || (mailStatus?.kontoer || [])[0];
+
+  useEffect(function () {
+    const ref = String(inn.onsketBil || '').trim();
+    if (!ref) {
+      setFinnMeta(null);
+      return;
+    }
+    let cancelled = false;
+    setFinnLaster(true);
+    fetchFinnAnnonseApi(ref).then(function (res) {
+      if (cancelled) return;
+      const meta = res.item || null;
+      setFinnMeta(meta);
+    }).catch(function () {
+      if (cancelled) return;
+      const id = parseFinnItemId(ref);
+      setFinnMeta(id ? { id: id, url: finnItemUrl(id), title: null } : null);
+      if (!id) visTost('Kunne ikke lese FINN-kode – sjekk at kunden har skrevet kode eller lenke ✗');
+    }).finally(function () {
+      if (!cancelled) setFinnLaster(false);
+    });
+    return function () { cancelled = true; };
+  }, [inn.onsketBil, visTost]);
+
+  useEffect(function () {
+    if (svarType === 'visning') {
+      if (finnLaster) return;
+      setMelding(buildInnbytteVisningMelding(inn, finnMeta));
+    } else {
+      setMelding(buildInnbytteTilbudMelding(inn, tilbud, finnMeta));
+    }
+  }, [finnMeta, finnLaster, svarType, tilbud, inn]);
+
+  const setSvarModus = (type) => {
+    setSvarType(type);
+    setMelding(type === 'visning'
+      ? buildInnbytteVisningMelding(inn, finnMeta)
+      : buildInnbytteTilbudMelding(inn, tilbud, finnMeta));
+  };
+
+  const oppdaterMelding = () => {
+    setMelding(svarType === 'visning'
+      ? buildInnbytteVisningMelding(inn, finnMeta)
+      : buildInnbytteTilbudMelding(inn, tilbud, finnMeta));
+  };
 
   const opp = (k, v, msg) => {
     const ny = { ...inn, [k]: v };
@@ -2389,75 +5652,303 @@ function InbModal({ data, onClose, updateInnbytte, visTost, lists }) {
     updateInnbytte(inn.id, { [k]: v }, msg);
   };
 
-  const sendTilbud = () => {
-    opp('tilbud', tilbud);
-    opp('status', 'Tilbud sendt', 'Tilbud registrert ✓');
+  const sendSvar = async () => {
+    if (svarType === 'tilbud' && !String(tilbud || '').trim()) {
+      visTost('Skriv inn tilbudspris først ✗');
+      return;
+    }
+    if (!melding.trim()) {
+      visTost('Meldingen kan ikke være tom ✗');
+      return;
+    }
+    const nyStatus = svarType === 'visning'
+      ? resolveListStatus(lists.innbytteStatuser, 'Under vurdering')
+      : resolveListStatus(lists.innbytteStatuser, 'Tilbud sendt');
+    if (!mailStatus?.smtpConfigured) {
+      const ansvarlig = currentUser?.name || currentUser?.username || '';
+      const patch = { status: nyStatus, ansvarlig };
+      if (svarType === 'tilbud') patch.tilbud = String(tilbud).trim();
+      setInn({ ...inn, ...patch });
+      updateInnbytte(inn.id, patch,
+        svarType === 'visning' ? 'Visning registrert (e-post ikke konfigurert) ✓' : 'Tilbud registrert (e-post ikke konfigurert) ✓');
+      return;
+    }
+    if (!onSendTilbud || sending) return;
+    setSending(true);
+    try {
+      const updated = await onSendTilbud(inn.id, {
+        type: svarType,
+        tilbud: svarType === 'tilbud' ? String(tilbud).trim() : undefined,
+        melding: melding.trim()
+      });
+      if (updated) {
+        const sender = currentUser?.name || currentUser?.username || '';
+        setInn({
+          ...updated,
+          status: updated.status || nyStatus,
+          ansvarlig: updated.ansvarlig || sender || inn.ansvarlig
+        });
+        if (updated.tilbud) setTilbud(updated.tilbud);
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
-  const leggKom = () => {
-    if (!nyKom.trim()) return;
-    const kommentarer = [...(inn.kommentarer || []), `${new Date().toLocaleString('nb-NO')}: ${nyKom}`];
-    opp('kommentarer', kommentarer);
-    setNyKom('');
-  };
+  const innbytteColors = lists?.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+  const kommentarCount = (inn.kommentarer || []).length;
+  const utstyr = Array.isArray(inn.utstyr) ? inn.utstyr : [];
 
   return (
     <div className="ov" onClick={onClose}>
-      <div className="modal lg" onClick={e => e.stopPropagation()}>
-        <div className="modal-title">Innbytte: {inn.merke} {inn.modell} {inn.aar}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div className="modal xl inb-modal" onClick={e => e.stopPropagation()}>
+        <div className="inb-modal__head">
           <div>
-            <div className="modal-sec">Kjøretøy</div>
-            <div className="form-row3">
-              <div><div className="fl">Reg</div><div className="fv">{inn.reg}</div></div>
-              <div><div className="fl">Km</div><div className="fv">{fmtKm(inn.km)}</div></div>
-              <div><div className="fl">Tilstand</div><div className="fv">{inn.tilstand}</div></div>
+            <div className="modal-title" style={{ marginBottom: 4 }}>
+              Innbytte · {inn.merke} {inn.modell} {inn.aar}
             </div>
-            <div className="gap">
-              <div className="fl">Beskrivelse fra kunde</div>
-              <div style={{ background: 'var(--s2)', borderRadius: 8, padding: 11, fontSize: 12, color: 'var(--t2)', lineHeight: 1.6, marginTop: 4 }}>{inn.beskrivelse}</div>
+            <div className="inb-modal__meta">
+              {inn.navn} · {inn.reg} · {fmtKm(inn.km)} km · mottatt {inn.dato}
             </div>
-            <div className="modal-sec">Kunde</div>
-            <div className="form-row">
-              <div><div className="fl">Navn</div><div className="fv">{inn.navn}</div></div>
-              <div><div className="fl">Tlf</div><div className="fv">{inn.tlf}</div></div>
-            </div>
-            <div className="gap"><div className="fl">E-post</div><div className="fv">{inn.epost}</div></div>
-            <div className="gap"><div className="fl">Ønsker å kjøpe</div><div className="fv" style={{ color: 'var(--acc)', fontWeight: 600 }}>{inn.onsketBil || '—'}</div></div>
           </div>
-          <div>
-            <div className="modal-sec">Behandling</div>
-            <div>
-              <div className="fl">Status</div>
+          <Badge s={inn.status} colors={innbytteColors} />
+        </div>
+
+        <div className="inb-modal__toolbar">
+          <div className="inb-modal__toolbar-fields">
+            <label className="inb-modal__field">
+              <span className="fl">Status</span>
               <select value={inn.status} onChange={e => opp('status', e.target.value)}>
                 {lists.innbytteStatuser.map(s => <option key={s}>{s}</option>)}
               </select>
-            </div>
-            <div className="gap">
-              <div className="fl">Ansvarlig</div>
+            </label>
+            <label className="inb-modal__field">
+              <span className="fl">Ansvarlig</span>
               <select value={inn.ansvarlig || ''} onChange={e => opp('ansvarlig', e.target.value)}>
                 <option value="">Ikke tildelt</option>
-                {lists.ansatte.map(a => <option key={a}>{a}</option>)}
+                {ansvarligSelectOptions(lists, inn.ansvarlig).map(a => <option key={a}>{a}</option>)}
               </select>
+            </label>
+          </div>
+          <button
+            type="button"
+            className="btn btn-p btn-sm"
+            disabled={!canFinnMarkedsSok(inn) || finnSokLaster}
+            title="Åpner FINN.no filtrert på merke og modell, sortert pris lav til høy"
+            onClick={async function () {
+              if (!canFinnMarkedsSok(inn) || finnSokLaster) return;
+              setFinnSokLaster(true);
+              try {
+                const ok = await openFinnMarkedsSok(inn);
+                if (!ok) visTost('Fant ikke merke/modell på FINN – sjekk stavemåte ✗');
+              } catch (err) {
+                visTost((err?.message || 'Kunne ikke åpne FINN-markedssøk') + ' ✗');
+              } finally {
+                setFinnSokLaster(false);
+              }
+            }}
+          >
+            {finnSokLaster ? 'Åpner FINN…' : 'Sammenlign mot FINN'}
+          </button>
+        </div>
+
+        <ModalTabs
+          active={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { id: 'foresporsel', label: 'Forespørsel' },
+            { id: 'autosys', label: 'Autosys' },
+            { id: 'svar', label: 'Svar til kunde' },
+            { id: 'intern', label: kommentarCount ? `Intern · ${kommentarCount}` : 'Intern' }
+          ]}
+        />
+
+        <div className="inb-modal__body">
+          {activeTab === 'foresporsel' ? (
+            <div className="inb-modal__grid">
+              <section className="inb-modal__panel">
+                <div className="modal-sec">Kundens bil</div>
+                <InfoGrid items={[
+                  ['Registreringsnr.', inn.reg],
+                  ['Merke / modell', [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ')],
+                  ['Kilometerstand', inn.km ? `${fmtKm(inn.km)} km` : ''],
+                  ['Drivstoff', inn.drivstoff],
+                  ['Farge', inn.farge],
+                  ['Kjøretøytype', inn.kjoretoyType],
+                  ['Servicehistorikk', inn.servicehistorikk || inn.tilstand],
+                  ['Siste service', inn.sisteService],
+                  ['Sommerdekk', inn.sommerdekk],
+                  ['Vinterdekk', inn.vinterdekk]
+                ]} />
+                {utstyr.length ? (
+                  <div className="gap" style={{ marginTop: 12 }}>
+                    <div className="fl">Utstyr</div>
+                    <div className="tag-list">
+                      {utstyr.map(function (item) {
+                        return <span key={item} className="tag">{item}</span>;
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 12, lineHeight: 1.45 }}>
+                  {canFinnMarkedsSok(inn)
+                    ? <>FINN-markedssøk: {finnMarkedsSokLabel(inn)}{finnMarkedsSokFilterText(inn) ? ` (${finnMarkedsSokFilterText(inn)})` : ''} · pris lav → høy</>
+                    : 'Legg inn merke og modell for å sammenligne mot FINN.'}
+                </div>
+              </section>
+
+              <section className="inb-modal__panel">
+                <div className="modal-sec">Ønsket bil hos oss</div>
+                {finnLaster ? (
+                  <div className="fv" style={{ fontSize: 12, color: 'var(--t3)' }}>Henter annonse fra FINN…</div>
+                ) : null}
+                {!finnLaster && finnMeta?.title ? (
+                  <>
+                    <div className="fv" style={{ color: 'var(--acc)', fontWeight: 600 }}>{finnMeta.title}</div>
+                    {finnMeta.url ? (
+                      <a href={finnMeta.url} target="_blank" rel="noopener noreferrer" className="inb-modal__link">
+                        {finnMeta.url}
+                      </a>
+                    ) : null}
+                  </>
+                ) : null}
+                {!finnLaster && !finnMeta?.title && inn.onsketBil ? (
+                  <div className="fv" style={{ color: 'var(--acc)', fontWeight: 600 }}>{inn.onsketBil}</div>
+                ) : null}
+                {!finnLaster && !finnMeta?.title && !inn.onsketBil ? (
+                  <div className="fv">—</div>
+                ) : null}
+                {inn.forventning ? (
+                  <div className="gap" style={{ marginTop: 14 }}>
+                    <div className="fl">Kundens prisforventning</div>
+                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inn.forventning}</div>
+                  </div>
+                ) : null}
+                {inn.tilbud ? (
+                  <div className="gap" style={{ marginTop: 14 }}>
+                    <div className="fl">Gitt tilbud</div>
+                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{nok(inn.tilbud)}</div>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="inb-modal__panel inb-modal__panel--full">
+                <div className="modal-sec">Fra kunden</div>
+                <div className="gap">
+                  <div className="fl">Beskrivelse / kommentar</div>
+                  <div className="inb-modal__quote">{inn.beskrivelse || '—'}</div>
+                </div>
+                <IngestBilderSeksjon bilder={inn.bilder} />
+
+                <div className="modal-sec">Kontakt</div>
+                <InfoGrid items={[
+                  ['Navn', inn.navn],
+                  ['Telefon', inn.tlf],
+                  ['E-post', inn.epost]
+                ]} />
+                <div style={{ marginTop: 12 }}>
+                  <KundeVelger
+                    kundeId={inn.kundeId}
+                    kunder={kunder}
+                    setModal={setModal}
+                    onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
+                  />
+                </div>
+              </section>
             </div>
-            <div className="modal-sec">Tilbud</div>
-            <div className="gap">
-              <div className="fl">Tilbudspris (kr)</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input type="number" placeholder="f.eks. 85000" value={tilbud} onChange={e => setTilbud(e.target.value)} />
-                <button type="button" className="btn btn-p btn-sm" onClick={sendTilbud}>Send tilbud</button>
+          ) : null}
+
+          {activeTab === 'autosys' ? (
+            <div className="inb-modal__panel">
+              <KjoretoyAutosysPanel regnr={inn.reg} active={activeTab === 'autosys'} />
+            </div>
+          ) : null}
+
+          {activeTab === 'svar' ? (
+            <div className="inb-modal__panel inb-modal__panel--svar">
+              <div className="view-toggle" role="group" aria-label="Svartype" style={{ marginBottom: 12 }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${svarType === 'visning' ? 'btn-p' : 'btn-g'}`}
+                  onClick={() => setSvarModus('visning')}
+                >
+                  Foreslå visning
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${svarType === 'tilbud' ? 'btn-p' : 'btn-g'}`}
+                  onClick={() => setSvarModus('tilbud')}
+                >
+                  Send tilbud
+                </button>
+              </div>
+              {svarType === 'visning' ? (
+                <p className="inb-modal__hint">
+                  Når dere er nærme hverandre på pris – inviter kunden inn til visning i stedet for å sende et konkret tilbud på e-post.
+                </p>
+              ) : (
+                <div className="gap" style={{ marginBottom: 10 }}>
+                  <div className="fl">Tilbudspris (kr)</div>
+                  <input type="number" placeholder="f.eks. 85000" value={tilbud} onChange={e => setTilbud(e.target.value)} />
+                </div>
+              )}
+              <div className="gap">
+                <div className="inb-modal__svar-head">
+                  <div className="fl" style={{ marginBottom: 0 }}>E-post til kunde</div>
+                  <button type="button" className="btn btn-g btn-sm" onClick={oppdaterMelding}>
+                    Oppdater tekst
+                  </button>
+                </div>
+                {!mailStatus?.smtpConfigured && (
+                  <div className="inb-modal__hint inb-modal__hint--warn">
+                    SMTP er ikke satt opp – svaret lagres kun i CRM.
+                  </div>
+                )}
+                <textarea
+                  rows={12}
+                  value={melding}
+                  onChange={e => setMelding(e.target.value)}
+                  placeholder="Skriv e-post til kunden..."
+                  style={{ marginTop: 6, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}
+                />
+                {sendKonto?.signatur && mailStatus?.smtpConfigured && (
+                  <SignaturePreview
+                    body={melding}
+                    signatur={sendKonto.signatur}
+                    label={`Signatur fra ${sendKonto.navn} legges til automatisk`}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="btn btn-p"
+                  style={{ marginTop: 10 }}
+                  onClick={sendSvar}
+                  disabled={sending || !melding.trim() || (svarType === 'tilbud' && !String(tilbud || '').trim())}
+                >
+                  {sending ? 'Sender…' : (
+                    mailStatus?.smtpConfigured
+                      ? (svarType === 'visning' ? 'Send invitasjon til visning' : 'Send tilbud på e-post')
+                      : (svarType === 'visning' ? 'Lagre visningsinvitasjon' : 'Lagre tilbud')
+                  )}
+                </button>
               </div>
             </div>
-            <div className="modal-sec">Kommentarer</div>
-            {(inn.kommentarer || []).map((k, i) => <div className="logg-item" key={i}><div className="logg-tekst">{k}</div></div>)}
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <input placeholder="Kommentar..." value={nyKom} onChange={e => setNyKom(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggKom()} />
-              <button type="button" className="btn btn-g btn-sm" onClick={leggKom}>+</button>
+          ) : null}
+
+          {activeTab === 'intern' ? (
+            <div className="inb-modal__panel">
+              <InternKommentarerSeksjon
+                kommentarer={inn.kommentarer}
+                currentUser={currentUser}
+                onChange={function (next, msg) { opp('kommentarer', next, msg); }}
+              />
             </div>
-          </div>
+          ) : null}
         </div>
+
         <div className="modal-footer">
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
+          <button type="button" className="btn btn-red" onClick={() => deleteInnbytte(inn.id)}>Slett innbytte</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
       </div>
@@ -2466,10 +5957,319 @@ function InbModal({ data, onClose, updateInnbytte, visTost, lists }) {
 }
 
 // ─── KALENDER ────────────────────────────────────────────────────────────────
-function KalenderView({ kal, setModal, biler, lists }) {
+function formatKalDag(iso) {
+  if (!iso) return '—';
+  const d = new Date(String(iso) + 'T12:00:00');
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+const KAL_DAY_HOURS = 24;
+const KAL_HOUR_HEIGHT = 56;
+
+function kalTimeToMinutes(value) {
+  if (!value) return null;
+  const parts = String(value).trim().split(':');
+  const h = Number(parts[0]);
+  const m = Number(parts[1] || 0);
+  if (!Number.isFinite(h)) return null;
+  return h * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+function kalMinutesToTime(totalMinutes) {
+  const mins = Math.max(0, Math.min(24 * 60 - 1, totalMinutes));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function kalAddOneHour(tid) {
+  const mins = kalTimeToMinutes(tid);
+  if (mins == null) return '';
+  return kalMinutesToTime(mins + 60);
+}
+
+function kalEffectiveSlutt(event) {
+  if (!event?.tid) return '';
+  return event.tidSlutt || kalAddOneHour(event.tid);
+}
+
+function kalFormatHour(hour) {
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
+function kalDayHourRange() {
+  return { start: 0, end: KAL_DAY_HOURS };
+}
+
+function kalDayScheduleHeight() {
+  return KAL_DAY_HOURS * KAL_HOUR_HEIGHT;
+}
+
+function kalFormatHourLabel(hour) {
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
+function kalEventBlockStyle(event, range) {
+  const dayStartMin = range.start * 60;
+  const dayEndMin = range.end * 60;
+  const start = kalTimeToMinutes(event.tid);
+  const endRaw = kalTimeToMinutes(kalEffectiveSlutt(event));
+  const safeStart = start == null ? dayStartMin : Math.max(dayStartMin, start);
+  const safeEnd = endRaw && endRaw > safeStart ? Math.min(dayEndMin, endRaw) : Math.min(dayEndMin, safeStart + 60);
+  const top = ((safeStart - dayStartMin) / 60) * KAL_HOUR_HEIGHT;
+  const height = Math.max(((safeEnd - safeStart) / 60) * KAL_HOUR_HEIGHT, 26);
+  return { top, height, visible: safeStart < dayEndMin && safeEnd > dayStartMin };
+}
+
+function KalContextMenu({ menu, lists, onClose, onAction }) {
+  const menuRef = useRef(null);
+  const [submenu, setSubmenu] = useState(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  useEffect(function () {
+    if (!menu) {
+      setSubmenu(null);
+      return;
+    }
+    setSubmenu(null);
+    const margin = 8;
+    const maxW = 240;
+    const maxH = 360;
+    let x = menu.x;
+    let y = menu.y;
+    if (typeof window !== 'undefined') {
+      if (x + maxW > window.innerWidth - margin) x = Math.max(margin, window.innerWidth - maxW - margin);
+      if (y + maxH > window.innerHeight - margin) y = Math.max(margin, window.innerHeight - maxH - margin);
+    }
+    setPos({ x, y });
+  }, [menu]);
+
+  useEffect(function () {
+    if (!menu) return;
+    const close = function () { onClose(); };
+    const onKey = function (e) {
+      if (e.key === 'Escape') close();
+    };
+    const onPointer = function (e) {
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      close();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return function () {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [menu, onClose]);
+
+  if (!menu?.event) return null;
+
+  const ev = menu.event;
+  const run = function (action, payload) {
+    onAction(action, payload);
+    onClose();
+  };
+
+  const MenuItem = function ({ label, onClick, disabled, danger, hasSub, active }) {
+    return (
+      <button
+        type="button"
+        className={`inbox-ctx-item${disabled ? ' disabled' : ''}${danger ? ' danger' : ''}${active ? ' active' : ''}`}
+        disabled={disabled}
+        onClick={disabled ? undefined : onClick}
+        onMouseEnter={hasSub && !disabled ? function () { setSubmenu(hasSub); } : undefined}
+      >
+        <span>{label}</span>
+        {hasSub && <span className="inbox-ctx-arrow">›</span>}
+      </button>
+    );
+  };
+
+  const Sep = () => <div className="inbox-ctx-sep" />;
+
+  return (
+    <div
+      ref={menuRef}
+      className="inbox-ctx-menu"
+      style={{ left: pos.x, top: pos.y }}
+      onContextMenu={function (e) { e.preventDefault(); }}
+    >
+      <MenuItem label="Rediger avtale" onClick={() => run('edit', ev)} />
+      <MenuItem label="Endre tittel" onClick={() => run('rename', ev)} />
+      <Sep />
+      <div
+        className="inbox-ctx-submenu-wrap"
+        onMouseEnter={() => setSubmenu('type')}
+        onMouseLeave={() => setSubmenu(function (prev) { return prev === 'type' ? null : prev; })}
+      >
+        <MenuItem label="Endre type" hasSub="type" active={submenu === 'type'} onClick={() => setSubmenu('type')} />
+        {submenu === 'type' && (
+          <div className="inbox-ctx-submenu">
+            {(lists?.kalTyper || []).map(function (type) {
+              return (
+                <MenuItem
+                  key={type}
+                  label={type}
+                  active={ev.type === type}
+                  onClick={() => run('setType', { event: ev, type })}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div
+        className="inbox-ctx-submenu-wrap"
+        onMouseEnter={() => setSubmenu('ansvarlig')}
+        onMouseLeave={() => setSubmenu(function (prev) { return prev === 'ansvarlig' ? null : prev; })}
+      >
+        <MenuItem label="Endre ansvarlig" hasSub="ansvarlig" active={submenu === 'ansvarlig'} onClick={() => setSubmenu('ansvarlig')} />
+        {submenu === 'ansvarlig' && (
+          <div className="inbox-ctx-submenu">
+            {(lists?.ansatte || []).map(function (navn) {
+              return (
+                <MenuItem
+                  key={navn}
+                  label={navn}
+                  active={ev.ansvarlig === navn}
+                  onClick={() => run('setAnsvarlig', { event: ev, ansvarlig: navn })}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <Sep />
+      <MenuItem label="Slett avtale" danger onClick={() => run('delete', ev)} />
+    </div>
+  );
+}
+
+function KalDayPanel({ iso, events, onClose, setModal, onEventContextMenu }) {
+  const scrollRef = useRef(null);
+  const sorted = [...events].sort(function (a, b) { return a.tid.localeCompare(b.tid); });
+  const range = kalDayHourRange();
+  const hours = Array.from({ length: KAL_DAY_HOURS }, function (_, i) { return i; });
+  const scheduleHeight = kalDayScheduleHeight();
+
+  useEffect(function () {
+    const el = scrollRef.current;
+    if (!el) return;
+    const now = new Date();
+    const focusHour = iso === IDAG ? Math.max(0, now.getHours() - 1) : 7;
+    el.scrollTop = focusHour * KAL_HOUR_HEIGHT;
+  }, [iso]);
+
+  return (
+    <div className="ov" onClick={onClose}>
+      <div className="modal lg kal-day-panel" onClick={function (e) { e.stopPropagation(); }}>
+        <div className="kal-day-panel-hd">
+          <div>
+            <div className="modal-title" style={{ marginBottom: 4 }}>{formatKalDag(iso)}</div>
+            <div className="ph-sub">
+              {sorted.length} avtale{sorted.length === 1 ? '' : 'r'}
+            </div>
+          </div>
+          <button type="button" className="btn btn-p btn-sm" onClick={function () { setModal({ t: 'nyKal', dato: iso }); onClose(); }}>
+            + Ny avtale
+          </button>
+        </div>
+
+        <div className="kal-day-scroll" ref={scrollRef}>
+          <div
+            className="kal-day-grid"
+            style={{
+              gridTemplateRows: `repeat(${KAL_DAY_HOURS}, ${KAL_HOUR_HEIGHT}px)`,
+              height: scheduleHeight
+            }}
+          >
+            {hours.map(function (hour) {
+              return (
+                <div
+                  key={`label-${hour}`}
+                  className={`kal-day-label${hour === 0 ? ' kal-day-label--first' : ''}`}
+                  style={{ gridRow: hour + 1, gridColumn: 1 }}
+                >
+                  {kalFormatHourLabel(hour)}
+                </div>
+              );
+            })}
+
+            {hours.map(function (hour) {
+              return (
+                <button
+                  key={`slot-${hour}`}
+                  type="button"
+                  className={`kal-day-slot${hour === 0 ? ' kal-day-slot--first' : ''}`}
+                  style={{ gridRow: hour + 1, gridColumn: 2 }}
+                  title={`Ny avtale kl. ${kalFormatHourLabel(hour)}`}
+                  onClick={function () {
+                    const tid = kalFormatHour(hour);
+                    setModal({ t: 'nyKal', dato: iso, tid, tidSlutt: kalAddOneHour(tid) });
+                    onClose();
+                  }}
+                />
+              );
+            })}
+
+            <div className="kal-day-events" style={{ height: scheduleHeight }}>
+              {sorted.map(function (e) {
+                const layout = kalEventBlockStyle(e, range);
+                if (!layout.visible) return null;
+                const color = KFARGE[e.type] || '#888';
+                return (
+                  <div
+                    key={e.id}
+                    className="kal-day-event"
+                    style={{
+                      top: layout.top,
+                      height: layout.height,
+                      background: color + '28',
+                      borderColor: color,
+                      color: color
+                    }}
+                    onClick={function (evt) {
+                      evt.stopPropagation();
+                      setModal({ t: 'visKal', d: e });
+                      onClose();
+                    }}
+                    onContextMenu={function (evt) {
+                      evt.preventDefault();
+                      evt.stopPropagation();
+                      onEventContextMenu(evt, e);
+                    }}
+                  >
+                    <div className="kal-day-event-title">{e.tittel}</div>
+                    <div className="kal-day-event-time">{formatKalTid(e)}</div>
+                    {layout.height >= 44 && e.ansvarlig ? (
+                      <div className="kal-day-event-meta">{e.ansvarlig}</div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" className="btn btn-g" onClick={onClose}>Lukk</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KalenderView({ kal, setModal, biler, lists, updateKal, deleteKal }) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [dayPanel, setDayPanel] = useState(null);
+  const [ctxMenu, setCtxMenu] = useState(null);
   const cells = monthMatrix(viewYear, viewMonth);
   const monthKal = kal.filter(function (e) { return isSameMonth(e.dato, viewYear, viewMonth); });
 
@@ -2485,12 +6285,77 @@ function KalenderView({ kal, setModal, biler, lists }) {
     setViewMonth(now.getMonth());
   };
 
+  const openEventContextMenu = function (evt, event) {
+    setCtxMenu({ x: evt.clientX, y: evt.clientY, event });
+  };
+
+  const handleCtxAction = async function (action, payload) {
+    const ev = payload?.event || payload;
+    if (!ev?.id) return;
+
+    if (action === 'edit') {
+      setModal({ t: 'visKal', d: ev });
+      setDayPanel(null);
+      return;
+    }
+    if (action === 'rename') {
+      const next = window.prompt('Ny tittel:', ev.tittel || '');
+      if (next == null) return;
+      const tittel = String(next).trim();
+      if (!tittel || tittel === ev.tittel) return;
+      await updateKal(ev.id, { tittel }, 'Tittel oppdatert ✓');
+      return;
+    }
+    if (action === 'setType') {
+      if (!payload?.type || payload.type === ev.type) return;
+      await updateKal(ev.id, { type: payload.type }, 'Type oppdatert ✓');
+      return;
+    }
+    if (action === 'setAnsvarlig') {
+      if (!payload?.ansvarlig || payload.ansvarlig === ev.ansvarlig) return;
+      await updateKal(ev.id, { ansvarlig: payload.ansvarlig }, 'Ansvarlig oppdatert ✓');
+      return;
+    }
+    if (action === 'delete') {
+      if (!window.confirm(`Slette «${ev.tittel}»?`)) return;
+      await deleteKal(ev.id, 'Avtale slettet ✓');
+    }
+  };
+
+  const renderKalEvent = function (e) {
+    const color = KFARGE[e.type] || '#888';
+    return (
+      <div
+        key={e.id}
+        className="kal-event"
+        style={{
+          background: color + '20',
+          color: color,
+          borderLeft: `2px solid ${color}`
+        }}
+        onClick={function (evt) {
+          evt.stopPropagation();
+          setModal({ t: 'visKal', d: e });
+        }}
+        onContextMenu={function (evt) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          openEventContextMenu(evt, e);
+        }}
+      >
+        <div style={{ fontSize: 9, opacity: .7 }}>{formatKalTid(e)}</div>
+        <div style={{ fontSize: 10, fontWeight: 700, lineHeight: 1.2, marginTop: 1 }}>{e.tittel}</div>
+        <div style={{ fontSize: 9, opacity: .6, marginTop: 1 }}>{e.ansvarlig}</div>
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="ph">
         <div>
           <div className="ph-title">Kalender</div>
-          <div className="ph-sub">Månedsvisning · {monthKal.length} avtaler</div>
+          <div className="ph-sub">Månedsvisning · {monthKal.length} avtaler · klikk dag for oversikt</div>
         </div>
         <button type="button" className="btn btn-p" onClick={() => setModal({ t: 'nyKal' })}>+ Ny avtale</button>
       </div>
@@ -2516,28 +6381,15 @@ function KalenderView({ kal, setModal, biler, lists }) {
           return (
             <div
               key={cell.iso}
-              className={`kal-cell${cell.iso === IDAG ? ' today' : ''}${cell.inMonth ? '' : ' kal-cell--muted'}`}
+              className={`kal-cell kal-cell--clickable${cell.iso === IDAG ? ' today' : ''}${cell.inMonth ? '' : ' kal-cell--muted'}`}
+              onClick={function () { setDayPanel(cell.iso); }}
+              title="Klikk for å se alle avtaler"
             >
               <div className={`kal-dag-nr${cell.iso === IDAG ? ' kal-dag-nr--today' : ''}`}>{cell.day}</div>
-              {dayEvents.map(function (e) {
-                const color = KFARGE[e.type] || '#888';
-                return (
-                  <div
-                    key={e.id}
-                    className="kal-event"
-                    style={{
-                      background: color + '20',
-                      color: color,
-                      borderLeft: `2px solid ${color}`
-                    }}
-                    onClick={() => setModal({ t: 'visKal', d: e })}
-                  >
-                    <div style={{ fontSize: 9, opacity: .7 }}>{formatKalTid(e)}</div>
-                    <div style={{ fontSize: 10, fontWeight: 700, lineHeight: 1.2, marginTop: 1 }}>{e.tittel}</div>
-                    <div style={{ fontSize: 9, opacity: .6, marginTop: 1 }}>{e.ansvarlig}</div>
-                  </div>
-                );
-              })}
+              {dayEvents.slice(0, 4).map(renderKalEvent)}
+              {dayEvents.length > 4 ? (
+                <div className="kal-event-more">+{dayEvents.length - 4} til</div>
+              ) : null}
             </div>
           );
         })}
@@ -2557,7 +6409,15 @@ function KalenderView({ kal, setModal, biler, lists }) {
               return a.dato.localeCompare(b.dato) || a.tid.localeCompare(b.tid);
             }).map(function (e) {
               return (
-                <tr key={e.id} style={{ cursor: 'pointer' }} onClick={() => setModal({ t: 'visKal', d: e })}>
+                <tr
+                  key={e.id}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setModal({ t: 'visKal', d: e })}
+                  onContextMenu={function (evt) {
+                    evt.preventDefault();
+                    openEventContextMenu(evt, e);
+                  }}
+                >
                   <td style={{ fontWeight: 600, color: 'var(--t1)', fontSize: 12 }}>{e.tittel}</td>
                   <td><KBadge type={e.type} /></td>
                   <td style={{ fontSize: 11, color: e.dato === IDAG ? 'var(--acc)' : 'var(--t2)', fontWeight: e.dato === IDAG ? 700 : 400 }}>
@@ -2573,32 +6433,63 @@ function KalenderView({ kal, setModal, biler, lists }) {
           </tbody>
         </table>
       </div>
+
+      {dayPanel && (
+        <KalDayPanel
+          iso={dayPanel}
+          events={kal.filter(function (e) { return e.dato === dayPanel; })}
+          onClose={function () { setDayPanel(null); }}
+          setModal={setModal}
+          onEventContextMenu={openEventContextMenu}
+        />
+      )}
+
+      <KalContextMenu
+        menu={ctxMenu}
+        lists={lists}
+        onClose={function () { setCtxMenu(null); }}
+        onAction={handleCtxAction}
+      />
     </>
   );
 }
 
-function KalModal({ data, onClose, onSave, biler, lists, title }) {
+function KalModal({ data, onClose, onSave, onDelete, biler, lists, kunder, title }) {
+  const startTid = data?.tid || '10:00';
+  const [tidSluttOverstyrt, setTidSluttOverstyrt] = useState(!!data?.tidSlutt);
   const [f, setF] = useState({
     tittel: data?.tittel || '',
     type: data?.type || lists.kalTyper[0] || 'Annet',
     dato: data?.dato || IDAG,
-    tid: data?.tid || '10:00',
-    tidSlutt: data?.tidSlutt || '',
+    tid: startTid,
+    tidSlutt: data?.tidSlutt || kalAddOneHour(startTid),
     ansvarlig: data?.ansvarlig || lists.ansatte[0] || '',
     bilRef: data?.bilRef || '',
+    kundeId: data?.kundeId || null,
     notat: data?.notat || ''
   });
   const [err, setErr] = useState('');
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
 
+  const handleTidChange = function (value) {
+    setF(function (prev) {
+      return {
+        ...prev,
+        tid: value,
+        tidSlutt: tidSluttOverstyrt ? prev.tidSlutt : kalAddOneHour(value)
+      };
+    });
+  };
+
   const lagre = () => {
     if (!f.tittel || !f.dato) return;
-    if (f.tidSlutt && f.tidSlutt <= f.tid) {
+    const tidSlutt = f.tidSlutt || kalAddOneHour(f.tid);
+    if (tidSlutt && tidSlutt <= f.tid) {
       setErr('Sluttid må være etter starttid.');
       return;
     }
     setErr('');
-    onSave(f);
+    onSave({ ...f, tidSlutt });
   };
 
   return (
@@ -2612,8 +6503,19 @@ function KalModal({ data, onClose, onSave, biler, lists, title }) {
         </div>
         <div className="form-row gap">
           <div><div className="fl">Dato</div><input type="date" value={f.dato} onChange={e => s('dato', e.target.value)} /></div>
-          <div><div className="fl">Starttid</div><input type="time" value={f.tid} onChange={e => s('tid', e.target.value)} /></div>
-          <div><div className="fl">Sluttid</div><input type="time" value={f.tidSlutt} onChange={e => s('tidSlutt', e.target.value)} /></div>
+          <div><div className="fl">Starttid</div><input type="time" value={f.tid} onChange={e => handleTidChange(e.target.value)} /></div>
+          <div>
+            <div className="fl">Sluttid</div>
+            <input
+              type="time"
+              value={f.tidSlutt}
+              onChange={function (e) {
+                setTidSluttOverstyrt(true);
+                s('tidSlutt', e.target.value);
+              }}
+            />
+            {!tidSluttOverstyrt && <div className="kalkyle-hint" style={{ marginTop: 4 }}>Standard 1 time etter start</div>}
+          </div>
         </div>
         <div className="gap">
           <div className="fl">Tilknyttet bil</div>
@@ -2622,9 +6524,19 @@ function KalModal({ data, onClose, onSave, biler, lists, title }) {
             {biler.map(b => <option key={b.id} value={b.reg}>{b.reg} – {b.merke} {b.modell}</option>)}
           </select>
         </div>
+        <KundeVelger
+          kundeId={f.kundeId}
+          kunder={kunder}
+          onChange={function (id) { s('kundeId', id); }}
+        />
         <div className="gap"><div className="fl">Notat</div><textarea rows={2} value={f.notat} onChange={e => s('notat', e.target.value)} /></div>
         {err && <div className="login-err" style={{ marginTop: 10 }}>{err}</div>}
         <div className="modal-footer">
+          {onDelete && (
+            <button type="button" className="btn btn-g" style={{ color: 'var(--red)', marginRight: 'auto' }} onClick={onDelete}>
+              Slett
+            </button>
+          )}
           <button type="button" className="btn btn-p" onClick={lagre}>Lagre</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
@@ -2635,13 +6547,15 @@ function KalModal({ data, onClose, onSave, biler, lists, title }) {
 
 // ─── OPPGAVER ────────────────────────────────────────────────────────────────
 function OppgaverView({ biler, updateBil, visTost }) {
-  const aktive = biler.filter(b => (b.sjekkliste || []).some(s => !s.f));
+  const aktive = biler.filter(b => isBilAktiv(b) && getAktivSjekkliste(b).some(s => !s.f));
 
   const toggle = (bilId, idx) => {
     const bil = biler.find(b => b.id === bilId);
     if (!bil) return;
-    const sjekkliste = bil.sjekkliste.map((s, i) => i === idx ? { ...s, f: !s.f } : s);
-    updateBil(bilId, { sjekkliste }, 'Oppdatert ✓');
+    const list = getAktivSjekkliste(bil);
+    const ny = list.map((s, i) => i === idx ? { ...s, f: !s.f } : s);
+    const next = withSjekklisteUpdate(bil, ny);
+    updateBil(bilId, { sjekklister: next.sjekklister, sjekkliste: next.sjekkliste }, 'Oppdatert ✓');
   };
 
   return (
@@ -2657,7 +6571,7 @@ function OppgaverView({ biler, updateBil, visTost }) {
       )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
         {aktive.map(bil => {
-          const list = bil.sjekkliste || [];
+          const list = getAktivSjekkliste(bil);
           const f = list.filter(s => s.f).length;
           const t = list.length;
           const pst = t ? Math.round(f / t * 100) : 0;
@@ -2722,7 +6636,7 @@ const SVV_FIELD_GROUPS = [
   ['Motor & drivlinje', [
     ['drivstoff', 'Drivstoff'],
     ['girkasse', 'Girkasse'],
-    ['hjuldrift', 'Hjuldrift'],
+    ['hjuldrift', 'Aksler med drift'],
     ['effektKw', 'Effekt (kW)', v => v + ' kW'],
     ['effektHk', 'Effekt (hk)', v => v + ' hk'],
     ['antallGir', 'Antall gir'],
@@ -2754,8 +6668,10 @@ const SVV_FIELD_GROUPS = [
     ['nesteEuKontroll', 'Neste EU-kontroll']
   ]],
   ['Registrering', [
+    ['forstegangsregistrert', 'Førstegangsregistrert'],
+    ['forstegangsregNorge', '1. reg. Norge'],
+    ['bruktimport', 'Bruktimport'],
     ['registreringsstatus', 'Registreringsstatus'],
-    ['forstegangsregNorge', '1. registrering Norge'],
     ['registrertDato', 'Registrert dato']
   ]]
 ];
@@ -2802,6 +6718,116 @@ function NoPlate({ regNr }) {
   );
 }
 
+function KjoretoyAutosysPanel({ regnr, active }) {
+  const [laster, setLaster] = useState(false);
+  const [resultat, setResultat] = useState(null);
+  const [sections, setSections] = useState([]);
+  const [feil, setFeil] = useState('');
+
+  const slaOpp = useCallback(async function () {
+    const reg = String(regnr || '').trim().toUpperCase().replace(/\s/g, '');
+    if (!reg || reg.length < 5) {
+      setFeil('Mangler gyldig registreringsnummer på forespørselen.');
+      setResultat(null);
+      setSections([]);
+      return;
+    }
+    setLaster(true);
+    setFeil('');
+    setResultat(null);
+    setSections([]);
+    try {
+      const data = await lookupKjoretoy(reg);
+      setResultat(data.vehicle);
+      const apiSections = Array.isArray(data.sections) ? data.sections : [];
+      setSections(apiSections.length ? apiSections : buildSvvSectionsFromVehicle(data.vehicle));
+    } catch (err) {
+      setFeil(err.message || 'Oppslag feilet.');
+    } finally {
+      setLaster(false);
+    }
+  }, [regnr]);
+
+  useEffect(function () {
+    if (active) slaOpp();
+  }, [active, slaOpp]);
+
+  if (!active) return null;
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div className="modal-sec" style={{ marginBottom: 4 }}>Autosys · Statens vegvesen</div>
+          <div style={{ fontSize: 11, color: 'var(--t4)' }}>
+            Full teknisk kjøretøydata fra kjøretøyregisteret
+          </div>
+        </div>
+        <button type="button" className="btn btn-g btn-sm" onClick={slaOpp} disabled={laster}>
+          {laster ? 'Henter…' : 'Oppdater oppslag'}
+        </button>
+      </div>
+
+      {laster ? (
+        <div className="fv" style={{ fontSize: 12, color: 'var(--t3)', padding: '24px 0' }}>Henter data fra Autosys…</div>
+      ) : null}
+
+      {!laster && feil ? (
+        <div style={{ color: 'var(--red)', fontSize: 12, background: 'var(--redl)', padding: '10px 14px', borderRadius: 7 }}>
+          {feil}
+        </div>
+      ) : null}
+
+      {!laster && resultat ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+            <NoPlate regNr={resultat.regNr || regnr} />
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>
+                {resultat.merke} {resultat.modell}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
+                {[resultat.arsmodell, resultat.kjoretoyGruppe || resultat.kjoretoyType].filter(Boolean).join(' · ') || 'Kjøretøy funnet'}
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {resultat.registreringsstatus ? (
+                <span className={`chip ${resultat.registreringsstatus === 'Registrert' ? 'chip-green' : 'chip-orange'}`}>
+                  {resultat.registreringsstatus}
+                </span>
+              ) : null}
+              {resultat.farge ? (
+                <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(resultat.farge), border: '1px solid var(--b2)' }} />
+                  {resultat.farge}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {sections.map(function (section) {
+            return (
+              <div key={section.title} style={{ marginBottom: 20 }}>
+                <div className="modal-sec">{section.title}</div>
+                <div className="svv-grid">
+                  {section.fields.map(function (field) {
+                    return (
+                      <div className="svv-field" key={section.title + field.label}>
+                        <div className="fl">{field.label}</div>
+                        <div className="fv">{field.value}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      ) : null}
+    </>
+  );
+}
+
 function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab }) {
   const [reg, setReg] = useState('');
   const [laster, setLaster] = useState(false);
@@ -2837,6 +6863,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
   const leggTilBil = async () => {
     if (!resultat) return;
     const v = resultat;
+    const startStatus = lists.bilStatuser[0] || 'Innkjøpt';
     const nyBil = {
       reg: v.regNr || reg.toUpperCase(),
       merke: v.merke || 'Ukjent',
@@ -2846,24 +6873,19 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
       innkjop: 0,
       salg: 0,
       farge: v.farge || 'Ukjent',
-      status: lists.bilStatuser[0] || 'Innkjøpt',
+      status: startStatus,
       ansvarlig: lists.ansatte[0] || '',
       frist: '',
       notater: [
         'Importert fra Statens vegvesen.',
         v.drivstoff ? `Drivstoff: ${v.drivstoff}.` : '',
         v.euroKlasse ? `Euro: ${v.euroKlasse}.` : '',
-        v.hjuldrift ? `Hjuldrift: ${v.hjuldrift}.` : '',
+        v.hjuldrift ? `Aksler med drift: ${v.hjuldrift}.` : '',
         v.effektHk ? `Effekt: ${v.effektHk} hk.` : ''
       ].filter(Boolean).join(' '),
       euKontroll: v.nesteEuKontroll || '',
       forsikring: '',
-      sjekkliste: [
-        { t: 'Vasket', f: false },
-        { t: 'Fotografert', f: false },
-        { t: 'Tilstandsrapport', f: false },
-        { t: 'FINN-annonse', f: false }
-      ],
+      ...initBilSjekklister(startStatus, lists.bilSjekklister),
       logg: [{ tekst: 'Importert fra Statens vegvesen', dato: new Date().toLocaleString('nb-NO'), av: 'System' }],
       svvData: rawData || v
     };
@@ -2879,8 +6901,8 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
       setRawData(null);
       setReg('');
       refreshStats();
-    } catch {
-      visTost('Kunne ikke legge til bil ✗');
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke legge til bil ✗');
     }
   };
 
@@ -3623,6 +7645,139 @@ function BrukereSection({ currentUser, visTost }) {
   );
 }
 
+function VedlikeholdSection({ vedlikeholdModus, onSave, visTost }) {
+  const [draft, setDraft] = useState(vedlikeholdModus || DEFAULT_INNSTILLINGER.vedlikeholdModus);
+  const [savingToggle, setSavingToggle] = useState(false);
+  const [savingMessage, setSavingMessage] = useState(false);
+
+  useEffect(function () {
+    setDraft(vedlikeholdModus || DEFAULT_INNSTILLINGER.vedlikeholdModus);
+  }, [vedlikeholdModus]);
+
+  const defaultMelding = DEFAULT_INNSTILLINGER.vedlikeholdModus.melding;
+  const meldingEndret = String(draft.melding || '').trim() !== String(vedlikeholdModus?.melding || defaultMelding).trim();
+
+  const lagre = async (next, kind) => {
+    const payload = {
+      aktiv: !!next.aktiv,
+      melding: String(next.melding || '').trim() || defaultMelding
+    };
+    if (kind === 'toggle') setSavingToggle(true);
+    else setSavingMessage(true);
+    try {
+      await onSave(payload);
+      setDraft(payload);
+      if (kind === 'toggle') {
+        visTost(payload.aktiv ? 'Vedlikeholdsmodus aktivert ✓' : 'Nettsiden er live igjen ✓');
+      } else {
+        visTost('Melding lagret ✓');
+      }
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke lagre vedlikehold ✗');
+    } finally {
+      if (kind === 'toggle') setSavingToggle(false);
+      else setSavingMessage(false);
+    }
+  };
+
+  const settAktiv = (aktiv) => {
+    if (savingToggle || savingMessage || aktiv === !!draft.aktiv) return;
+    lagre({ ...draft, aktiv }, 'toggle');
+  };
+
+  return (
+    <div className="card section-wrap">
+      <div className="card-h">
+        <div>
+          <span className="card-ht">Nettside vedlikehold</span>
+          <div className="settings-desc" style={{ marginBottom: 0, marginTop: 4 }}>
+            Steng nettsiden midlertidig mens du jobber med oppdateringer.
+          </div>
+        </div>
+        <span className={`chip ${draft.aktiv ? 'chip-orange' : 'chip-green'}`}>
+          {draft.aktiv ? 'Vedlikehold PÅ' : 'Live'}
+        </span>
+      </div>
+
+      <div className="maint-panel">
+        <div className={`maint-hero${draft.aktiv ? ' is-active' : ''}`}>
+          <div className="maint-hero__main">
+            <div className="maint-hero__icon">{draft.aktiv ? '🚧' : '🌐'}</div>
+            <div>
+              <div className="maint-hero__title">
+                {draft.aktiv ? 'Nettsiden er stengt for besøkende' : 'Nettsiden er tilgjengelig'}
+              </div>
+              <div className="maint-hero__desc">
+                {draft.aktiv
+                  ? 'Besøkende ser vedlikeholdsside. Du kan forhåndsvise nettsiden via knappen under.'
+                  : 'Besøkende kan bruke nettsiden, sende skjema og se biler som vanlig.'}
+              </div>
+            </div>
+          </div>
+
+          <div className="maint-hero__action">
+            <label className="maint-switch" title={draft.aktiv ? 'Deaktiver vedlikehold' : 'Aktiver vedlikehold'}>
+              <input
+                type="checkbox"
+                checked={!!draft.aktiv}
+                disabled={savingToggle || savingMessage}
+                onChange={(e) => settAktiv(e.target.checked)}
+              />
+              <span className="maint-switch__track" aria-hidden="true" />
+            </label>
+            <span className={`maint-switch__label${draft.aktiv ? ' is-on' : ''}`}>
+              {savingToggle ? 'Lagrer…' : (draft.aktiv ? 'På' : 'Av')}
+            </span>
+          </div>
+        </div>
+
+        {draft.aktiv && (
+          <div className="maint-preview">
+            <button
+              type="button"
+              className="btn btn-g btn-sm"
+              disabled={savingToggle || savingMessage}
+              onClick={function () { openNettside('', { preview: true }); }}
+            >
+              Forhåndsvis nettsiden
+            </button>
+            <p className="settings-desc" style={{ marginTop: 8, marginBottom: 0 }}>
+              Åpner nettsiden slik du ser den som innlogget admin. Andre besøkende ser fortsatt vedlikeholdssiden.
+            </p>
+          </div>
+        )}
+
+        <div className="maint-message">
+          <div className="fl">Melding til besøkende</div>
+          <p className="settings-desc">Vises på vedlikeholdssiden når modus er aktivert.</p>
+          <textarea
+            rows={3}
+            value={draft.melding || ''}
+            disabled={savingToggle || savingMessage}
+            onChange={(e) => setDraft(prev => ({ ...prev, melding: e.target.value }))}
+            placeholder={defaultMelding}
+          />
+          <div className="maint-message__foot">
+            <div className="maint-message__hint">
+              {draft.aktiv
+                ? 'Endringer i meldingen oppdateres på nettsiden innen ca. 15 sekunder.'
+                : 'Meldingen lagres og er klar neste gang vedlikehold aktiveres.'}
+            </div>
+            <button
+              type="button"
+              className="btn btn-g btn-sm"
+              disabled={!meldingEndret || savingToggle || savingMessage}
+              onClick={() => lagre(draft, 'message')}
+            >
+              {savingMessage ? 'Lagrer…' : 'Lagre melding'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModulOppsettSection({ modulOppsett, onChange, onSave, visTost }) {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -3730,8 +7885,184 @@ function ModulOppsettSection({ modulOppsett, onChange, onSave, visTost }) {
   );
 }
 
-function ListEditor({ title, desc, items, onChange, placeholder }) {
+function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder, defaultColors, normalizeColors }) {
   const [ny, setNy] = useState('');
+  const colorDefaults = defaultColors || DEFAULT_HENV_STATUS_FARGER;
+  const normalize = normalizeColors || normalizeHenvStatusFarger;
+
+  const settFarge = (status, color) => {
+    onChange(statuser, { ...farger, [status]: color });
+  };
+
+  const endreNavn = (idx, value) => {
+    const gammelt = statuser[idx];
+    if (value === gammelt) return;
+    const trimmed = value.trim();
+    if (trimmed && statuser.some(function (s, i) {
+      return i !== idx && s.toLowerCase() === trimmed.toLowerCase();
+    })) return;
+
+    const nextStatuser = [...statuser];
+    nextStatuser[idx] = value;
+    const nextFarger = { ...farger };
+    if (gammelt !== value && nextFarger[gammelt] !== undefined) {
+      nextFarger[value] = nextFarger[gammelt];
+      delete nextFarger[gammelt];
+    } else if (value && nextFarger[value] === undefined) {
+      nextFarger[value] = colorDefaults[value] || colorDefaults[gammelt] || '#6B7280';
+    }
+    onChange(nextStatuser, normalize(nextStatuser, nextFarger));
+  };
+
+  const leggTil = () => {
+    const v = ny.trim();
+    if (!v || statuser.some(item => item.toLowerCase() === v.toLowerCase())) return;
+    onChange(
+      [...statuser, v],
+      { ...farger, [v]: colorDefaults[v] || '#6B7280' }
+    );
+    setNy('');
+  };
+
+  const fjern = (idx) => {
+    if (statuser.length <= 1) return;
+    const nextStatuser = statuser.filter((_, i) => i !== idx);
+    const nextFarger = { ...farger };
+    delete nextFarger[statuser[idx]];
+    onChange(nextStatuser, normalize(nextStatuser, nextFarger));
+  };
+
+  const flytt = (idx, dir) => {
+    const next = [...statuser];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    onChange(next, normalize(next, farger));
+  };
+
+  return (
+    <div className="card settings-card">
+      <div className="card-h"><span className="card-ht">{title}</span></div>
+      <div style={{ padding: 16 }}>
+        {desc && <p className="settings-desc">{desc}</p>}
+        <div className="settings-list">
+          {statuser.map(function (item, idx) {
+            const color = farger[item] || '#6B7280';
+            return (
+              <div className="settings-item settings-item--status" key={'status-row-' + idx}>
+                <label className="status-color-picker" title="Velg farge">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => settFarge(item, e.target.value)}
+                  />
+                  <span className="status-color-picker__dot" style={{ background: color }} />
+                </label>
+                <input
+                  className="settings-item__input"
+                  value={item}
+                  onChange={(e) => endreNavn(idx, e.target.value)}
+                />
+                <Badge s={item} colors={farger} />
+                <div className="settings-item__actions">
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === statuser.length - 1}>↓</button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={statuser.length <= 1}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="settings-add">
+          <input
+            value={ny}
+            onChange={e => setNy(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && leggTil()}
+            placeholder={placeholder || 'Legg til status...'}
+          />
+          <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
+  const [openStatus, setOpenStatus] = useState(null);
+
+  const setItems = (status, items) => {
+    onChange({ ...sjekklister, [status]: items });
+  };
+
+  return (
+    <div className="card settings-card" style={{ gridColumn: '1 / -1' }}>
+      <div className="card-h"><span className="card-ht">Sjekklister per pipeline-status</span></div>
+      <div style={{ padding: 16 }}>
+        <p className="settings-desc">
+          Definer egne gjøremål for hver stasjon i bil-pipeline. Når en bil flyttes til en ny status,
+          får den automatisk sjekklisten for den statusen (tidligere fremdrift bevares).
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {(statuser || []).map(function (status) {
+            const items = sjekklister?.[status] || [];
+            const open = openStatus === status;
+            const color = (farger && farger[status]) || '#6B7280';
+            return (
+              <div key={status} style={{ border: '1px solid var(--b2)', borderRadius: 9, overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setOpenStatus(open ? null : status)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    background: 'var(--s2)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    <strong style={{ fontSize: 13, color: 'var(--t1)' }}>{status}</strong>
+                    <span style={{ fontSize: 11, color: 'var(--t3)' }}>{items.length} punkt{items.length === 1 ? '' : 'er'}</span>
+                  </span>
+                  <span style={{ color: 'var(--t3)', fontSize: 12 }}>{open ? '▲' : '▼'}</span>
+                </button>
+                {open && (
+                  <div style={{ padding: 14, borderTop: '1px solid var(--b2)' }}>
+                    <ListEditor
+                      title=""
+                      items={items}
+                      onChange={v => setItems(status, v)}
+                      placeholder="F.eks. Vasket innvendig"
+                      allowEmpty
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, compact }) {
+  const [ny, setNy] = useState('');
+
+  const endre = (idx, value) => {
+    if (items.some(function (item, i) {
+      return i !== idx && item.toLowerCase() === value.toLowerCase();
+    })) return;
+    const next = [...items];
+    next[idx] = value;
+    onChange(next);
+  };
 
   const leggTil = () => {
     const v = ny.trim();
@@ -3751,18 +8082,24 @@ function ListEditor({ title, desc, items, onChange, placeholder }) {
   };
 
   return (
-    <div className="card settings-card">
-      <div className="card-h"><span className="card-ht">{title}</span></div>
-      <div style={{ padding: 16 }}>
+    <div className={compact ? '' : 'card settings-card'}>
+      {!compact && (
+        <div className="card-h"><span className="card-ht">{title}</span></div>
+      )}
+      <div style={{ padding: compact ? 0 : 16 }}>
         {desc && <p className="settings-desc">{desc}</p>}
         <div className="settings-list">
           {items.map((item, idx) => (
-            <div className="settings-item" key={item + idx}>
-              <span className="settings-item__label">{item}</span>
+            <div className="settings-item" key={'list-row-' + idx}>
+              <input
+                className="settings-item__input"
+                value={item}
+                onChange={(e) => endre(idx, e.target.value)}
+              />
               <div className="settings-item__actions">
                 <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
                 <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === items.length - 1}>↓</button>
-                <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={items.length <= 1}>✕</button>
+                <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={!allowEmpty && items.length <= 1}>✕</button>
               </div>
             </div>
           ))}
@@ -3781,7 +8118,7 @@ function ListEditor({ title, desc, items, onChange, placeholder }) {
   );
 }
 
-function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange, onStatusChange, visTost }) {
+function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange, onVedlikeholdChange, onStatusChange, visTost }) {
   const [draft, setDraft] = useState(settings);
 
   useEffect(function () {
@@ -3800,12 +8137,23 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
     return res;
   };
 
+  const lagreVedlikehold = async (vedlikeholdModus) => {
+    const res = await patchInnstillinger({ vedlikeholdModus });
+    if (res.settings) {
+      setDraft(function (prev) {
+        return { ...prev, vedlikeholdModus: res.settings.vedlikeholdModus };
+      });
+      if (onVedlikeholdChange) onVedlikeholdChange(res.settings.vedlikeholdModus);
+    }
+    return res;
+  };
+
   return (
     <>
       <div className="ph">
         <div>
           <div className="ph-title">Innstillinger</div>
-          <div className="ph-sub">Brukere, moduler, mailkontoer, ansvarlige, merker og statuser</div>
+          <div className="ph-sub">Vedlikehold, brukere, moduler, mailkontoer, bil-pipeline, sjekklister og statuser</div>
         </div>
         {showInnstillinger && (
           <button type="button" className="btn btn-p" onClick={() => onSave(draft)}>Lagre lister</button>
@@ -3818,6 +8166,11 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
 
       {showInnstillinger && (
         <>
+          <VedlikeholdSection
+            vedlikeholdModus={draft.vedlikeholdModus}
+            onSave={lagreVedlikehold}
+            visTost={visTost}
+          />
           <ModulOppsettSection
             modulOppsett={draft.modulOppsett}
             onChange={onModulOppsettChange}
@@ -3841,24 +8194,52 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           onChange={v => setList('merker', v)}
           placeholder="F.eks. Porsche"
         />
-        <ListEditor
-          title="Bilstatuser"
-          desc="Kolonner i lager-kanban og status på biler."
-          items={draft.bilStatuser}
-          onChange={v => setList('bilStatuser', v)}
+        <StatusListEditor
+          title="Bilstatuser og farger"
+          desc="Pipeline-stasjoner for biler på lager. Rekkefølge styrer kanban og listevisning."
+          statuser={draft.bilStatuser}
+          farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
+          onChange={(statuser, farger) => setDraft(prev => ({
+            ...prev,
+            bilStatuser: statuser,
+            bilStatusFarger: farger,
+            bilSjekklister: normalizeBilSjekklister(statuser, prev.bilSjekklister, prev.sjekklisteMal)
+          }))}
           placeholder="F.eks. Klargjøring"
+          defaultColors={DEFAULT_BIL_STATUS_FARGER}
+          normalizeColors={normalizeBilStatusFarger}
         />
-        <ListEditor
-          title="Henvendelsesstatuser"
-          items={draft.henvStatuser}
-          onChange={v => setList('henvStatuser', v)}
+        <BilSjekklisterEditor
+          statuser={draft.bilStatuser || []}
+          farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
+          sjekklister={draft.bilSjekklister || DEFAULT_BIL_SJEKKLISTER}
+          onChange={v => setDraft(prev => ({ ...prev, bilSjekklister: v }))}
+        />
+        <StatusListEditor
+          title="Henvendelsesstatuser og farger"
+          desc="Legg til statuser og velg farge for hver. Brukes i henvendelseslisten og filtre."
+          statuser={draft.henvStatuser}
+          farger={draft.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER}
+          onChange={(statuser, farger) => setDraft(prev => ({
+            ...prev,
+            henvStatuser: statuser,
+            henvStatusFarger: farger
+          }))}
           placeholder="F.eks. Oppfølging"
         />
-        <ListEditor
-          title="Innbytte-statuser"
-          items={draft.innbytteStatuser}
-          onChange={v => setList('innbytteStatuser', v)}
+        <StatusListEditor
+          title="Innbytte-statuser og farger"
+          desc="Legg til statuser og velg farge for hver. Brukes i innbytteoversikten og filtre."
+          statuser={draft.innbytteStatuser}
+          farger={draft.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER}
+          onChange={(statuser, farger) => setDraft(prev => ({
+            ...prev,
+            innbytteStatuser: statuser,
+            innbytteStatusFarger: farger
+          }))}
           placeholder="F.eks. Vurderes"
+          defaultColors={DEFAULT_INNBYTTE_STATUS_FARGER}
+          normalizeColors={normalizeInnbytteStatusFarger}
         />
         <ListEditor
           title="Kalendertyper"

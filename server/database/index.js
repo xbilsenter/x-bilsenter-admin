@@ -1,12 +1,8 @@
 'use strict';
 
-function usePostgresBackend() {
+function usePostgresDriver() {
   if (process.env.USE_SUPABASE !== 'true') return false;
   return !!(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL);
 }
 
-if (!usePostgresBackend()) {
-  require('./db-sqlite');
-}
-
-module.exports = require('./db-pg');
+module.exports = usePostgresDriver() ? require('./postgres') : require('./sqlite');

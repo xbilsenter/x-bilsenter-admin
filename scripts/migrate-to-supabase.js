@@ -22,7 +22,7 @@ const SERVER_DIR = path.join(ROOT, 'server');
 
 require(path.join(SERVER_DIR, 'node_modules', 'dotenv')).config({ path: path.join(ROOT, '.env') });
 
-const { db, parseJson } = require(path.join(SERVER_DIR, 'db'));
+const { prepare, parseJson } = require(path.join(SERVER_DIR, 'db'));
 const { getSupabase, isSupabaseEnabled } = require(path.join(SERVER_DIR, 'supabase'));
 
 const EXPORT_DIR = path.join(__dirname, '..', 'supabase', 'export');
@@ -87,6 +87,27 @@ const TABLES = [
     }
   },
   {
+    name: 'kunder',
+    query: 'SELECT * FROM kunder ORDER BY id',
+    map: function (row) {
+      return {
+        id: row.id,
+        navn: row.navn,
+        epost: row.epost || '',
+        tlf: row.tlf || '',
+        adresse: row.adresse || '',
+        postnr: row.postnr || '',
+        poststed: row.poststed || '',
+        organisasjonsnummer: row.organisasjonsnummer || '',
+        type: row.type || 'Privat',
+        notater: row.notater || '',
+        kilde: row.kilde || 'Manuell',
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      };
+    }
+  },
+  {
     name: 'henvendelser',
     query: 'SELECT * FROM henvendelser ORDER BY id',
     map: function (row) {
@@ -103,6 +124,7 @@ const TABLES = [
         kommentarer: parseJson(row.kommentarer, []),
         kilde: row.kilde,
         bil_ref: row.bil_ref,
+        kunde_id: row.kunde_id || null,
         created_at: row.created_at,
         updated_at: row.updated_at
       };
@@ -142,6 +164,7 @@ const TABLES = [
         tilbud: row.tilbud,
         kommentarer: parseJson(row.kommentarer, []),
         bilder: parseJson(row.bilder, []),
+        kunde_id: row.kunde_id || null,
         created_at: row.created_at,
         updated_at: row.updated_at
       };
@@ -170,8 +193,24 @@ const TABLES = [
         sjekkliste: parseJson(row.sjekkliste, []),
         logg: parseJson(row.logg, []),
         svv_data: parseJson(row.svv_data, null),
+        sjekklister: parseJson(row.sjekklister, null),
+        archived: row.archived ? 1 : 0,
+        archived_at: row.archived_at || null,
+        sort_order: row.sort_order ?? 0,
+        kunde_id: row.kunde_id || null,
         created_at: row.created_at,
         updated_at: row.updated_at
+      };
+    }
+  },
+  {
+    name: 'bil_kunder',
+    query: 'SELECT * FROM bil_kunder ORDER BY bil_id, kunde_id',
+    map: function (row) {
+      return {
+        bil_id: row.bil_id,
+        kunde_id: row.kunde_id,
+        created_at: row.created_at
       };
     }
   },
@@ -189,6 +228,7 @@ const TABLES = [
         ansvarlig: row.ansvarlig,
         bil_ref: row.bil_ref,
         notat: row.notat,
+        kunde_id: row.kunde_id || null,
         created_at: row.created_at
       };
     }
@@ -243,6 +283,9 @@ const TABLES = [
         innhold_html: row.innhold_html,
         lest: !!row.lest,
         henvendelse_id: row.henvendelse_id,
+        kunde_id: row.kunde_id || null,
+        status: row.status || '',
+        ansvarlig: row.ansvarlig || '',
         mottatt_dato: row.mottatt_dato,
         created_at: row.created_at
       };
@@ -250,15 +293,21 @@ const TABLES = [
   }
 ];
 
-function exportData() {
+async function exportData() {
   if (!fs.existsSync(EXPORT_DIR)) fs.mkdirSync(EXPORT_DIR, { recursive: true });
 
-  TABLES.forEach(function (table) {
-    const rows = db.prepare(table.query).all().map(table.map);
+  for (const table of TABLES) {
+    let rows = [];
+    try {
+      const result = await prepare(table.query).all();
+      rows = result.map(table.map);
+    } catch (err) {
+      console.warn(`Hopper over ${table.name}: ${err.message}`);
+    }
     const file = path.join(EXPORT_DIR, `${table.name}.json`);
     fs.writeFileSync(file, JSON.stringify(rows, null, 2));
     console.log(`Eksportert ${rows.length} rader → ${file}`);
-  });
+  }
 
   console.log('\nFerdig. Kjør SQL-skjema i Supabase, deretter: node scripts/migrate-to-supabase.js --import');
 }
@@ -267,9 +316,11 @@ const IMPORT_ORDER = [
   'users',
   'innstillinger',
   'mail_kontoer',
+  'kunder',
   'henvendelser',
   'innbytte',
   'biler',
+  'bil_kunder',
   'kalender',
   'epost_maler',
   'epost_utkast',
@@ -277,10 +328,27 @@ const IMPORT_ORDER = [
 ];
 
 function conflictColumn(tableName) {
-  return tableName === 'innstillinger' ? 'key' : 'id';
+  if (tableName === 'innstillinger') return 'key';
+  if (tableName === 'bil_kunder') return 'bil_id,kunde_id';
+  return 'id';
 }
 
-async function importTable(supabase, tableName, rows) {
+function normalizeImportRow(tableName, row, validKontoIds) {
+  if (tableName === 'biler') {
+    return Object.assign({}, row, {
+      archived: row.archived ? 1 : 0
+    });
+  }
+  if ((tableName === 'epost_utkast' || tableName === 'eposter') && row.konto_id != null) {
+    if (!validKontoIds.has(Number(row.konto_id))) {
+      const fallback = validKontoIds.size ? Math.min(...validKontoIds) : null;
+      return Object.assign({}, row, { konto_id: fallback });
+    }
+  }
+  return row;
+}
+
+async function importTable(supabase, tableName, rows, validKontoIds) {
   if (!rows.length) {
     console.log(`Hopper over ${tableName} (tom)`);
     return;
@@ -289,7 +357,9 @@ async function importTable(supabase, tableName, rows) {
   const batchSize = 200;
   const onConflict = conflictColumn(tableName);
   for (let i = 0; i < rows.length; i += batchSize) {
-    const batch = rows.slice(i, i + batchSize);
+    const batch = rows.slice(i, i + batchSize).map(function (row) {
+      return normalizeImportRow(tableName, row, validKontoIds);
+    });
     const { error } = await supabase.from(tableName).upsert(batch, { onConflict });
     if (error) throw new Error(`${tableName}: ${error.message}`);
     console.log(`  ${tableName}: ${Math.min(i + batchSize, rows.length)}/${rows.length}`);
@@ -303,6 +373,13 @@ async function importData() {
   }
 
   const supabase = getSupabase();
+  const validKontoIds = new Set();
+  const kontoFile = path.join(EXPORT_DIR, 'mail_kontoer.json');
+  if (fs.existsSync(kontoFile)) {
+    JSON.parse(fs.readFileSync(kontoFile, 'utf8')).forEach(function (row) {
+      if (row.id != null) validKontoIds.add(Number(row.id));
+    });
+  }
 
   for (const tableName of IMPORT_ORDER) {
     const file = path.join(EXPORT_DIR, `${tableName}.json`);
@@ -312,17 +389,20 @@ async function importData() {
     }
     const rows = JSON.parse(fs.readFileSync(file, 'utf8'));
     console.log(`Importerer ${tableName}…`);
-    await importTable(supabase, tableName, rows);
+    await importTable(supabase, tableName, rows, validKontoIds);
   }
 
   console.log('\nImport fullført.');
   console.log('Tips: Kjør setval-linjer nederst i supabase/migrations/001_initial_schema.sql hvis nye rader skal få riktig id.');
-  console.log('Deretter: sett USE_SUPABASE=true i .env når backend er koblet til Supabase (fase 2).');
+  console.log('Deretter: sett USE_SUPABASE=true og DATABASE_URL i .env for PostgreSQL-drift (fase 2).');
 }
 
 const arg = process.argv[2];
 if (arg === '--export') {
-  exportData();
+  exportData().catch(function (err) {
+    console.error(err.message || err);
+    process.exit(1);
+  });
 } else if (arg === '--import') {
   importData().catch(function (err) {
     console.error(err.message || err);

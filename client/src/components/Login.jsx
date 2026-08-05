@@ -1,5 +1,80 @@
-import { useState } from 'react';
-import { login } from '../api.js';
+import { useState, useEffect, useCallback } from 'react';
+import { login, getPublicStatus } from '../api.js';
+
+const STATUS_POLL_MS = 15000;
+
+function formatStatusTid(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function LoginBackendStatus() {
+  const [status, setStatus] = useState(null);
+  const [feil, setFeil] = useState('');
+
+  const oppdater = useCallback(async function () {
+    try {
+      const res = await getPublicStatus();
+      setStatus(res.status || null);
+      setFeil('');
+    } catch (err) {
+      setFeil(err.message || 'Backend utilgjengelig');
+      setStatus(null);
+    }
+  }, []);
+
+  useEffect(function () {
+    oppdater();
+    const id = setInterval(oppdater, STATUS_POLL_MS);
+    return function () { clearInterval(id); };
+  }, [oppdater]);
+
+  const overall = status?.overall || (feil ? 'feil' : 'ukjent');
+  const dotClass = overall === 'ok' ? 'live' : overall === 'feil' ? 'nede' : 'vedlikehold';
+  const backendLabel = overall === 'ok' ? 'Backend operativ' : overall === 'feil' ? 'Backend feil' : 'Sjekker backend…';
+  const dbLabel = status?.database === 'ok' ? 'Database OK' : status?.database === 'feil' ? 'Database feil' : 'Database —';
+  const nettMeta = {
+    live: 'Nettside live',
+    vedlikehold: 'Nettside vedlikehold',
+    nede: 'Nettside nede'
+  };
+  const nettLabel = status?.nettside ? (nettMeta[status.nettside.status] || 'Nettside —') : null;
+
+  return (
+    <div className="login-status" aria-live="polite">
+      <span className={`drift-dot drift-dot--${dotClass} is-pulse`} />
+      <span>{backendLabel}</span>
+      <span className="login-status__sep">·</span>
+      <span>{dbLabel}</span>
+      {status?.responseMs != null && (
+        <>
+          <span className="login-status__sep">·</span>
+          <span>{status.responseMs} ms</span>
+        </>
+      )}
+      {nettLabel && (
+        <>
+          <span className="login-status__sep">·</span>
+          <span>{nettLabel}</span>
+        </>
+      )}
+      {status?.checkedAt && (
+        <>
+          <span className="login-status__sep">·</span>
+          <span>Oppdatert {formatStatusTid(status.checkedAt)}</span>
+        </>
+      )}
+      {feil && !status && (
+        <>
+          <span className="login-status__sep">·</span>
+          <span className="login-status__err">{feil}</span>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function Login({ onSuccess }) {
   const [username, setUsername] = useState('');
@@ -25,8 +100,7 @@ export default function Login({ onSuccess }) {
     <div className="login-page">
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-logo">X <em>Bilsenter AS</em></div>
-        <div className="login-tagline">CRM · Fetsund</div>
-        <p className="login-hint">Lokal utvikling: brukernavn <strong>admin</strong> · passord <strong>admin123</strong></p>
+        <div className="login-tagline">Internt driftssystem</div>
 
         {error && <div className="login-err">{error}</div>}
 
@@ -55,6 +129,7 @@ export default function Login({ onSuccess }) {
           </button>
         </div>
       </form>
+      <LoginBackendStatus />
     </div>
   );
 }

@@ -11,15 +11,27 @@ const multer = require('multer');
 const fs = require('fs');
 
 const {
-  db,
-  UPLOADS_DIR,
+  prepare,
+  execAsync,
+  transaction,
+  isPostgres,
+  dbReady,
+  syncPostgresSequences,
   mapHenv,
+  mergeHenvKommentarer,
+  createInternKommentar,
+  normalizeHenvKommentarer,
   mapInnbytte,
+  mapSelgBil,
   mapBil,
   mapKal,
+  mapInnkjopskalkyle,
+  calcInnkjopsprisRow,
   mapEpost,
   getInnstillinger,
   saveInnstillinger,
+  getLister,
+  getVedlikeholdModus,
   getMailKontoer,
   getMailKontoById,
   createMailKonto,
@@ -44,12 +56,113 @@ const {
   deleteUser,
   getPermissionDefs,
   getRoleTemplates,
-  PASS_MASK
+  PASS_MASK,
+  findOrCreateKunde,
+  linkInboundEpostToKunde,
+  mapKunde,
+  getKunder,
+  getKundeById,
+  getKundeAktivitet,
+  createKunde,
+  updateKunde,
+  deleteKunde,
+  getAllBilKundeIdsMap,
+  setBilKunder,
+  nextBilSortOrder,
+  reorderBiler,
+  ensureSjekklisterForStatus,
+  parseBilSjekklisterObject,
+  getAktivSjekklisteFromRow,
+  sjekklisteFraMalServer,
+  parseJson
 } = require('./db');
 
 const { lookupVehicleFull } = require('./vegvesen');
-const { getMailStatus, syncInbox, sendMail, testMailKonto } = require('./mail');
-const { isSupabaseEnabled } = require('./supabase');
+const { isConfigured: isOmregConfigured, lookupOmregistreringsavgift } = require('./skatteetaten-omreg');
+const { lookupFinnAnnonse, resolveFinnMarkedsSok } = require('./finn');
+const { getMailStatus, syncInbox, sendMail, testMailKonto, startBackgroundMailSync } = require('./mail');
+const {
+  getMailMapperForKonto,
+  getMailMappeById,
+  mapEpostVedlegg,
+  getEpostVedlegg,
+  getEpostVedleggById,
+  updateMappeCounts,
+  ensureStandardVirtualFolders,
+  updateAllMappeCountsForKonto
+} = require('./mail-folders');
+const {
+  createImapFolder,
+  moveMessageOnServer,
+  setMessageSeenOnServer,
+  deleteMessageOnServer,
+  refreshFoldersFromImap
+} = require('./mail-sync');
+const { createPreviewToken, PREVIEW_TTL_MS } = require('./preview-access');
+const { runMailSyncCron } = require('./cron-mail-sync');
+const {
+  UPLOADS_DIR,
+  isRemoteStorageEnabled,
+  ensureBucket,
+  makeFilename,
+  toUploadPath,
+  saveBase64DataUrl,
+  persistMulterFile,
+  deleteUpload,
+  openUpload
+} = require('./storage');
+
+async function mapEpostRowsWithVedlegg(rows) {
+  if (!rows.length) return [];
+  const ids = rows.map(function (row) { return Number(row.id); });
+  const placeholders = ids.map(function () { return '?'; }).join(',');
+  const vedleggRows = await prepare(`
+    SELECT * FROM epost_vedlegg WHERE epost_id IN (${placeholders}) ORDER BY id ASC
+  `).all(...ids);
+  const byEpostId = {};
+  vedleggRows.forEach(function (row) {
+    const mapped = mapEpostVedlegg(row);
+    if (!mapped) return;
+    if (!byEpostId[mapped.epostId]) byEpostId[mapped.epostId] = [];
+    byEpostId[mapped.epostId].push(mapped);
+  });
+  return rows.map(function (row) {
+    return mapEpost(row, byEpostId[row.id] || []);
+  });
+}
+
+async function getEpostRowById(id) {
+  return prepare(`
+    SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost,
+      m.navn AS mappe_navn, m.mappe_type AS mappe_type, m.imap_path AS mappe_imap_path
+    FROM eposter e
+    LEFT JOIN mail_kontoer k ON k.id = e.konto_id
+    LEFT JOIN mail_mapper m ON m.id = e.mappe_id
+    WHERE e.id = ?
+  `).get(Number(id));
+}
+
+process.on('unhandledRejection', function (reason) {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  console.error('[admin] Ubehandlet promise-feil:', message);
+});
+
+let httpServer = null;
+
+function shutdown(signal) {
+  console.log('[admin] Mottok ' + signal + ' – avslutter …');
+  if (httpServer) {
+    httpServer.close(function () {
+      process.exit(0);
+    });
+    setTimeout(function () { process.exit(0); }, 5000).unref();
+  } else {
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', function () { shutdown('SIGTERM'); });
+process.on('SIGINT', function () { shutdown('SIGINT'); });
 
 const app = express();
 const PORT = process.env.PORT || 8090;
@@ -59,11 +172,36 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const PUBLIC_SITE_ORIGIN = process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080';
 const isProd = process.env.NODE_ENV === 'production';
+const isVercel = !!process.env.VERCEL;
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
+
+function buildCorsOrigins() {
+  const origins = new Set([
+    PUBLIC_SITE_ORIGIN,
+    process.env.ADMIN_PUBLIC_URL,
+    `http://localhost:${PORT}`,
+    `http://127.0.0.1:${PORT}`
+  ].filter(Boolean));
+
+  if (process.env.VERCEL_URL) {
+    origins.add(`https://${process.env.VERCEL_URL}`);
+  }
+  if (process.env.VERCEL_BRANCH_URL) {
+    origins.add(`https://${process.env.VERCEL_BRANCH_URL}`);
+  }
+
+  const extra = String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(function (item) { return item.trim(); })
+    .filter(Boolean);
+  extra.forEach(function (item) { origins.add(item); });
+
+  return [...origins];
+}
 
 app.use(cors({
   origin: isProd
-    ? [PUBLIC_SITE_ORIGIN, `http://localhost:${PORT}`]
+    ? buildCorsOrigins()
     : true,
   credentials: true
 }));
@@ -71,20 +209,59 @@ app.use(cors({
 app.use(express.json({ limit: '25mb' }));
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: function (_req, _file, cb) {
-      cb(null, UPLOADS_DIR);
-    },
-    filename: function (_req, file, cb) {
-      const safe = String(file.originalname || 'fil').replace(/[^\w.\-]+/g, '_');
-      cb(null, Date.now() + '-' + safe);
-    }
-  }),
+  storage: (isRemoteStorageEnabled() || isVercel)
+    ? multer.memoryStorage()
+    : multer.diskStorage({
+        destination: function (_req, _file, cb) {
+          cb(null, UPLOADS_DIR);
+        },
+        filename: function (_req, file, cb) {
+          cb(null, makeFilename(file.originalname));
+        }
+      }),
   limits: { fileSize: 8 * 1024 * 1024, files: 12 }
 });
 
-function touch(table, id) {
-  db.prepare(`UPDATE ${table} SET updated_at = datetime('now') WHERE id = ?`).run(id);
+async function cleanupRemovedUploadFiles(oldFiles, newFiles) {
+  if (!Array.isArray(oldFiles) || !Array.isArray(newFiles)) return;
+  const keepPaths = new Set(newFiles.map(function (file) { return file?.path; }).filter(Boolean));
+  for (const file of oldFiles) {
+    const filePath = String(file?.path || '');
+    if (!filePath || keepPaths.has(filePath)) continue;
+    try {
+      await deleteUpload(filePath);
+    } catch (_err) {
+      /* Ignorer fil-feil */
+    }
+  }
+}
+
+function mapUploadedFiles(files, user) {
+  return (files || []).map(function (file) {
+    const filename = file.filename || path.basename(file.path || '');
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      name: file.originalname || filename || 'fil',
+      path: file.path || toUploadPath(filename),
+      size: file.size || 0,
+      type: file.mimetype || file.type || '',
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: user?.name || user?.username || 'Ukjent'
+    };
+  });
+}
+
+async function persistMulterFiles(files) {
+  const saved = [];
+  for (const file of files || []) {
+    const persisted = await persistMulterFile(file);
+    if (persisted) saved.push(persisted);
+  }
+  return saved;
+}
+
+async function touch(table, id) {
+  await prepare(`UPDATE ${table} SET updated_at = datetime('now') WHERE id = ?`).run(id);
 }
 
 function requireAuth(req, res, next) {
@@ -127,6 +304,92 @@ function formatUserResponse(user) {
   };
 }
 
+async function getAnsvarligNavn(req) {
+  const fromToken = String(req.user?.name || '').trim();
+  if (fromToken) return fromToken;
+  const user = await getUserById(req.user?.sub);
+  return String(user?.name || user?.username || '').trim();
+}
+
+async function resolveBilAnsvarlig(req, body) {
+  if (body && body.ansvarlig !== undefined) return body.ansvarlig;
+  const auto = await getAnsvarligNavn(req);
+  return auto || null;
+}
+
+async function resolveInnbytteStatus(key) {
+  const statuser = (await getInnstillinger()).innbytteStatuser || [];
+  const normalized = String(key || '').trim().toLowerCase();
+  if (!normalized) return String(key || '').trim();
+  const match = statuser.find(function (s) {
+    return String(s || '').trim().toLowerCase() === normalized;
+  });
+  return match || String(key || '').trim();
+}
+
+async function resolveSelgBilStatus(key) {
+  return resolveInnbytteStatus(key);
+}
+
+async function saveIngestBilder(bilderMeta) {
+  const savedFiles = [];
+  const items = Array.isArray(bilderMeta) ? bilderMeta : [];
+
+  for (let i = 0; i < items.length; i += 1) {
+    const file = items[i];
+    if (!file || !file.data) continue;
+    const saved = await saveBase64DataUrl(file.data, {
+      name: file.name,
+      index: i
+    });
+    if (saved) savedFiles.push(saved);
+  }
+
+  return savedFiles;
+}
+
+async function insertSelgBilRow(b, savedFiles) {
+  const utstyr = Array.isArray(b.utstyr) ? b.utstyr : [];
+  return prepare(`
+    INSERT INTO selg_bil (
+      navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
+      hjuldrift, effekt_hk, siste_eu_kontroll, neste_eu_kontroll, kilometerstand,
+      servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
+      kommentar, bilder, kunde_id
+    ) VALUES (
+      @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
+      @hjuldrift, @effekt_hk, @siste_eu_kontroll, @neste_eu_kontroll, @kilometerstand,
+      @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
+      @kommentar, @bilder, @kunde_id
+    )
+  `).run({
+    navn: b.navn,
+    epost: b.epost,
+    tlf: b.mobil || b.tlf || '',
+    regnr: String(b.regnr).toUpperCase(),
+    merke: b.merke || '',
+    modell: b.modell || '',
+    arsmodell: b.arsmodell || '',
+    drivstoff: b.drivstoff || '',
+    farge: b.farge || '',
+    kjoretoy_type: b.kjoretoyType || '',
+    hjuldrift: b.hjuldrift || '',
+    effekt_hk: b.effektHk != null ? String(b.effektHk) : '',
+    siste_eu_kontroll: b.sisteEuKontroll || '',
+    neste_eu_kontroll: b.nesteEuKontroll || '',
+    kilometerstand: b.kilometerstand || '',
+    servicehistorikk: b.servicehistorikk || '',
+    siste_service: b.sisteService || '',
+    utstyr: JSON.stringify(utstyr),
+    sommerdekk: b.sommerdekk || '',
+    vinterdekk: b.vinterdekk || '',
+    forventning: b.forventning || '',
+    kommentar: b.kommentar || '',
+    bilder: JSON.stringify(savedFiles),
+    kunde_id: null
+  });
+}
+
 function signToken(user) {
   return jwt.sign({
     sub: user.id,
@@ -149,7 +412,7 @@ function requireIngest(req, res, next) {
 // ─── Auth ───
 app.post('/api/auth/login', async function (req, res) {
   const { username, password } = req.body || {};
-  const user = getUserByUsername(username, true);
+  const user = await getUserByUsername(username, true);
   if (!user || !user.aktiv) {
     return res.status(401).json({ ok: false, error: 'Feil brukernavn eller passord.' });
   }
@@ -163,13 +426,13 @@ app.post('/api/auth/login', async function (req, res) {
     return res.status(401).json({ ok: false, error: 'Feil brukernavn eller passord.' });
   }
 
-  const safeUser = getUserById(user.id);
+  const safeUser = await getUserById(user.id);
   const token = signToken(safeUser);
   res.json({ ok: true, token, user: formatUserResponse(safeUser) });
 });
 
-app.get('/api/auth/me', requireAuth, function (req, res) {
-  const user = getUserById(req.user.sub);
+app.get('/api/auth/me', requireAuth, async function (req, res) {
+  const user = await getUserById(req.user.sub);
   if (!user || !user.aktiv) {
     return res.status(401).json({ ok: false, error: 'Ugyldig sesjon.' });
   }
@@ -185,8 +448,8 @@ app.get('/api/brukere/meta', requireAuth, requirePermission('brukere'), function
   });
 });
 
-app.get('/api/brukere', requireAuth, requirePermission('brukere'), function (_req, res) {
-  res.json({ ok: true, items: getUsers() });
+app.get('/api/brukere', requireAuth, requirePermission('brukere'), async function (_req, res) {
+  res.json({ ok: true, items: await getUsers() });
 });
 
 app.post('/api/brukere', requireAuth, requirePermission('brukere'), async function (req, res) {
@@ -196,7 +459,7 @@ app.post('/api/brukere', requireAuth, requirePermission('brukere'), async functi
       return res.status(400).json({ ok: false, error: 'Passord må være minst 6 tegn.' });
     }
     const hash = await bcrypt.hash(password, 10);
-    const item = createUser(req.body || {}, hash);
+    const item = await createUser(req.body || {}, hash);
     res.status(201).json({ ok: true, item: formatUserResponse(item) });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message || 'Kunne ikke opprette bruker.' });
@@ -213,7 +476,7 @@ app.patch('/api/brukere/:id', requireAuth, requirePermission('brukere'), async f
       }
       hash = await bcrypt.hash(password, 10);
     }
-    const item = updateUser(Number(req.params.id), req.body || {}, hash);
+    const item = await updateUser(Number(req.params.id), req.body || {}, hash);
     if (!item) return res.status(404).json({ ok: false, error: 'Bruker ikke funnet.' });
     res.json({ ok: true, item: formatUserResponse(item) });
   } catch (err) {
@@ -221,9 +484,9 @@ app.patch('/api/brukere/:id', requireAuth, requirePermission('brukere'), async f
   }
 });
 
-app.delete('/api/brukere/:id', requireAuth, requirePermission('brukere'), function (req, res) {
+app.delete('/api/brukere/:id', requireAuth, requirePermission('brukere'), async function (req, res) {
   try {
-    const ok = deleteUser(Number(req.params.id), req.user.sub);
+    const ok = await deleteUser(Number(req.params.id), req.user.sub);
     if (!ok) return res.status(404).json({ ok: false, error: 'Bruker ikke funnet.' });
     res.json({ ok: true });
   } catch (err) {
@@ -232,19 +495,145 @@ app.delete('/api/brukere/:id', requireAuth, requirePermission('brukere'), functi
 });
 
 // ─── Dashboard ───
-app.get('/api/dashboard', requireAuth, function (_req, res) {
-  const nyeHenv = db.prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get().c;
-  const nyeInnbytte = db.prepare("SELECT COUNT(*) AS c FROM innbytte WHERE status = 'Ny'").get().c;
-  const paaLager = db.prepare("SELECT COUNT(*) AS c FROM biler WHERE status NOT IN ('Solgt')").get().c;
-  const reservert = db.prepare("SELECT COUNT(*) AS c FROM biler WHERE status = 'Reservert'").get().c;
-  const idag = new Date().toISOString().slice(0, 10);
-  const iDagKal = db.prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag).c;
+app.get('/api/drift/nettside', requireAuth, async function (_req, res) {
+  const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+  const vedlikehold = await getVedlikeholdModus();
+  const started = Date.now();
+  let online = false;
+  let responseMs = null;
+  let httpStatus = null;
+  let health = null;
+  let error = null;
 
-  const biler = db.prepare('SELECT sjekkliste FROM biler WHERE status NOT IN (\'Solgt\')').all();
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(function () { controller.abort(); }, 8000);
+    const response = await fetch(siteUrl + '/api/health', { signal: controller.signal });
+    clearTimeout(timeout);
+    responseMs = Date.now() - started;
+    httpStatus = response.status;
+    online = response.ok;
+    if (response.ok) {
+      health = await response.json();
+    }
+  } catch (err) {
+    error = err.name === 'AbortError' ? 'Tidsavbrudd (8s)' : (err.message || 'Kunne ikke nå nettsiden');
+    responseMs = Date.now() - started;
+  }
+
+  const vedlikeholdAktiv = vedlikehold.aktiv || !!(health && health.vedlikehold && health.vedlikehold.aktiv);
+  let besokendeStatus = 'live';
+  if (!online) besokendeStatus = 'nede';
+  else if (vedlikeholdAktiv) besokendeStatus = 'vedlikehold';
+
+  res.json({
+    ok: true,
+    status: {
+      url: siteUrl,
+      online,
+      httpStatus,
+      responseMs,
+      error,
+      vedlikeholdAktiv,
+      vedlikeholdMelding: vedlikehold.melding,
+      besokendeStatus,
+      adminOk: health ? health.admin === 'ok' : null,
+      finn: health ? health.finn : null,
+      finnOrgId: health ? health.finnOrgId : null,
+      checkedAt: new Date().toISOString()
+    }
+  });
+});
+
+app.get('/api/drift/preview-url', requireAuth, function (req, res) {
+  if (!INGEST_SECRET) {
+    return res.status(503).json({ ok: false, error: 'INGEST_SECRET er ikke konfigurert.' });
+  }
+
+  try {
+    const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+    const token = createPreviewToken(req.user.sub);
+    res.json({
+      ok: true,
+      url: `${siteUrl}/api/preview/enter?token=${encodeURIComponent(token)}`,
+      expiresInHours: Math.round(PREVIEW_TTL_MS / (60 * 60 * 1000))
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke opprette forhåndsvisningslenke.' });
+  }
+});
+
+app.post('/api/drift/finn-refresh', requireAuth, requirePermission('innstillinger'), async function (_req, res) {
+  const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+
+  if (!INGEST_SECRET) {
+    return res.status(503).json({
+      ok: false,
+      error: 'INGEST_SECRET er ikke konfigurert på admin-serveren.'
+    });
+  }
+
+  try {
+    const response = await fetch(siteUrl + '/api/biler/refresh', {
+      method: 'POST',
+      headers: {
+        'X-Ingest-Key': INGEST_SECRET,
+        Accept: 'application/json'
+      }
+    });
+
+    const data = await response.json().catch(function () { return null; });
+
+    if (!response.ok || !data || !data.ok) {
+      return res.status(response.ok ? 502 : response.status).json({
+        ok: false,
+        error: (data && data.error) || 'Kunne ikke oppdatere FINN-lageret på nettsiden.'
+      });
+    }
+
+    res.json({
+      ok: true,
+      total: data.total || 0,
+      count: Array.isArray(data.cars) ? data.cars.length : 0,
+      updatedAt: data.updatedAt || new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('POST /api/drift/finn-refresh feilet:', err.message);
+    res.status(502).json({
+      ok: false,
+      error: 'Kunne ikke nå nettsideserveren for FINN-oppdatering.'
+    });
+  }
+});
+
+app.get('/api/dashboard', requireAuth, async function (_req, res) {
+  const idag = new Date().toISOString().slice(0, 10);
+  const [
+    nyeHenvRow,
+    nyeInnbytteRow,
+    nyeSelgBilRow,
+    paaLagerRow,
+    reservertRow,
+    iDagKalRow,
+    biler,
+    ulestEpost,
+    totaltKunderRow
+  ] = await Promise.all([
+    prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
+    prepare("SELECT COUNT(*) AS c FROM innbytte WHERE status = 'Ny'").get(),
+    prepare("SELECT COUNT(*) AS c FROM selg_bil WHERE status = 'Ny'").get(),
+    prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status NOT IN ('Solgt')").get(),
+    prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status = 'Reservert'").get(),
+    prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
+    prepare('SELECT status, sjekkliste, sjekklister FROM biler WHERE archived = 0 AND status NOT IN (\'Solgt\')').all(),
+    countUlestEpost(),
+    prepare('SELECT COUNT(*) AS c FROM kunder').get()
+  ]);
+
   let aapneOppgaver = 0;
   biler.forEach(function (b) {
     try {
-      const list = JSON.parse(b.sjekkliste || '[]');
+      const list = getAktivSjekklisteFromRow(b, parseBilSjekklisterObject(b));
       aapneOppgaver += list.filter(function (x) { return !x.f; }).length;
     } catch (_e) { /* ignore */ }
   });
@@ -252,27 +641,123 @@ app.get('/api/dashboard', requireAuth, function (_req, res) {
   res.json({
     ok: true,
     stats: {
-      nyeHenv,
-      nyeInnbytte,
-      paaLager,
-      reservert,
-      iDagKal,
+      nyeHenv: nyeHenvRow.c,
+      nyeInnbytte: nyeInnbytteRow.c,
+      nyeSelgBil: nyeSelgBilRow.c,
+      paaLager: paaLagerRow.c,
+      reservert: reservertRow.c,
+      iDagKal: iDagKalRow.c,
       aapneOppgaver,
-      ulestEpost: countUlestEpost()
+      ulestEpost,
+      totaltKunder: totaltKunderRow.c
     }
   });
 });
 
+// ─── Offentlig (nettside) ───
+app.get('/api/public/status', async function (_req, res) {
+  const started = Date.now();
+  let database = 'ok';
+  let databaseError = null;
+
+  try {
+    await prepare('SELECT 1 AS ok').get();
+  } catch (err) {
+    database = 'feil';
+    databaseError = err.message || 'Databasefeil';
+  }
+
+  const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+  const vedlikehold = await getVedlikeholdModus();
+  let nettside = {
+    online: false,
+    responseMs: null,
+    status: 'nede',
+    error: null
+  };
+
+  try {
+    const pingStart = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(function () { controller.abort(); }, 5000);
+    const response = await fetch(siteUrl + '/api/health', { signal: controller.signal });
+    clearTimeout(timeout);
+    nettside.online = response.ok;
+    nettside.responseMs = Date.now() - pingStart;
+    if (response.ok) {
+      const health = await response.json();
+      const vedlikeholdAktiv = vedlikehold.aktiv || !!(health && health.vedlikehold && health.vedlikehold.aktiv);
+      nettside.status = vedlikeholdAktiv ? 'vedlikehold' : 'live';
+    }
+  } catch (err) {
+    nettside.error = err.name === 'AbortError' ? 'Tidsavbrudd' : (err.message || 'Utilgjengelig');
+    nettside.status = 'nede';
+  }
+
+  const backendOk = database === 'ok';
+  res.json({
+    ok: true,
+    status: {
+      overall: backendOk ? 'ok' : 'feil',
+      api: 'ok',
+      database,
+      databaseError,
+      ingest: INGEST_SECRET ? 'ok' : 'av',
+      nettside,
+      checkedAt: new Date().toISOString(),
+      responseMs: Date.now() - started
+    }
+  });
+});
+
+app.get('/api/public/vedlikehold', async function (_req, res) {
+  const vedlikehold = await getVedlikeholdModus();
+  res.json({
+    ok: true,
+    aktiv: vedlikehold.aktiv,
+    melding: vedlikehold.melding
+  });
+});
+
+app.get('/api/public/lager', async function (_req, res) {
+  try {
+    const [paaLagerRow, tilSalgsRow] = await Promise.all([
+      prepare(`
+        SELECT COUNT(*) AS c FROM biler
+        WHERE archived = 0
+          AND status NOT IN ('Solgt')
+          AND UPPER(reg) NOT LIKE 'XB%'
+      `).get(),
+      prepare(`
+        SELECT COUNT(*) AS c FROM biler
+        WHERE archived = 0
+          AND status IN ('Annonsert', 'Reservert')
+          AND UPPER(reg) NOT LIKE 'XB%'
+      `).get()
+    ]);
+
+    res.json({
+      ok: true,
+      antall: paaLagerRow.c,
+      tilSalgs: tilSalgsRow.c,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('GET /api/public/lager feilet:', err.message);
+    res.status(500).json({ ok: false, error: 'Kunne ikke hente lagertall.' });
+  }
+});
+
 // ─── Ingest (fra nettside) ───
-app.post('/api/ingest/henvendelse', requireIngest, function (req, res) {
+app.post('/api/ingest/henvendelse', requireIngest, async function (req, res) {
   const b = req.body || {};
   if (!b.navn || !b.epost || !b.emne) {
     return res.status(400).json({ ok: false, error: 'Navn, e-post og emne er påkrevd.' });
   }
 
-  const info = db.prepare(`
-    INSERT INTO henvendelser (navn, epost, tlf, emne, melding, kilde, bil_ref)
-    VALUES (@navn, @epost, @tlf, @emne, @melding, @kilde, @bil_ref)
+  const info = await prepare(`
+    INSERT INTO henvendelser (navn, epost, tlf, emne, melding, kilde, bil_ref, kunde_id)
+    VALUES (@navn, @epost, @tlf, @emne, @melding, @kilde, @bil_ref, @kunde_id)
   `).run({
     navn: b.navn,
     epost: b.epost,
@@ -280,13 +765,19 @@ app.post('/api/ingest/henvendelse', requireIngest, function (req, res) {
     emne: b.emne,
     melding: b.melding || '',
     kilde: b.kilde || 'Nettside',
-    bil_ref: b.bilRef || ''
+    bil_ref: b.bilRef || '',
+    kunde_id: await findOrCreateKunde({
+      navn: b.navn,
+      epost: b.epost,
+      tlf: b.tlf || '',
+      kilde: b.kilde || 'Nettside'
+    })
   });
 
   res.status(201).json({ ok: true, id: info.lastInsertRowid });
 });
 
-app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), function (req, res) {
+app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), async function (req, res) {
   const b = req.body || {};
   if (!b.regnr || !b.navn || !b.epost || !b.mobil) {
     return res.status(400).json({ ok: false, error: 'Registreringsnummer, navn, e-post og mobil er påkrevd.' });
@@ -303,33 +794,27 @@ app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), func
     try { bilderMeta = JSON.parse(bilderMeta); } catch { bilderMeta = []; }
   }
 
-  const savedFiles = (req.files || []).map(function (f) {
-    return { name: f.originalname, path: '/uploads/' + f.filename, size: f.size, type: f.mimetype };
+  const persisted = await persistMulterFiles(req.files);
+  const savedFiles = persisted.map(function (file) {
+    return { name: file.originalname, path: file.path, size: file.size, type: file.mimetype };
   });
 
   if (Array.isArray(bilderMeta) && bilderMeta.length && !savedFiles.length) {
-    bilderMeta.forEach(function (file, i) {
-      if (!file || !file.data) return;
-      const match = String(file.data).match(/^data:([^;]+);base64,(.+)$/);
-      if (!match) return;
-      const ext = (match[1].split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-      const filename = Date.now() + '-' + i + '.' + ext;
-      fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], 'base64'));
-      savedFiles.push({ name: file.name || filename, path: '/uploads/' + filename, type: match[1] });
-    });
+    const base64Files = await saveIngestBilder(bilderMeta);
+    savedFiles.push(...base64Files);
   }
 
-  const info = db.prepare(`
+  const info = await prepare(`
     INSERT INTO innbytte (
       navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
       hjuldrift, effekt_hk, siste_eu_kontroll, neste_eu_kontroll, kilometerstand,
       servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
-      kommentar, finn_kode, bilder
+      kommentar, finn_kode, bilder, kunde_id
     ) VALUES (
       @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
       @hjuldrift, @effekt_hk, @siste_eu_kontroll, @neste_eu_kontroll, @kilometerstand,
       @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
-      @kommentar, @finn_kode, @bilder
+      @kommentar, @finn_kode, @bilder, @kunde_id
     )
   `).run({
     navn: b.navn,
@@ -355,28 +840,17 @@ app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), func
     forventning: b.forventning || '',
     kommentar: b.kommentar || '',
     finn_kode: b.finnKode || '',
-    bilder: JSON.stringify(savedFiles)
+    bilder: JSON.stringify(savedFiles),
+    kunde_id: null
   });
 
   res.status(201).json({ ok: true, id: info.lastInsertRowid });
 });
 
 // JSON innbytte (same as website uses today)
-app.post('/api/ingest/innbytte/json', requireIngest, function (req, res) {
+app.post('/api/ingest/innbytte/json', requireIngest, async function (req, res) {
   req.body = req.body || {};
-  const files = Array.isArray(req.body.bilder) ? req.body.bilder : [];
-  const savedFiles = [];
-
-  files.forEach(function (file, i) {
-    if (!file || !file.data) return;
-    const match = String(file.data).match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) return;
-    const ext = (match[1].split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-    const filename = Date.now() + '-' + i + '.' + ext;
-    fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[2], 'base64'));
-    savedFiles.push({ name: file.name || filename, path: '/uploads/' + filename, type: match[1] });
-  });
-
+  const savedFiles = await saveIngestBilder(Array.isArray(req.body.bilder) ? req.body.bilder : []);
   req.body.bilder = savedFiles;
   req.body.mobil = req.body.mobil || req.body.tlf;
 
@@ -387,17 +861,17 @@ app.post('/api/ingest/innbytte/json', requireIngest, function (req, res) {
 
   const utstyr = Array.isArray(b.utstyr) ? b.utstyr : [];
 
-  const info = db.prepare(`
+  const info = await prepare(`
     INSERT INTO innbytte (
       navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
       hjuldrift, effekt_hk, siste_eu_kontroll, neste_eu_kontroll, kilometerstand,
       servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
-      kommentar, finn_kode, bilder
+      kommentar, finn_kode, bilder, kunde_id
     ) VALUES (
       @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
       @hjuldrift, @effekt_hk, @siste_eu_kontroll, @neste_eu_kontroll, @kilometerstand,
       @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
-      @kommentar, @finn_kode, @bilder
+      @kommentar, @finn_kode, @bilder, @kunde_id
     )
   `).run({
     navn: b.navn,
@@ -423,25 +897,73 @@ app.post('/api/ingest/innbytte/json', requireIngest, function (req, res) {
     forventning: b.forventning || '',
     kommentar: b.kommentar || '',
     finn_kode: b.finnKode || '',
-    bilder: JSON.stringify(savedFiles)
+    bilder: JSON.stringify(savedFiles),
+    kunde_id: null
   });
 
   res.status(201).json({ ok: true, id: info.lastInsertRowid });
 });
 
+app.post('/api/ingest/selg-bil/json', requireIngest, async function (req, res) {
+  req.body = req.body || {};
+  const savedFiles = await saveIngestBilder(req.body.bilder);
+  req.body.mobil = req.body.mobil || req.body.tlf;
+
+  const b = req.body;
+  if (!b.regnr || !b.navn || !b.epost || !b.mobil) {
+    return res.status(400).json({ ok: false, error: 'Registreringsnummer, navn, e-post og mobil er påkrevd.' });
+  }
+
+  try {
+    const info = await insertSelgBilRow(b, savedFiles);
+    res.status(201).json({ ok: true, id: info.lastInsertRowid });
+  } catch (err) {
+    console.error('[selg-bil/ingest]', err.message);
+    res.status(500).json({ ok: false, error: 'Kunne ikke lagre oppkjøpsforespørsel.' });
+  }
+});
+
 // ─── Henvendelser ───
-app.get('/api/henvendelser', requireAuth, function (_req, res) {
-  const rows = db.prepare('SELECT * FROM henvendelser ORDER BY created_at DESC').all();
+app.get('/api/henvendelser', requireAuth, async function (_req, res) {
+  const rows = await prepare('SELECT * FROM henvendelser ORDER BY created_at DESC').all();
   res.json({ ok: true, items: rows.map(mapHenv) });
 });
 
-app.patch('/api/henvendelser/:id', requireAuth, function (req, res) {
+app.patch('/api/henvendelser/:id', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
-  const row = db.prepare('SELECT * FROM henvendelser WHERE id = ?').get(id);
+  const row = await prepare('SELECT * FROM henvendelser WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
   const b = req.body || {};
-  db.prepare(`
+  let kommentarerJson = null;
+
+  if (b.kommentarer != null) {
+    try {
+      kommentarerJson = JSON.stringify(mergeHenvKommentarer(row.kommentarer, b.kommentarer, req.user));
+    } catch (err) {
+      return res.status(403).json({ ok: false, error: err.message || 'Ugyldig kommentar-endring.' });
+    }
+  }
+
+  if (b.status != null) {
+    const allowed = (await getInnstillinger()).henvStatuser;
+    if (!allowed.includes(b.status)) {
+      return res.status(400).json({ ok: false, error: 'Ugyldig status.' });
+    }
+  }
+
+  if (b.kundeId !== undefined) {
+    await prepare('UPDATE henvendelser SET kunde_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(b.kundeId || null, id);
+  }
+
+  let ansvarlig = b.ansvarlig ?? null;
+  if (b.svar != null && b.ansvarlig === undefined) {
+    const auto = await getAnsvarligNavn(req);
+    if (auto) ansvarlig = auto;
+  }
+
+  await prepare(`
     UPDATE henvendelser SET
       status = COALESCE(@status, status),
       ansvarlig = COALESCE(@ansvarlig, ansvarlig),
@@ -452,17 +974,34 @@ app.patch('/api/henvendelser/:id', requireAuth, function (req, res) {
   `).run({
     id,
     status: b.status ?? null,
-    ansvarlig: b.ansvarlig ?? null,
+    ansvarlig,
     svar: b.svar ?? null,
-    kommentarer: b.kommentarer != null ? JSON.stringify(b.kommentarer) : null
+    kommentarer: kommentarerJson
   });
 
-  res.json({ ok: true, item: mapHenv(db.prepare('SELECT * FROM henvendelser WHERE id = ?').get(id)) });
+  res.json({ ok: true, item: mapHenv(await prepare('SELECT * FROM henvendelser WHERE id = ?').get(id)) });
+});
+
+app.delete('/api/henvendelser/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+
+  const row = await prepare('SELECT id FROM henvendelser WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Henvendelsen finnes ikke.' });
+
+  try {
+    await prepare('UPDATE eposter SET henvendelse_id = NULL WHERE henvendelse_id = ?').run(id);
+    await prepare('DELETE FROM henvendelser WHERE id = ?').run(id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[henvendelser/delete]', err.message);
+    res.status(500).json({ ok: false, error: 'Kunne ikke slette henvendelsen.' });
+  }
 });
 
 app.post('/api/henvendelser/:id/send-svar', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
-  const row = db.prepare('SELECT * FROM henvendelser WHERE id = ?').get(id);
+  const row = await prepare('SELECT * FROM henvendelser WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
   const text = String((req.body || {}).svar || '').trim();
@@ -483,104 +1022,281 @@ app.post('/api/henvendelser/:id/send-svar', requireAuth, async function (req, re
       kontoId: (req.body || {}).kontoId || null
     });
 
-    db.prepare(`
+    const ansvarlig = await getAnsvarligNavn(req);
+
+    await prepare(`
       UPDATE henvendelser SET
         svar = @svar,
         status = 'Besvart',
+        ansvarlig = @ansvarlig,
         updated_at = datetime('now')
       WHERE id = @id
-    `).run({ id, svar: text });
+    `).run({ id, svar: text, ansvarlig: ansvarlig || '' });
 
-    res.json({ ok: true, item: mapHenv(db.prepare('SELECT * FROM henvendelser WHERE id = ?').get(id)) });
+    res.json({ ok: true, item: mapHenv(await prepare('SELECT * FROM henvendelser WHERE id = ?').get(id)) });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
   }
 });
 
 // ─── Innboks ───
-app.get('/api/mail/status', requireAuth, function (_req, res) {
-  res.json({ ok: true, status: getMailStatus() });
+app.get('/api/mail/status', requireAuth, async function (_req, res) {
+  res.json({ ok: true, status: await getMailStatus() });
 });
 
-app.get('/api/innboks/utkast', requireAuth, function (_req, res) {
+app.get('/api/innboks/utkast', requireAuth, async function (_req, res) {
   res.json({
     ok: true,
-    items: getEpostUtkastList(),
-    count: countEpostUtkast(),
-    status: getMailStatus()
+    items: await getEpostUtkastList(),
+    count: await countEpostUtkast(),
+    status: await getMailStatus()
   });
 });
 
-app.get('/api/innboks/utkast/:id', requireAuth, function (req, res) {
-  const item = getEpostUtkastById(Number(req.params.id));
+app.get('/api/innboks/utkast/:id', requireAuth, async function (req, res) {
+  const item = await getEpostUtkastById(Number(req.params.id));
   if (!item) return res.status(404).json({ ok: false, error: 'Utkast ikke funnet.' });
   res.json({ ok: true, item });
 });
 
-app.put('/api/innboks/utkast', requireAuth, function (req, res) {
+app.put('/api/innboks/utkast', requireAuth, async function (req, res) {
   try {
-    const item = saveEpostUtkast(req.body || {});
-    res.json({ ok: true, item, count: countEpostUtkast(), status: getMailStatus() });
+    const item = await saveEpostUtkast(req.body || {});
+    res.json({ ok: true, item, count: await countEpostUtkast(), status: await getMailStatus() });
   } catch (err) {
     console.error('[innboks/utkast PUT]', err);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke lagre utkast.' });
   }
 });
 
-app.delete('/api/innboks/utkast/:id', requireAuth, function (req, res) {
-  deleteEpostUtkast(Number(req.params.id));
-  res.json({ ok: true, count: countEpostUtkast(), status: getMailStatus() });
+app.delete('/api/innboks/utkast/:id', requireAuth, async function (req, res) {
+  await deleteEpostUtkast(Number(req.params.id));
+  res.json({ ok: true, count: await countEpostUtkast(), status: await getMailStatus() });
 });
 
-app.get('/api/innboks', requireAuth, function (_req, res) {
-  const rows = db.prepare(`
-    SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost
+app.get('/api/innboks/mapper', requireAuth, async function (req, res) {
+  const kontoId = Number(req.query.kontoId);
+  if (!kontoId) return res.status(400).json({ ok: false, error: 'kontoId er påkrevd.' });
+  try {
+    let items = await getMailMapperForKonto(kontoId);
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    if (forceRefresh || !items.length) {
+      items = await refreshFoldersFromImap(kontoId);
+    } else {
+      await ensureStandardVirtualFolders(kontoId);
+      items = await getMailMapperForKonto(kontoId);
+    }
+    res.json({ ok: true, items });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke hente mapper.' });
+  }
+});
+
+app.post('/api/innboks/mapper', requireAuth, async function (req, res) {
+  const kontoId = Number(req.body?.kontoId);
+  const navn = String(req.body?.navn || '').trim();
+  const parentPath = String(req.body?.parentPath || '').trim();
+  if (!kontoId || !navn) {
+    return res.status(400).json({ ok: false, error: 'kontoId og navn er påkrevd.' });
+  }
+  const konto = await getMailKontoById(kontoId, true);
+  if (!konto) return res.status(404).json({ ok: false, error: 'Mailkonto ikke funnet.' });
+  try {
+    const item = await createImapFolder(konto, navn, parentPath || null);
+    res.status(201).json({ ok: true, item });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke opprette mappe.' });
+  }
+});
+
+app.get('/api/innboks', requireAuth, async function (req, res) {
+  let mappeId = req.query.mappeId ? Number(req.query.mappeId) : null;
+  const kontoId = req.query.kontoId ? Number(req.query.kontoId) : null;
+  let mappeType = null;
+
+  if (mappeId) {
+    const mappe = await getMailMappeById(mappeId);
+    mappeType = mappe?.mappeType || null;
+  } else if (kontoId) {
+    const mapper = await getMailMapperForKonto(kontoId);
+    const inbox = mapper.find(function (m) { return m.mappeType === 'inbox'; });
+    if (inbox) {
+      mappeId = inbox.id;
+      mappeType = 'inbox';
+    }
+  }
+
+  let sql = `
+    SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost,
+      m.navn AS mappe_navn, m.mappe_type AS mappe_type,
+      (SELECT COUNT(*) FROM epost_vedlegg v WHERE v.epost_id = e.id) AS vedlegg_count
     FROM eposter e
     INNER JOIN mail_kontoer k ON k.id = e.konto_id
-    ORDER BY e.mottatt_dato DESC, e.id DESC
-  `).all();
-  res.json({ ok: true, items: rows.map(mapEpost), status: getMailStatus() });
+    LEFT JOIN mail_mapper m ON m.id = e.mappe_id
+    WHERE e.slettet = 0
+  `;
+  const params = [];
+  if (kontoId) {
+    sql += ' AND e.konto_id = ?';
+    params.push(kontoId);
+  }
+  if (mappeId) {
+    if (mappeType === 'inbox') {
+      sql += " AND e.retning = 'inn'";
+    } else if (mappeType === 'sent') {
+      sql += " AND e.retning = 'ut'";
+    } else {
+      sql += ' AND e.mappe_id = ?';
+      params.push(mappeId);
+    }
+  }
+  sql += ' ORDER BY e.mottatt_dato DESC, e.id DESC LIMIT 500';
+  const rows = await prepare(sql).all(...params);
+  res.json({ ok: true, items: await mapEpostRowsWithVedlegg(rows), status: await getMailStatus() });
 });
 
-app.patch('/api/innboks/:id', requireAuth, function (req, res) {
+app.get('/api/innboks/:id/vedlegg/:vedleggId', requireAuth, async function (req, res) {
+  const epostId = Number(req.params.id);
+  const vedleggId = Number(req.params.vedleggId);
+  const vedlegg = await getEpostVedleggById(vedleggId);
+  if (!vedlegg || vedlegg.epostId !== epostId) {
+    return res.status(404).json({ ok: false, error: 'Vedlegg ikke funnet.' });
+  }
+  const file = await openUpload(vedlegg.path);
+  if (!file?.buffer) return res.status(404).json({ ok: false, error: 'Filen finnes ikke.' });
+  res.setHeader('Content-Type', vedlegg.contentType || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(vedlegg.filnavn)}"`);
+  res.send(file.buffer);
+});
+
+app.post('/api/innboks/:id/flytt', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
-  const row = db.prepare('SELECT * FROM eposter WHERE id = ?').get(id);
+  const targetMappeId = Number(req.body?.mappeId);
+  if (!targetMappeId) return res.status(400).json({ ok: false, error: 'mappeId er påkrevd.' });
+
+  const row = await prepare('SELECT * FROM eposter WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
+
+  const konto = await getMailKontoById(row.konto_id, true);
+  const sourceMappe = row.mappe_id ? await getMailMappeById(row.mappe_id) : null;
+  const targetMappe = await getMailMappeById(targetMappeId);
+  if (!konto || !targetMappe) return res.status(400).json({ ok: false, error: 'Ugyldig mappe eller konto.' });
+
+  try {
+    if (sourceMappe) {
+      await moveMessageOnServer(konto, sourceMappe, row, targetMappe);
+    } else {
+      await prepare('UPDATE eposter SET mappe_id = ? WHERE id = ?').run(targetMappeId, id);
+    }
+    if (row.mappe_id) await updateMappeCounts(row.mappe_id);
+    await updateMappeCounts(targetMappeId);
+    const fresh = await getEpostRowById(id);
+    const items = await mapEpostRowsWithVedlegg([fresh]);
+    res.json({ ok: true, item: items[0] });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke flytte e-post.' });
+  }
+});
+
+app.delete('/api/innboks/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await prepare('SELECT * FROM eposter WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
+  const konto = await getMailKontoById(row.konto_id, true);
+  const mappe = row.mappe_id ? await getMailMappeById(row.mappe_id) : null;
+  try {
+    await deleteMessageOnServer(konto, mappe, row);
+    if (row.mappe_id) await updateMappeCounts(row.mappe_id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke slette e-post.' });
+  }
+});
+
+app.patch('/api/innboks/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await prepare('SELECT * FROM eposter WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
   const b = req.body || {};
   if (b.lest != null) {
-    db.prepare('UPDATE eposter SET lest = @lest WHERE id = @id').run({
+    await prepare('UPDATE eposter SET lest = @lest WHERE id = @id').run({
       id,
       lest: b.lest ? 1 : 0
+    });
+    try {
+      const konto = await getMailKontoById(row.konto_id, true);
+      const mappe = row.mappe_id ? await getMailMappeById(row.mappe_id) : null;
+      if (konto && mappe) {
+        await setMessageSeenOnServer(konto, mappe, row, !!b.lest);
+      }
+    } catch (err) {
+      console.warn('[innboks/patch lest]', err.message);
+    }
+  }
+
+  if (b.flagged != null) {
+    await prepare('UPDATE eposter SET flagged = @flagged WHERE id = @id').run({
+      id,
+      flagged: b.flagged ? 1 : 0
     });
   }
 
   if (b.henvendelseId != null) {
-    db.prepare('UPDATE eposter SET henvendelse_id = @henvendelse_id WHERE id = @id').run({
+    await prepare('UPDATE eposter SET henvendelse_id = @henvendelse_id WHERE id = @id').run({
       id,
       henvendelse_id: b.henvendelseId || null
     });
   }
 
-  res.json({ ok: true, item: mapEpost(db.prepare(`
-    SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost
-    FROM eposter e
-    LEFT JOIN mail_kontoer k ON k.id = e.konto_id
-    WHERE e.id = ?
-  `).get(id)) });
+  if (b.status != null) {
+    const status = String(b.status || '').trim();
+    if (status) {
+      const allowed = (await getInnstillinger()).henvStatuser;
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ ok: false, error: 'Ugyldig status.' });
+      }
+    }
+    try {
+      await prepare('UPDATE eposter SET status = @status WHERE id = @id').run({ id, status });
+    } catch (err) {
+      console.error('[innboks/patch status]', err.message);
+      return res.status(500).json({ ok: false, error: 'Kunne ikke lagre status.' });
+    }
+  }
+
+  if (b.ansvarlig != null) {
+    try {
+      await prepare('UPDATE eposter SET ansvarlig = @ansvarlig WHERE id = @id').run({
+        id,
+        ansvarlig: String(b.ansvarlig || '').trim()
+      });
+    } catch (err) {
+      console.error('[innboks/patch ansvarlig]', err.message);
+      return res.status(500).json({ ok: false, error: 'Kunne ikke lagre ansvarlig.' });
+    }
+  }
+
+  if (b.kundeId !== undefined) {
+    await prepare('UPDATE eposter SET kunde_id = ? WHERE id = ?').run(b.kundeId || null, id);
+  }
+
+  const fresh = await getEpostRowById(id);
+  const items = await mapEpostRowsWithVedlegg([fresh]);
+  res.json({ ok: true, item: items[0] });
 });
 
 app.post('/api/innboks/sync', requireAuth, async function (req, res) {
   try {
     const kontoId = req.body?.kontoId || req.query?.kontoId || null;
     const result = await syncInbox(kontoId ? Number(kontoId) : null);
-    res.json({ ok: true, ...result, status: getMailStatus() });
+    res.json({ ok: true, ...result, status: await getMailStatus() });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || 'Synkronisering feilet.' });
   }
 });
 
-function handleSendEpost(req, res) {
+async function handleSendEpost(req, res) {
   const b = req.body || {};
   const to = String(b.to || '').trim();
   const subject = String(b.subject || b.emne || '').trim();
@@ -591,56 +1307,72 @@ function handleSendEpost(req, res) {
     return res.status(400).json({ ok: false, error: 'Mottaker, emne og melding er påkrevd.' });
   }
 
-  (async function () {
-    try {
-      let inReplyTo = b.inReplyTo || null;
-      let references = b.references || null;
-      if (b.replyToId) {
-        const original = db.prepare('SELECT * FROM eposter WHERE id = ?').get(Number(b.replyToId));
-        if (original) {
-          inReplyTo = original.message_id;
-          references = [original.message_id, original.in_reply_to].filter(Boolean);
-          if (!b.kontoId && original.konto_id) b.kontoId = original.konto_id;
-        }
+  try {
+    let original = null;
+    let inReplyTo = b.inReplyTo || null;
+    let references = b.references || null;
+    if (b.replyToId) {
+      original = await prepare('SELECT * FROM eposter WHERE id = ?').get(Number(b.replyToId));
+      if (original) {
+        inReplyTo = original.message_id;
+        references = [original.message_id, original.in_reply_to].filter(Boolean);
+        if (!b.kontoId && original.konto_id) b.kontoId = original.konto_id;
       }
-
-      const attachments = (req.files || []).map(function (file) {
-        return {
-          filename: file.originalname,
-          path: file.path,
-          contentType: file.mimetype
-        };
-      });
-
-      const sent = await sendMail({
-        to,
-        toName: b.toName || '',
-        cc: b.cc || b.kopi || '',
-        bcc: b.bcc || b.blindkopi || '',
-        subject,
-        text,
-        html,
-        replyQuoteHtml: b.replyQuoteHtml || '',
-        inReplyTo,
-        references,
-        henvendelseId: b.henvendelseId || null,
-        kontoId: b.kontoId || null,
-        attachments
-      });
-
-      const item = mapEpost(db.prepare(`
-        SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost
-        FROM eposter e
-        LEFT JOIN mail_kontoer k ON k.id = e.konto_id
-        WHERE e.id = ?
-      `).get(sent.rowId));
-      if (b.draftId) deleteEpostUtkast(Number(b.draftId));
-      res.status(201).json({ ok: true, item });
-    } catch (err) {
-      console.error('[innboks/send]', err);
-      res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
     }
-  })();
+
+    const persisted = await persistMulterFiles(req.files);
+    const attachments = [];
+    for (const file of persisted) {
+      const opened = await openUpload(file.path);
+      attachments.push({
+        filename: file.originalname,
+        content: opened?.buffer,
+        contentType: file.mimetype
+      });
+    }
+
+    const sent = await sendMail({
+      to,
+      toName: b.toName || '',
+      cc: b.cc || b.kopi || '',
+      bcc: b.bcc || b.blindkopi || '',
+      subject,
+      text,
+      html,
+      replyQuoteHtml: b.replyQuoteHtml || '',
+      inReplyTo,
+      references,
+      henvendelseId: b.henvendelseId || null,
+      kontoId: b.kontoId || null,
+      attachments
+    });
+
+    const ansvarlig = await getAnsvarligNavn(req);
+    let replyToItem = null;
+    let henvendelseItem = null;
+    if (ansvarlig) {
+      if (original) {
+        await prepare('UPDATE eposter SET ansvarlig = ? WHERE id = ?').run(ansvarlig, original.id);
+        replyToItem = (await mapEpostRowsWithVedlegg([await getEpostRowById(original.id)]))[0];
+      }
+      const henvId = b.henvendelseId
+        ? Number(b.henvendelseId)
+        : (original?.henvendelse_id || null);
+      if (henvId) {
+        await prepare(`
+          UPDATE henvendelser SET ansvarlig = ?, updated_at = datetime('now') WHERE id = ?
+        `).run(ansvarlig, henvId);
+        henvendelseItem = mapHenv(await prepare('SELECT * FROM henvendelser WHERE id = ?').get(henvId));
+      }
+    }
+
+    const item = (await mapEpostRowsWithVedlegg([await getEpostRowById(sent.rowId)]))[0];
+    if (b.draftId) await deleteEpostUtkast(Number(b.draftId));
+    res.status(201).json({ ok: true, item, replyToItem, henvendelseItem });
+  } catch (err) {
+    console.error('[innboks/send]', err);
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
+  }
 }
 
 app.post('/api/innboks/send', requireAuth, function (req, res, next) {
@@ -654,95 +1386,104 @@ app.post('/api/innboks/send', requireAuth, function (req, res, next) {
     });
   }
   next();
-}, function (req, res) {
-  handleSendEpost(req, res);
+}, async function (req, res) {
+  await handleSendEpost(req, res);
 });
 
-app.post('/api/innboks/:id/oppret-henvendelse', requireAuth, function (req, res) {
+app.post('/api/innboks/:id/oppret-henvendelse', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
-  const row = db.prepare('SELECT * FROM eposter WHERE id = ?').get(id);
+  const row = await prepare('SELECT * FROM eposter WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
   if (row.henvendelse_id) {
     return res.status(400).json({ ok: false, error: 'E-posten er allerede koblet til en henvendelse.' });
   }
 
-  const info = db.prepare(`
-    INSERT INTO henvendelser (navn, epost, tlf, emne, melding, kilde, bil_ref)
-    VALUES (@navn, @epost, @tlf, @emne, @melding, 'E-post', @bil_ref)
+  const info = await prepare(`
+    INSERT INTO henvendelser (navn, epost, tlf, emne, melding, kilde, bil_ref, status, ansvarlig, kunde_id)
+    VALUES (@navn, @epost, @tlf, @emne, @melding, 'E-post', @bil_ref, @status, @ansvarlig, @kunde_id)
   `).run({
     navn: row.fra_navn || row.fra_epost,
     epost: row.fra_epost,
     tlf: '',
     emne: row.emne,
     melding: row.innhold || row.innhold_html || '',
-    bil_ref: (req.body || {}).bilRef || ''
+    bil_ref: (req.body || {}).bilRef || '',
+    status: row.status || 'Ny',
+    ansvarlig: row.ansvarlig || '',
+    kunde_id: await findOrCreateKunde({
+      navn: row.fra_navn || row.fra_epost,
+      epost: row.fra_epost,
+      tlf: '',
+      kilde: 'E-post'
+    })
   });
 
-  db.prepare('UPDATE eposter SET henvendelse_id = @henvendelse_id WHERE id = @id').run({
+  await prepare('UPDATE eposter SET henvendelse_id = @henvendelse_id WHERE id = @id').run({
     id,
     henvendelse_id: info.lastInsertRowid
   });
 
   res.status(201).json({
     ok: true,
-    henvendelse: mapHenv(db.prepare('SELECT * FROM henvendelser WHERE id = ?').get(info.lastInsertRowid)),
-    epost: mapEpost(db.prepare(`
-      SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost
-      FROM eposter e
-      LEFT JOIN mail_kontoer k ON k.id = e.konto_id
-      WHERE e.id = ?
-    `).get(id))
+    henvendelse: mapHenv(await prepare('SELECT * FROM henvendelser WHERE id = ?').get(info.lastInsertRowid)),
+    epost: (await mapEpostRowsWithVedlegg([await getEpostRowById(id)]))[0]
   });
 });
 
 // ─── Mailkontoer ───
-app.post('/api/mail/upload-bilde', requireAuth, upload.single('bilde'), function (req, res) {
+app.post('/api/mail/upload-bilde', requireAuth, upload.single('bilde'), async function (req, res) {
   if (!req.file) return res.status(400).json({ ok: false, error: 'Ingen bilde valgt.' });
-  const url = '/uploads/' + req.file.filename;
-  const base = process.env.ADMIN_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-  res.json({ ok: true, url, absoluteUrl: base + url, name: req.file.originalname });
+  try {
+    const saved = await persistMulterFile(req.file);
+    if (!saved) return res.status(500).json({ ok: false, error: 'Kunne ikke lagre bilde.' });
+    const url = saved.path;
+    const base = process.env.ADMIN_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    res.json({ ok: true, url, absoluteUrl: base + url, name: saved.originalname });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke lagre bilde.' });
+  }
 });
 
-app.get('/api/mail/kontoer', requireAuth, function (_req, res) {
-  res.json({ ok: true, items: getMailKontoer(false), status: getMailStatus() });
+app.get('/api/mail/kontoer', requireAuth, async function (_req, res) {
+  res.json({ ok: true, items: await getMailKontoer(false), status: await getMailStatus() });
 });
 
-app.post('/api/mail/kontoer', requireAuth, function (req, res) {
+app.post('/api/mail/kontoer', requireAuth, async function (req, res) {
   try {
     const b = req.body || {};
     if (!b.navn || !b.epost) {
       return res.status(400).json({ ok: false, error: 'Navn og e-post er påkrevd.' });
     }
-    const item = createMailKonto(b);
-    res.status(201).json({ ok: true, item, status: getMailStatus() });
+    const item = await createMailKonto(b);
+    res.status(201).json({ ok: true, item, status: await getMailStatus() });
   } catch (err) {
     console.error('[mail/kontoer POST]', err);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke opprette mailkonto.' });
   }
 });
 
-app.patch('/api/mail/kontoer/:id', requireAuth, function (req, res) {
+app.patch('/api/mail/kontoer/:id', requireAuth, async function (req, res) {
   try {
     const id = Number(req.params.id);
-    const existing = getMailKontoById(id, true);
+    const existing = await getMailKontoById(id, true);
     if (!existing) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
     const b = { ...(req.body || {}) };
     if (b.imapPass === PASS_MASK) delete b.imapPass;
     if (b.smtpPass === PASS_MASK) delete b.smtpPass;
 
-    const item = updateMailKonto(id, b);
-    res.json({ ok: true, item, status: getMailStatus() });
+    const item = await updateMailKonto(id, b);
+    res.json({ ok: true, item, status: await getMailStatus() });
   } catch (err) {
     console.error('[mail/kontoer PATCH]', err);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke oppdatere mailkonto.' });
   }
 });
 
-app.delete('/api/mail/kontoer/:id', requireAuth, function (req, res) {
-  const ok = deleteMailKonto(Number(req.params.id));
+app.delete('/api/mail/kontoer/:id', requireAuth, async function (req, res) {
+  const ok = await deleteMailKonto(Number(req.params.id));
   if (!ok) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
-  res.json({ ok: true, status: getMailStatus() });
+  res.json({ ok: true, status: await getMailStatus() });
 });
 
 app.post('/api/mail/kontoer/:id/test', requireAuth, async function (req, res) {
@@ -754,22 +1495,22 @@ app.post('/api/mail/kontoer/:id/test', requireAuth, async function (req, res) {
   }
 });
 
-app.get('/api/mail/maler', requireAuth, function (_req, res) {
-  res.json({ ok: true, items: getEpostMaler() });
+app.get('/api/mail/maler', requireAuth, async function (_req, res) {
+  res.json({ ok: true, items: await getEpostMaler() });
 });
 
-app.post('/api/mail/maler', requireAuth, function (req, res) {
+app.post('/api/mail/maler', requireAuth, async function (req, res) {
   try {
-    const item = createEpostMal(req.body || {});
+    const item = await createEpostMal(req.body || {});
     res.status(201).json({ ok: true, item });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message || 'Kunne ikke opprette mal.' });
   }
 });
 
-app.patch('/api/mail/maler/:id', requireAuth, function (req, res) {
+app.patch('/api/mail/maler/:id', requireAuth, async function (req, res) {
   try {
-    const item = updateEpostMal(Number(req.params.id), req.body || {});
+    const item = await updateEpostMal(Number(req.params.id), req.body || {});
     if (!item) return res.status(404).json({ ok: false, error: 'Mal ikke funnet.' });
     res.json({ ok: true, item });
   } catch (err) {
@@ -777,24 +1518,80 @@ app.patch('/api/mail/maler/:id', requireAuth, function (req, res) {
   }
 });
 
-app.delete('/api/mail/maler/:id', requireAuth, function (req, res) {
-  deleteEpostMal(Number(req.params.id));
+app.delete('/api/mail/maler/:id', requireAuth, async function (req, res) {
+  await deleteEpostMal(Number(req.params.id));
   res.json({ ok: true });
 });
 
 // ─── Innbytte ───
-app.get('/api/innbytte', requireAuth, function (_req, res) {
-  const rows = db.prepare('SELECT * FROM innbytte ORDER BY created_at DESC').all();
+app.get('/api/finn/annonse', requireAuth, async function (req, res) {
+  const ref = req.query?.ref || req.query?.id || '';
+  if (!String(ref).trim()) {
+    return res.status(400).json({ ok: false, error: 'Mangler FINN-referanse.' });
+  }
+  try {
+    const meta = await lookupFinnAnnonse(ref);
+    if (!meta.id) {
+      return res.status(400).json({ ok: false, error: 'Ugyldig FINN-kode eller lenke.' });
+    }
+    res.json({ ok: true, item: meta });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke hente FINN-annonse.' });
+  }
+});
+
+app.get('/api/finn/markedssok', requireAuth, async function (req, res) {
+  const merke = String(req.query?.merke || '').trim();
+  const modell = String(req.query?.modell || '').trim();
+  if (!merke && !modell) {
+    return res.status(400).json({ ok: false, error: 'Mangler merke eller modell.' });
+  }
+  try {
+    const item = await resolveFinnMarkedsSok({
+      merke,
+      modell,
+      aar: req.query?.aar,
+      km: req.query?.km,
+      kmSlack: req.query?.kmSlack
+    });
+    if (!item?.url) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Fant ikke merke/modell på FINN. Sjekk stavemåte eller prøv et mer presist modellnavn.'
+      });
+    }
+    res.json({ ok: true, item });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke bygge FINN-markedssøk.' });
+  }
+});
+
+app.get('/api/innbytte', requireAuth, async function (_req, res) {
+  const rows = await prepare('SELECT * FROM innbytte ORDER BY created_at DESC').all();
   res.json({ ok: true, items: rows.map(mapInnbytte) });
 });
 
-app.patch('/api/innbytte/:id', requireAuth, function (req, res) {
+app.patch('/api/innbytte/:id', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
-  const row = db.prepare('SELECT * FROM innbytte WHERE id = ?').get(id);
+  const row = await prepare('SELECT * FROM innbytte WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
   const b = req.body || {};
-  db.prepare(`
+  if (b.kundeId !== undefined) {
+    await prepare('UPDATE innbytte SET kunde_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(b.kundeId || null, id);
+  }
+
+  let kommentarerJson = null;
+  if (b.kommentarer != null) {
+    try {
+      kommentarerJson = JSON.stringify(mergeHenvKommentarer(row.kommentarer, b.kommentarer, req.user));
+    } catch (err) {
+      return res.status(403).json({ ok: false, error: err.message || 'Ugyldig kommentar-endring.' });
+    }
+  }
+
+  await prepare(`
     UPDATE innbytte SET
       status = COALESCE(@status, status),
       ansvarlig = COALESCE(@ansvarlig, ansvarlig),
@@ -807,57 +1604,392 @@ app.patch('/api/innbytte/:id', requireAuth, function (req, res) {
     status: b.status ?? null,
     ansvarlig: b.ansvarlig ?? null,
     tilbud: b.tilbud != null ? String(b.tilbud) : null,
-    kommentarer: b.kommentarer != null ? JSON.stringify(b.kommentarer) : null
+    kommentarer: kommentarerJson
   });
 
-  res.json({ ok: true, item: mapInnbytte(db.prepare('SELECT * FROM innbytte WHERE id = ?').get(id)) });
+  res.json({ ok: true, item: mapInnbytte(await prepare('SELECT * FROM innbytte WHERE id = ?').get(id)) });
+});
+
+app.delete('/api/innbytte/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+
+  const row = await prepare('SELECT id, bilder FROM innbytte WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Innbytteforespørselen finnes ikke.' });
+
+  try {
+    const bilder = parseJson(row.bilder, []);
+    if (Array.isArray(bilder)) {
+      for (const file of bilder) {
+        const filePath = String(file?.path || '');
+        if (!filePath.startsWith('/uploads/')) continue;
+        try {
+          await deleteUpload(filePath);
+        } catch (_err) {
+          /* Ignorer fil-feil – raden slettes uansett */
+        }
+      }
+    }
+    await prepare('DELETE FROM innbytte WHERE id = ?').run(id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[innbytte/delete]', err.message);
+    res.status(500).json({ ok: false, error: 'Kunne ikke slette innbytteforespørselen.' });
+  }
+});
+
+app.post('/api/innbytte/:id/send-tilbud', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await prepare('SELECT * FROM innbytte WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
+
+  const b = req.body || {};
+  const type = b.type === 'visning' ? 'visning' : 'tilbud';
+  const tilbud = b.tilbud != null ? String(b.tilbud).trim() : String(row.tilbud || '').trim();
+  const melding = String(b.melding || '').trim();
+  if (type === 'tilbud' && !tilbud) {
+    return res.status(400).json({ ok: false, error: 'Tilbudspris er påkrevd.' });
+  }
+  if (!row.epost) return res.status(400).json({ ok: false, error: 'Innbytte mangler e-postadresse.' });
+  if (!melding) return res.status(400).json({ ok: false, error: 'Melding kan ikke være tom.' });
+
+  const bilLabel = [row.merke, row.modell, row.arsmodell].filter(Boolean).join(' ');
+  const subject = type === 'visning'
+    ? `Innbytte${row.regnr ? ' – ' + row.regnr : ''}${bilLabel ? ' (' + bilLabel + ')' : ''} – invitasjon til visning`
+    : `Innbyttetilbud${row.regnr ? ' – ' + row.regnr : ''}${bilLabel ? ' (' + bilLabel + ')' : ''}`;
+
+  try {
+    await sendMail({
+      to: row.epost,
+      toName: row.navn,
+      subject: subject,
+      text: melding,
+      kontoId: b.kontoId || null
+    });
+
+    const kommentarer = normalizeHenvKommentarer(parseJson(row.kommentarer, []));
+    if (type === 'visning') {
+      kommentarer.push(createInternKommentar('Invitasjon til visning sendt på e-post', req.user));
+    } else {
+      const prisTekst = Number(tilbud).toLocaleString('nb-NO');
+      kommentarer.push(createInternKommentar(`Tilbud sendt på e-post (kr ${prisTekst})`, req.user));
+    }
+
+    const newStatus = type === 'visning'
+      ? await resolveInnbytteStatus('Under vurdering')
+      : await resolveInnbytteStatus('Tilbud sendt');
+    const ansvarlig = await getAnsvarligNavn(req);
+
+    await prepare(`
+      UPDATE innbytte SET
+        tilbud = CASE WHEN @tilbud IS NOT NULL THEN @tilbud ELSE tilbud END,
+        status = @status,
+        ansvarlig = @ansvarlig,
+        kommentarer = @kommentarer,
+        updated_at = datetime('now')
+      WHERE id = @id
+    `).run({
+      id: id,
+      tilbud: type === 'tilbud' ? tilbud : null,
+      status: newStatus,
+      ansvarlig: ansvarlig || '',
+      kommentarer: JSON.stringify(kommentarer)
+    });
+
+    res.json({ ok: true, item: mapInnbytte(await prepare('SELECT * FROM innbytte WHERE id = ?').get(id)) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
+  }
+});
+
+app.get('/api/selg-bil', requireAuth, async function (_req, res) {
+  const rows = await prepare('SELECT * FROM selg_bil ORDER BY created_at DESC').all();
+  res.json({ ok: true, items: rows.map(mapSelgBil) });
+});
+
+app.patch('/api/selg-bil/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await prepare('SELECT * FROM selg_bil WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
+
+  const b = req.body || {};
+  if (b.kundeId !== undefined) {
+    await prepare('UPDATE selg_bil SET kunde_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(b.kundeId || null, id);
+  }
+
+  let kommentarerJson = null;
+  if (b.kommentarer != null) {
+    try {
+      kommentarerJson = JSON.stringify(mergeHenvKommentarer(row.kommentarer, b.kommentarer, req.user));
+    } catch (err) {
+      return res.status(403).json({ ok: false, error: err.message || 'Ugyldig kommentar-endring.' });
+    }
+  }
+
+  await prepare(`
+    UPDATE selg_bil SET
+      status = COALESCE(@status, status),
+      ansvarlig = COALESCE(@ansvarlig, ansvarlig),
+      tilbud = COALESCE(@tilbud, tilbud),
+      kommentarer = COALESCE(@kommentarer, kommentarer),
+      updated_at = datetime('now')
+    WHERE id = @id
+  `).run({
+    id,
+    status: b.status ?? null,
+    ansvarlig: b.ansvarlig ?? null,
+    tilbud: b.tilbud != null ? String(b.tilbud) : null,
+    kommentarer: kommentarerJson
+  });
+
+  res.json({ ok: true, item: mapSelgBil(await prepare('SELECT * FROM selg_bil WHERE id = ?').get(id)) });
+});
+
+app.delete('/api/selg-bil/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+
+  const row = await prepare('SELECT id, bilder FROM selg_bil WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Oppkjøpsforespørselen finnes ikke.' });
+
+  try {
+    const bilder = parseJson(row.bilder, []);
+    if (Array.isArray(bilder)) {
+      for (const file of bilder) {
+        const filePath = String(file?.path || '');
+        if (!filePath.startsWith('/uploads/')) continue;
+        try {
+          await deleteUpload(filePath);
+        } catch (_err) {
+          /* Ignorer fil-feil – raden slettes uansett */
+        }
+      }
+    }
+    await prepare('DELETE FROM selg_bil WHERE id = ?').run(id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[selg-bil/delete]', err.message);
+    res.status(500).json({ ok: false, error: 'Kunne ikke slette oppkjøpsforespørselen.' });
+  }
+});
+
+app.post('/api/selg-bil/:id/send-tilbud', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await prepare('SELECT * FROM selg_bil WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
+
+  const b = req.body || {};
+  const type = b.type === 'visning' ? 'visning' : 'tilbud';
+  const tilbud = b.tilbud != null ? String(b.tilbud).trim() : String(row.tilbud || '').trim();
+  const melding = String(b.melding || '').trim();
+  if (type === 'tilbud' && !tilbud) {
+    return res.status(400).json({ ok: false, error: 'Tilbudspris er påkrevd.' });
+  }
+  if (!row.epost) return res.status(400).json({ ok: false, error: 'Forespørselen mangler e-postadresse.' });
+  if (!melding) return res.status(400).json({ ok: false, error: 'Melding kan ikke være tom.' });
+
+  const bilLabel = [row.merke, row.modell, row.arsmodell].filter(Boolean).join(' ');
+  const subject = type === 'visning'
+    ? `Bilvurdering${row.regnr ? ' – ' + row.regnr : ''}${bilLabel ? ' (' + bilLabel + ')' : ''}`
+    : `Oppkjøpstilbud${row.regnr ? ' – ' + row.regnr : ''}${bilLabel ? ' (' + bilLabel + ')' : ''}`;
+
+  try {
+    await sendMail({
+      to: row.epost,
+      toName: row.navn,
+      subject: subject,
+      text: melding,
+      kontoId: b.kontoId || null
+    });
+
+    const kommentarer = normalizeHenvKommentarer(parseJson(row.kommentarer, []));
+    if (type === 'visning') {
+      kommentarer.push(createInternKommentar('Invitasjon til befaring sendt på e-post', req.user));
+    } else {
+      const prisTekst = Number(tilbud).toLocaleString('nb-NO');
+      kommentarer.push(createInternKommentar(`Oppkjøpstilbud sendt på e-post (kr ${prisTekst})`, req.user));
+    }
+
+    const newStatus = type === 'visning'
+      ? await resolveSelgBilStatus('Under vurdering')
+      : await resolveSelgBilStatus('Tilbud sendt');
+    const ansvarlig = await getAnsvarligNavn(req);
+
+    await prepare(`
+      UPDATE selg_bil SET
+        tilbud = CASE WHEN @tilbud IS NOT NULL THEN @tilbud ELSE tilbud END,
+        status = @status,
+        ansvarlig = @ansvarlig,
+        kommentarer = @kommentarer,
+        updated_at = datetime('now')
+      WHERE id = @id
+    `).run({
+      id: id,
+      tilbud: type === 'tilbud' ? tilbud : null,
+      status: newStatus,
+      ansvarlig: ansvarlig || '',
+      kommentarer: JSON.stringify(kommentarer)
+    });
+
+    res.json({ ok: true, item: mapSelgBil(await prepare('SELECT * FROM selg_bil WHERE id = ?').get(id)) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
+  }
 });
 
 // ─── Biler ───
-app.get('/api/biler', requireAuth, function (_req, res) {
-  const rows = db.prepare('SELECT * FROM biler ORDER BY id DESC').all();
-  res.json({ ok: true, items: rows.map(mapBil) });
+app.get('/api/biler', requireAuth, async function (_req, res) {
+  const [rows, kundeMap] = await Promise.all([
+    prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all(),
+    getAllBilKundeIdsMap()
+  ]);
+  res.json({
+    ok: true,
+    items: rows.map(function (row) { return mapBil(row, kundeMap[row.id] || []); })
+  });
 });
 
-app.post('/api/biler', requireAuth, function (req, res) {
+app.post('/api/biler/reorder', requireAuth, async function (req, res) {
+  const updates = req.body?.updates;
+  if (!Array.isArray(updates) || !updates.length) {
+    return res.status(400).json({ ok: false, error: 'Mangler oppdateringer.' });
+  }
+  try {
+    const ansvarlig = await getAnsvarligNavn(req);
+    const items = await reorderBiler(updates, ansvarlig || '');
+    res.json({ ok: true, items: items });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'Kunne ikke lagre rekkefølge.' });
+  }
+});
+
+app.post('/api/biler', requireAuth, async function (req, res) {
   const b = req.body || {};
   if (!b.reg || !b.modell) {
     return res.status(400).json({ ok: false, error: 'Reg.nr og modell er påkrevd.' });
   }
 
-  const info = db.prepare(`
-    INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, ansvarlig, frist, notater, eu_kontroll, forsikring, sjekkliste, logg, svv_data)
-    VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @sjekkliste, @logg, @svv_data)
-  `).run({
-    reg: String(b.reg).toUpperCase(),
-    merke: b.merke || 'Annet',
-    modell: b.modell,
-    aar: Number(b.aar) || 0,
-    km: Number(b.km) || 0,
-    innkjop: Number(b.innkjop) || 0,
-    salg: Number(b.salg) || 0,
-    farge: b.farge || '',
-    status: b.status || 'Innkjøpt',
-    ansvarlig: b.ansvarlig || '',
-    frist: b.frist || '',
-    notater: b.notater || '',
-    eu_kontroll: b.euKontroll || '',
-    forsikring: b.forsikring || '',
-    sjekkliste: JSON.stringify(b.sjekkliste || []),
-    logg: JSON.stringify(b.logg || []),
-    svv_data: b.svvData ? JSON.stringify(b.svvData) : null
-  });
+  const reg = String(b.reg).toUpperCase();
+  const status = b.status || 'Innkjøpt';
 
-  res.status(201).json({ ok: true, item: mapBil(db.prepare('SELECT * FROM biler WHERE id = ?').get(info.lastInsertRowid)) });
+  try {
+    const existing = await prepare('SELECT id, archived FROM biler WHERE UPPER(reg) = ?').get(reg);
+    if (existing) {
+      const msg = existing.archived
+        ? `Bil med reg.nr ${reg} finnes i arkivet. Gjenopprett den derfra i stedet.`
+        : `Bil med reg.nr ${reg} finnes allerede i lageret.`;
+      return res.status(409).json({ ok: false, error: msg });
+    }
+
+    const sortOrder = await nextBilSortOrder(status);
+    const settings = await getInnstillinger();
+    let sjekklister = b.sjekklister;
+    if (!sjekklister || typeof sjekklister !== 'object') {
+      sjekklister = ensureSjekklisterForStatus({}, status, settings.bilSjekklister);
+    }
+    const aktivSjekkliste = getAktivSjekklisteFromRow({ status: status }, sjekklister);
+    const creator = await getAnsvarligNavn(req);
+
+    const insertParams = {
+      reg: reg,
+      merke: b.merke || 'Annet',
+      modell: b.modell,
+      aar: Number(b.aar) || 0,
+      km: Number(b.km) || 0,
+      innkjop: Number(b.innkjop) || 0,
+      salg: Number(b.salg) || 0,
+      farge: b.farge || '',
+      status: status,
+      sortOrder: sortOrder,
+      ansvarlig: b.ansvarlig || creator || '',
+      frist: b.frist || '',
+      notater: b.notater || '',
+      eu_kontroll: b.euKontroll || '',
+      forsikring: b.forsikring || '',
+      sjekkliste: JSON.stringify(b.sjekkliste || aktivSjekkliste),
+      sjekklister: JSON.stringify(sjekklister),
+      logg: JSON.stringify(b.logg || []),
+      svv_data: b.svvData ? JSON.stringify(b.svvData) : null
+    };
+
+    let info;
+    try {
+      info = await prepare(`
+        INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, sjekkliste, sjekklister, logg, svv_data)
+        VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @sjekkliste, @sjekklister, @logg, @svv_data)
+      `).run(insertParams);
+    } catch (err) {
+      if (err.code === '23505' && String(err.constraint || '').includes('biler_pkey')) {
+        await syncPostgresSequences();
+        info = await prepare(`
+          INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, sjekkliste, sjekklister, logg, svv_data)
+          VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @sjekkliste, @sjekklister, @logg, @svv_data)
+        `).run(insertParams);
+      } else {
+        throw err;
+      }
+    }
+
+    const row = await prepare('SELECT * FROM biler WHERE id = ?').get(info.lastInsertRowid);
+    if (!row) {
+      return res.status(500).json({ ok: false, error: 'Bilen ble opprettet, men kunne ikke hentes.' });
+    }
+    res.status(201).json({ ok: true, item: mapBil(row) });
+  } catch (err) {
+    console.error('POST /api/biler feilet:', err.message);
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke legge til bil.' });
+  }
 });
 
-app.patch('/api/biler/:id', requireAuth, function (req, res) {
+app.patch('/api/biler/:id', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
-  const row = db.prepare('SELECT * FROM biler WHERE id = ?').get(id);
+  const row = await prepare('SELECT * FROM biler WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
   const b = req.body || {};
-  db.prepare(`
+  try {
+    if (b.kundeIds !== undefined) {
+      await setBilKunder(id, b.kundeIds);
+    } else if (b.kundeId !== undefined) {
+      await setBilKunder(id, b.kundeId ? [b.kundeId] : []);
+    }
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message || 'Ugyldig kunde-kobling.' });
+  }
+
+  let sjekklister = b.sjekklister;
+  let sjekkliste = b.sjekkliste;
+  const newStatus = b.status != null ? b.status : row.status;
+  if (newStatus !== row.status && sjekklister == null) {
+    const settings = await getInnstillinger();
+    const current = parseBilSjekklisterObject(row);
+    sjekklister = ensureSjekklisterForStatus(current, newStatus, settings.bilSjekklister);
+  }
+  if (sjekklister != null) {
+    sjekkliste = getAktivSjekklisteFromRow({ ...row, status: newStatus }, sjekklister);
+  } else if (sjekkliste != null && newStatus === row.status) {
+    const current = parseBilSjekklisterObject(row);
+    current[newStatus] = sjekkliste;
+    sjekklister = current;
+  }
+
+  if (b.dokumenter != null) {
+    await cleanupRemovedUploadFiles(parseJson(row.dokumenter, []), b.dokumenter);
+  }
+
+  let kommentarerJson = null;
+  if (b.kommentarer != null) {
+    try {
+      kommentarerJson = JSON.stringify(mergeHenvKommentarer(row.kommentarer, b.kommentarer, req.user));
+    } catch (err) {
+      return res.status(403).json({ ok: false, error: err.message || 'Ugyldig kommentar-endring.' });
+    }
+  }
+
+  const ansvarlig = await resolveBilAnsvarlig(req, b);
+
+  await prepare(`
     UPDATE biler SET
       reg = COALESCE(@reg, reg),
       merke = COALESCE(@merke, merke),
@@ -868,14 +2000,26 @@ app.patch('/api/biler/:id', requireAuth, function (req, res) {
       salg = COALESCE(@salg, salg),
       farge = COALESCE(@farge, farge),
       status = COALESCE(@status, status),
+      sort_order = COALESCE(@sortOrder, sort_order),
       ansvarlig = COALESCE(@ansvarlig, ansvarlig),
       frist = COALESCE(@frist, frist),
       notater = COALESCE(@notater, notater),
       eu_kontroll = COALESCE(@eu_kontroll, eu_kontroll),
       forsikring = COALESCE(@forsikring, forsikring),
+      finn_kode = COALESCE(@finn_kode, finn_kode),
+      chassisnr = COALESCE(@chassisnr, chassisnr),
+      drivstoff = COALESCE(@drivstoff, drivstoff),
+      girkasse = COALESCE(@girkasse, girkasse),
+      utstyr = COALESCE(@utstyr, utstyr),
+      intern_info = COALESCE(@intern_info, intern_info),
       sjekkliste = COALESCE(@sjekkliste, sjekkliste),
+      sjekklister = COALESCE(@sjekklister, sjekklister),
       logg = COALESCE(@logg, logg),
+      kommentarer = COALESCE(@kommentarer, kommentarer),
+      dokumenter = COALESCE(@dokumenter, dokumenter),
       svv_data = COALESCE(@svv_data, svv_data),
+      archived = COALESCE(@archived, archived),
+      archived_at = CASE WHEN @archived IS NOT NULL THEN @archivedAt ELSE archived_at END,
       updated_at = datetime('now')
     WHERE id = @id
   `).run({
@@ -889,34 +2033,90 @@ app.patch('/api/biler/:id', requireAuth, function (req, res) {
     salg: b.salg != null ? Number(b.salg) : null,
     farge: b.farge ?? null,
     status: b.status ?? null,
-    ansvarlig: b.ansvarlig ?? null,
+    sortOrder: b.sortOrder != null ? Number(b.sortOrder) : null,
+    ansvarlig: ansvarlig,
     frist: b.frist ?? null,
     notater: b.notater ?? null,
     eu_kontroll: b.euKontroll ?? null,
     forsikring: b.forsikring ?? null,
-    sjekkliste: b.sjekkliste != null ? JSON.stringify(b.sjekkliste) : null,
+    finn_kode: b.finnKode ?? null,
+    chassisnr: b.chassisnr ?? null,
+    drivstoff: b.drivstoff ?? null,
+    girkasse: b.girkasse ?? null,
+    utstyr: b.utstyr ?? null,
+    intern_info: b.internInfo ?? null,
+    sjekkliste: sjekkliste != null ? JSON.stringify(sjekkliste) : null,
+    sjekklister: sjekklister != null ? JSON.stringify(sjekklister) : null,
     logg: b.logg != null ? JSON.stringify(b.logg) : null,
-    svv_data: b.svvData != null ? JSON.stringify(b.svvData) : null
+    kommentarer: kommentarerJson,
+    dokumenter: b.dokumenter != null ? JSON.stringify(b.dokumenter) : null,
+    svv_data: b.svvData != null ? JSON.stringify(b.svvData) : null,
+    archived: b.archived != null ? (b.archived ? 1 : 0) : null,
+    archivedAt: b.archived === true ? new Date().toISOString() : (b.archived === false ? null : null)
   });
 
-  res.json({ ok: true, item: mapBil(db.prepare('SELECT * FROM biler WHERE id = ?').get(id)) });
+  res.json({ ok: true, item: mapBil(await prepare('SELECT * FROM biler WHERE id = ?').get(id)) });
+});
+
+app.post('/api/biler/:id/dokumenter', requireAuth, function (req, res, next) {
+  upload.array('filer', 12)(req, res, function (err) {
+    if (err) {
+      return res.status(400).json({ ok: false, error: err.message || 'Opplasting feilet.' });
+    }
+    next();
+  });
+}, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+
+  const row = await prepare('SELECT * FROM biler WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Bilen finnes ikke.' });
+
+  try {
+    const persisted = await persistMulterFiles(req.files);
+    const incoming = mapUploadedFiles(persisted, req.user);
+    if (!incoming.length) {
+      return res.status(400).json({ ok: false, error: 'Ingen filer mottatt.' });
+    }
+    const dokumenter = [...parseJson(row.dokumenter, []), ...incoming];
+    const ansvarlig = await getAnsvarligNavn(req);
+    await prepare(`
+      UPDATE biler SET
+        dokumenter = @dokumenter,
+        ansvarlig = CASE WHEN @ansvarlig != '' THEN @ansvarlig ELSE ansvarlig END,
+        updated_at = datetime('now')
+      WHERE id = @id
+    `).run({
+      id: id,
+      dokumenter: JSON.stringify(dokumenter),
+      ansvarlig: ansvarlig || ''
+    });
+    const [updatedRow, kundeMap] = await Promise.all([
+      prepare('SELECT * FROM biler WHERE id = ?').get(id),
+      getAllBilKundeIdsMap()
+    ]);
+    res.json({ ok: true, item: mapBil(updatedRow, kundeMap[id] || []) });
+  } catch (err) {
+    console.error('POST /api/biler/:id/dokumenter feilet:', err.message);
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke laste opp filer.' });
+  }
 });
 
 // ─── Kalender ───
-app.get('/api/kalender', requireAuth, function (_req, res) {
-  const rows = db.prepare('SELECT * FROM kalender ORDER BY dato ASC, tid ASC').all();
+app.get('/api/kalender', requireAuth, async function (_req, res) {
+  const rows = await prepare('SELECT * FROM kalender ORDER BY dato ASC, tid ASC').all();
   res.json({ ok: true, items: rows.map(mapKal) });
 });
 
-app.post('/api/kalender', requireAuth, function (req, res) {
+app.post('/api/kalender', requireAuth, async function (req, res) {
   const b = req.body || {};
   if (!b.tittel || !b.dato) {
     return res.status(400).json({ ok: false, error: 'Tittel og dato er påkrevd.' });
   }
 
-  const info = db.prepare(`
-    INSERT INTO kalender (tittel, type, dato, tid, tid_slutt, ansvarlig, bil_ref, notat)
-    VALUES (@tittel, @type, @dato, @tid, @tid_slutt, @ansvarlig, @bil_ref, @notat)
+  const info = await prepare(`
+    INSERT INTO kalender (tittel, type, dato, tid, tid_slutt, ansvarlig, bil_ref, notat, kunde_id)
+    VALUES (@tittel, @type, @dato, @tid, @tid_slutt, @ansvarlig, @bil_ref, @notat, @kunde_id)
   `).run({
     tittel: b.tittel,
     type: b.type || 'Annet',
@@ -925,15 +2125,16 @@ app.post('/api/kalender', requireAuth, function (req, res) {
     tid_slutt: b.tidSlutt || '',
     ansvarlig: b.ansvarlig || '',
     bil_ref: b.bilRef || '',
-    notat: b.notat || ''
+    notat: b.notat || '',
+    kunde_id: b.kundeId || null
   });
 
-  res.status(201).json({ ok: true, item: mapKal(db.prepare('SELECT * FROM kalender WHERE id = ?').get(info.lastInsertRowid)) });
+  res.status(201).json({ ok: true, item: mapKal(await prepare('SELECT * FROM kalender WHERE id = ?').get(info.lastInsertRowid)) });
 });
 
-app.patch('/api/kalender/:id', requireAuth, function (req, res) {
+app.patch('/api/kalender/:id', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
-  const row = db.prepare('SELECT * FROM kalender WHERE id = ?').get(id);
+  const row = await prepare('SELECT * FROM kalender WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
   const b = req.body || {};
@@ -941,7 +2142,11 @@ app.patch('/api/kalender/:id', requireAuth, function (req, res) {
     return res.status(400).json({ ok: false, error: 'Tittel kan ikke være tom.' });
   }
 
-  db.prepare(`
+  if (b.kundeId !== undefined) {
+    await prepare('UPDATE kalender SET kunde_id = ? WHERE id = ?').run(b.kundeId || null, id);
+  }
+
+  await prepare(`
     UPDATE kalender SET
       tittel = COALESCE(@tittel, tittel),
       type = COALESCE(@type, type),
@@ -964,17 +2169,210 @@ app.patch('/api/kalender/:id', requireAuth, function (req, res) {
     notat: b.notat ?? null
   });
 
-  res.json({ ok: true, item: mapKal(db.prepare('SELECT * FROM kalender WHERE id = ?').get(id)) });
+  res.json({ ok: true, item: mapKal(await prepare('SELECT * FROM kalender WHERE id = ?').get(id)) });
+});
+
+app.delete('/api/kalender/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await prepare('SELECT * FROM kalender WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
+  await prepare('DELETE FROM kalender WHERE id = ?').run(id);
+  res.json({ ok: true, id });
+});
+
+// ─── Innkjøpskalkyle ───
+function normalizeKalkyleBody(b) {
+  const body = b && typeof b === 'object' ? b : {};
+  let autosysData = body.autosysData;
+  if (autosysData != null && typeof autosysData !== 'object') {
+    try {
+      autosysData = JSON.parse(String(autosysData));
+    } catch {
+      autosysData = null;
+    }
+  }
+  const row = {
+    auksjon: String(body.auksjon || '').trim(),
+    auksjonsslutt: body.auksjonsslutt || null,
+    partinummer: String(body.partinummer || '').trim(),
+    regnr: String(body.regnr || '').trim().toUpperCase(),
+    kmstand: Math.max(0, Number(body.kmstand) || 0),
+    modell: String(body.modell || '').trim(),
+    utstyrsnivaa: String(body.utstyrsniva || body.utstyrsnivaa || '').trim(),
+    utsalgspris: Math.max(0, Number(body.utsalgspris) || 0),
+    pakost: Math.max(0, Number(body.pakost) || 0),
+    auk_gebyr: Math.max(0, Number(body.aukGebyr) || 0),
+    garantikost: Math.max(0, Number(body.garantikost) || 0),
+    omreg_avgift: Math.max(0, Number(body.omregAvgift) || 0),
+    avanse: Math.max(0, Number(body.avanse) || 0),
+    kommentarer: String(body.kommentarer || '').trim(),
+    autosys_data: autosysData ? JSON.stringify(autosysData) : null
+  };
+  row.innkjopspris = calcInnkjopsprisRow(row);
+  return row;
+}
+
+app.get('/api/innkjopskalkyle', requireAuth, requirePermission('innkjopskalkyle'), async function (req, res) {
+  const auksjon = String(req.query.auksjon || '').trim();
+  let sql = `
+    SELECT k.*, uc.name AS created_by_name, uu.name AS updated_by_name
+    FROM innkjopskalkyle k
+    LEFT JOIN users uc ON uc.id = k.created_by
+    LEFT JOIN users uu ON uu.id = k.updated_by
+  `;
+  const params = {};
+  if (auksjon) {
+    sql += ' WHERE k.auksjon = @auksjon';
+    params.auksjon = auksjon;
+  }
+  sql += ' ORDER BY COALESCE(k.auksjonsslutt, k.created_at) DESC, k.id DESC';
+  const rows = await prepare(sql).all(params);
+  res.json({ ok: true, items: rows.map(mapInnkjopskalkyle) });
+});
+
+app.post('/api/innkjopskalkyle', requireAuth, requirePermission('innkjopskalkyle'), async function (req, res) {
+  const row = normalizeKalkyleBody(req.body);
+  if (!row.auksjon) {
+    return res.status(400).json({ ok: false, error: 'Auksjonsplattform er påkrevd.' });
+  }
+
+  const info = await prepare(`
+    INSERT INTO innkjopskalkyle (
+      auksjon, auksjonsslutt, partinummer, regnr, kmstand, modell, utstyrsnivaa,
+      utsalgspris, pakost, auk_gebyr, garantikost, omreg_avgift, avanse, innkjopspris,
+      kommentarer, autosys_data, created_by
+    ) VALUES (
+      @auksjon, @auksjonsslutt, @partinummer, @regnr, @kmstand, @modell, @utstyrsnivaa,
+      @utsalgspris, @pakost, @auk_gebyr, @garantikost, @omreg_avgift, @avanse, @innkjopspris,
+      @kommentarer, @autosys_data, @created_by
+    )
+  `).run({
+    ...row,
+    created_by: req.user?.sub || null
+  });
+
+  const fresh = await prepare(`
+    SELECT k.*, uc.name AS created_by_name, uu.name AS updated_by_name
+    FROM innkjopskalkyle k
+    LEFT JOIN users uc ON uc.id = k.created_by
+    LEFT JOIN users uu ON uu.id = k.updated_by
+    WHERE k.id = ?
+  `).get(info.lastInsertRowid);
+
+  res.status(201).json({ ok: true, item: mapInnkjopskalkyle(fresh) });
+});
+
+app.patch('/api/innkjopskalkyle/:id', requireAuth, requirePermission('innkjopskalkyle'), async function (req, res) {
+  const id = Number(req.params.id);
+  const existing = await prepare('SELECT * FROM innkjopskalkyle WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'Kalkyle ikke funnet.' });
+
+  const patch = normalizeKalkyleBody({ ...mapInnkjopskalkyle(existing), ...(req.body || {}) });
+  if (!patch.auksjon) {
+    return res.status(400).json({ ok: false, error: 'Auksjonsplattform er påkrevd.' });
+  }
+
+  await prepare(`
+    UPDATE innkjopskalkyle SET
+      auksjon = @auksjon,
+      auksjonsslutt = @auksjonsslutt,
+      partinummer = @partinummer,
+      regnr = @regnr,
+      kmstand = @kmstand,
+      modell = @modell,
+      utstyrsnivaa = @utstyrsnivaa,
+      utsalgspris = @utsalgspris,
+      pakost = @pakost,
+      auk_gebyr = @auk_gebyr,
+      garantikost = @garantikost,
+      omreg_avgift = @omreg_avgift,
+      avanse = @avanse,
+      innkjopspris = @innkjopspris,
+      kommentarer = @kommentarer,
+      autosys_data = @autosys_data,
+      updated_by = @updated_by,
+      updated_at = ${isPostgres ? 'NOW()' : "datetime('now')"}
+    WHERE id = @id
+  `).run({ ...patch, id, updated_by: req.user?.sub || null });
+
+  const fresh = await prepare(`
+    SELECT k.*, uc.name AS created_by_name, uu.name AS updated_by_name
+    FROM innkjopskalkyle k
+    LEFT JOIN users uc ON uc.id = k.created_by
+    LEFT JOIN users uu ON uu.id = k.updated_by
+    WHERE k.id = ?
+  `).get(id);
+
+  res.json({ ok: true, item: mapInnkjopskalkyle(fresh) });
+});
+
+app.delete('/api/innkjopskalkyle/:id', requireAuth, requirePermission('innkjopskalkyle'), async function (req, res) {
+  const id = Number(req.params.id);
+  const existing = await prepare('SELECT id FROM innkjopskalkyle WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'Kalkyle ikke funnet.' });
+  await prepare('DELETE FROM innkjopskalkyle WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+// ─── Kunder ───
+app.get('/api/kunder', requireAuth, async function (req, res) {
+  const search = req.query.q || req.query.search || '';
+  res.json({ ok: true, items: await getKunder(search) });
+});
+
+app.get('/api/kunder/:id', requireAuth, async function (req, res) {
+  const item = await getKundeById(req.params.id);
+  if (!item) return res.status(404).json({ ok: false, error: 'Kunde ikke funnet.' });
+  res.json({ ok: true, item });
+});
+
+app.get('/api/kunder/:id/aktivitet', requireAuth, async function (req, res) {
+  const item = await getKundeById(req.params.id);
+  if (!item) return res.status(404).json({ ok: false, error: 'Kunde ikke funnet.' });
+  res.json({ ok: true, aktivitet: await getKundeAktivitet(req.params.id) });
+});
+
+app.post('/api/kunder', requireAuth, async function (req, res) {
+  try {
+    const item = await createKunde(req.body || {});
+    res.status(201).json({ ok: true, item });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'Kunne ikke opprette kunde.' });
+  }
+});
+
+app.patch('/api/kunder/:id', requireAuth, async function (req, res) {
+  try {
+    const item = await updateKunde(req.params.id, req.body || {});
+    if (!item) return res.status(404).json({ ok: false, error: 'Kunde ikke funnet.' });
+    res.json({ ok: true, item });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'Kunne ikke oppdatere kunde.' });
+  }
+});
+
+app.delete('/api/kunder/:id', requireAuth, async function (req, res) {
+  try {
+    const ok = await deleteKunde(req.params.id);
+    if (!ok) return res.status(404).json({ ok: false, error: 'Kunde ikke funnet.' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'Kunne ikke slette kunde.' });
+  }
 });
 
 // ─── Innstillinger ───
-app.get('/api/innstillinger', requireAuth, requirePermission('innstillinger'), function (_req, res) {
-  res.json({ ok: true, settings: getInnstillinger() });
+app.get('/api/lister', requireAuth, async function (_req, res) {
+  res.json({ ok: true, lists: await getLister() });
 });
 
-app.patch('/api/innstillinger', requireAuth, requirePermission('innstillinger'), function (req, res) {
+app.get('/api/innstillinger', requireAuth, requirePermission('innstillinger'), async function (_req, res) {
+  res.json({ ok: true, settings: await getInnstillinger() });
+});
+
+app.patch('/api/innstillinger', requireAuth, requirePermission('innstillinger'), async function (req, res) {
   const body = req.body || {};
-  const settings = saveInnstillinger(body);
+  const settings = await saveInnstillinger(body);
   res.json({ ok: true, settings });
 });
 
@@ -1004,9 +2402,57 @@ app.get('/api/kjoretoy', requireAuth, async function (req, res) {
   }
 });
 
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.get('/api/omregistreringsavgift', requireAuth, async function (req, res) {
+  const regnr = req.query.regnr || req.query.reg;
+  if (!regnr) return res.status(400).json({ ok: false, error: 'Registreringsnummer mangler.' });
 
-if (fs.existsSync(clientDist)) {
+  if (!isOmregConfigured()) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Skatteetaten omregistreringsavgift er ikke konfigurert.',
+      code: 'MISSING_CONFIG'
+    });
+  }
+
+  try {
+    const result = await lookupOmregistreringsavgift(regnr, {
+      omregistreringsdato: req.query.dato || req.query.omregistreringsdato
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    const statusMap = {
+      MISSING_CONFIG: 400,
+      INVALID_REGNR: 400,
+      NOT_FOUND: 404,
+      FORBIDDEN: 403,
+      UPSTREAM_ERROR: 502
+    };
+    res.status(statusMap[err.code] || 502).json({
+      ok: false,
+      error: err.message,
+      code: err.code || 'UPSTREAM_ERROR'
+    });
+  }
+});
+
+app.get('/api/cron/mail-sync', runMailSyncCron);
+app.post('/api/cron/mail-sync', runMailSyncCron);
+
+app.get('/uploads/:filename', async function (req, res) {
+  const uploadPath = toUploadPath(req.params.filename);
+  try {
+    const file = await openUpload(uploadPath);
+    if (!file) return res.status(404).end();
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    file.stream.pipe(res);
+  } catch (err) {
+    console.error('[uploads]', uploadPath, err.message);
+    res.status(500).end();
+  }
+});
+
+if (!isVercel && fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.get('*', function (req, res, next) {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
@@ -1014,19 +2460,69 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-app.listen(PORT, function () {
-  console.log('X Bilsenter Admin API: http://localhost:' + PORT);
-  if (isSupabaseEnabled()) {
-    console.log('Database: Supabase (USE_SUPABASE=true) – fase 2 backend kobling gjenstår, SQLite brukes fortsatt i kode');
-  } else {
-    console.log('Database: SQLite (server/data/xbilsenter.db)');
-  }
-  if (fs.existsSync(clientDist)) {
-    console.log('Admin panel: http://localhost:' + PORT);
-  } else {
-    console.log('Admin panel: kjør "npm run dev" i client/ (http://localhost:5173)');
-  }
-  if (!INGEST_SECRET) {
-    console.warn('Advarsel: INGEST_SECRET er ikke satt – ingest-endepunkter er deaktivert.');
-  }
+app.use('/api', function (req, res) {
+  res.status(404).json({
+    ok: false,
+    error: `Endepunkt ikke funnet: ${req.method} ${req.originalUrl}. Restart admin-serveren hvis du nettopp har oppdatert.`
+  });
 });
+
+app.use(function (err, req, res, next) {
+  if (!err) return next();
+  console.error('[api]', req.method, req.path, err.message || err);
+  if (res.headersSent) return next(err);
+  const status = isTransientDbError(err) ? 503 : 500;
+  res.status(status).json({
+    ok: false,
+    error: status === 503
+      ? 'Database utilgjengelig midlertidig. Prøv igjen om litt.'
+      : (err.message || 'Intern serverfeil')
+  });
+});
+
+dbReady.catch(function (err) {
+  console.warn('Database-init avsluttet med feil:', err.message);
+});
+
+module.exports = app;
+
+function startLocalServer() {
+  httpServer = app.listen(PORT, function () {
+    console.log('X Bilsenter Admin API: http://localhost:' + PORT);
+    if (isPostgres) {
+      console.log('Database: Supabase PostgreSQL');
+    } else {
+      console.log('Database: SQLite (server/data/xbilsenter.db)');
+    }
+    if (isRemoteStorageEnabled()) {
+      ensureBucket()
+        .then(function () {
+          console.log('Storage: Supabase bucket "' + (process.env.SUPABASE_STORAGE_BUCKET || 'uploads') + '"');
+        })
+        .catch(function (err) {
+          console.warn('Storage-init feilet:', err.message);
+        });
+    } else {
+      console.log('Storage: Lokal mappe (server/data/uploads)');
+    }
+    if (fs.existsSync(clientDist)) {
+      console.log('Admin panel: http://localhost:' + PORT);
+    } else {
+      console.log('Admin panel: kjør "npm run dev" i client/ (http://localhost:5173)');
+    }
+    if (!INGEST_SECRET) {
+      console.warn('Advarsel: INGEST_SECRET er ikke satt – ingest-endepunkter er deaktivert.');
+    }
+    startBackgroundMailSync();
+  });
+
+  dbReady.then(function () {
+    console.log('[db] Database-init fullført.');
+  }).catch(function () {
+    /* allerede logget */
+  });
+}
+
+if (require.main === module) {
+  startLocalServer();
+}

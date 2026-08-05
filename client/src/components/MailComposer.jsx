@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { uploadSignatureImage } from '../api.js';
+import { normalizeOutgoingHtml } from '../mailHtmlNormalize.js';
 
 const FONTS = [
   { label: 'Arial', value: 'Arial' },
@@ -47,10 +48,16 @@ function normalizeUploadUrls(html) {
 
 export function htmlIsEmpty(html) {
   return !String(html || '')
+    .replace(/\u200B/g, '')
+    .replace(/&#8203;/g, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/gi, ' ')
     .trim();
+}
+
+export function cleanComposeHtml(html) {
+  return normalizeOutgoingHtml(html);
 }
 
 const REPLY_QUOTE_MARKER = 'data-xbilsenter-quote="1"';
@@ -75,7 +82,7 @@ function splitReplyQuoteHtml(html) {
 }
 
 export function buildMailPreviewHtml(bodyHtml, signaturHtml, quoteHtml) {
-  const body = expandUploadUrls(bodyHtml);
+  const body = expandUploadUrls(cleanComposeHtml(bodyHtml));
   let quote = expandUploadUrls(quoteHtml || '');
   const sig = expandUploadUrls(signaturHtml);
 
@@ -428,7 +435,7 @@ export default function MailComposer({ value, onChange, placeholder }) {
         <div className="sig-editor__group">
           <label className="sig-color" title="Tekstfarge">
             <span>A</span>
-            <input type="color" defaultValue="#2A4A2C" onChange={e => run('foreColor', e.target.value)} />
+            <input type="color" defaultValue="#000000" onChange={e => run('foreColor', e.target.value)} />
           </label>
           <label className="sig-color sig-color--bg" title="Markering">
             <span>▮</span>
@@ -463,7 +470,11 @@ export default function MailComposer({ value, onChange, placeholder }) {
           onInput={emit}
           onKeyDown={handleEditorKeyDown}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            setFocused(false);
+            const html = cleanComposeHtml(getEditorHtml());
+            if (html !== String(value || '')) onChange(html);
+          }}
           data-placeholder={placeholder || 'Skriv meldingen her…'}
         />
       ) : (

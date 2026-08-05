@@ -37,13 +37,22 @@ cd x-bilsenter && npm start
 
 Standard innlogging: `admin` / `admin123` (endres i `.env`).
 
-## Produksjon
+## Produksjon / drift 24/7
 
 ```bash
 npm run start:prod
 ```
 
 Bygger React-klienten og serverer den fra admin-serveren på port 8090.
+
+For **kontinuerlig drift uten nedetid** (automatisk restart, overlever reboot):
+
+```bash
+cd ../x-bilsenter
+npm run services:boot
+```
+
+Se `../x-bilsenter/OPS.md` for full oppsett med PM2.
 
 ## Hva kommer inn automatisk
 

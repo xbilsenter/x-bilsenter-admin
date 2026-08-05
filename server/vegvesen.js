@@ -75,6 +75,65 @@ function kwToHestekrefter(kw) {
   return Math.round(value * 1.35962);
 }
 
+function parseMotorer(motor) {
+  const list = Array.isArray(motor?.motor) ? motor.motor : [];
+  const parsed = list.map(function (mot, idx) {
+    const df = firstItem(mot.drivstoff) || getAt(mot, 'drivstoff.0') || {};
+    const effektKw = df.maksNettoEffekt ?? null;
+    return {
+      nr: idx + 1,
+      effektKw: effektKw != null ? Number(effektKw) : null,
+      effektHk: kwToHestekrefter(effektKw),
+      drivstoff: codeValue(df.drivstoffKode),
+      motorNummer: mot.motorNummer || null
+    };
+  }).filter(function (m) {
+    return m.effektKw || m.drivstoff || m.motorNummer;
+  });
+
+  if (parsed.length) return parsed;
+
+  const topKw = motor?.effektKraftuttakKW;
+  if (topKw != null && Number(topKw) > 0) {
+    return [{
+      nr: 1,
+      effektKw: Number(topKw),
+      effektHk: kwToHestekrefter(topKw),
+      drivstoff: null,
+      motorNummer: null
+    }];
+  }
+
+  return [];
+}
+
+function parseRekkeviddeKm(miljo) {
+  const out = {
+    rekkeviddeKm: null,
+    rekkeviddeKmBlandet: null,
+    rekkeviddeKmBy: null,
+    rekkeviddeKmNedc: null
+  };
+
+  getMiljoGrupper(miljo).forEach(function (gruppe) {
+    const list = Array.isArray(gruppe?.forbrukOgUtslipp) ? gruppe.forbrukOgUtslipp : [];
+    list.forEach(function (forbruk) {
+      if (!out.rekkeviddeKm && forbruk?.rekkeviddeKm) out.rekkeviddeKm = forbruk.rekkeviddeKm;
+      const wltp = forbruk?.wltpKjoretoyspesifikk
+        || forbruk?.wltpTypegodkjenningMaks
+        || forbruk?.wltpTypegodkjenningMedium
+        || {};
+      if (!out.rekkeviddeKmBlandet && wltp.rekkeviddeKmBlandetkjoring) {
+        out.rekkeviddeKmBlandet = wltp.rekkeviddeKmBlandetkjoring;
+      }
+      if (!out.rekkeviddeKmBy && wltp.rekkeviddeKmBykjoring) out.rekkeviddeKmBy = wltp.rekkeviddeKmBykjoring;
+      if (!out.rekkeviddeKmNedc && wltp.nedcRekkeviddeKm) out.rekkeviddeKmNedc = wltp.nedcRekkeviddeKm;
+    });
+  });
+
+  return out;
+}
+
 function formatNorwegianDate(value) {
   if (!value) return null;
   if (typeof value === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(value)) return value;
@@ -138,41 +197,66 @@ function parseEuKontroll(pkk) {
 }
 
 function parseHjuldrift(motor, akslinger, ovrige) {
-  const coded = codeValue(motor?.hjuldrift)
-    || codeValue(firstItem(motor?.hjuldrift, 'kodeBeskrivelse'))
-    || lookupOvrigTekniskData(ovrige, 'hjuldrift')
-    || lookupOvrigTekniskData(ovrige, 'Hjuldrift');
-
-  if (coded && !/^\d+$/.test(String(coded))) return coded;
-
   const aksler = flattenAksler(akslinger);
-  const driveAxles = aksler.filter(function (aksel) { return aksel?.drivAksel; });
-  const driveWheels = driveAxles.reduce(function (sum, aksel) {
-    return sum + (Number(aksel.antallHjul) || 0);
-  }, 0);
-  const totalWheels = aksler.reduce(function (sum, aksel) {
-    return sum + (Number(aksel.antallHjul) || 0);
-  }, 0);
+  const driveAxles = aksler.filter(function (aksel) {
+    return aksel?.drivAksel === true
+      || aksel?.drivAksel === 1
+      || String(aksel?.drivAksel).toLowerCase() === 'true';
+  });
 
-  const antall = motor?.antallHjulDrift;
-
-  if (antall === 4 || antall > 4 || driveWheels >= 4) return 'Firehjulsdrift';
-
-  if (antall === 2 || driveWheels === 2) {
-    if (driveAxles.length === 1) {
-      const pos = driveAxles[0].plasseringAksel;
-      if (pos === 1) return 'Forhjulsdrift';
-      if (pos >= 2) return 'Bakhjulsdrift';
-    }
-    if (driveAxles.length > 1) return 'Firehjulsdrift';
-    return 'Tohjulsdrift';
+  if (driveAxles.length > 0) {
+    return driveAxles.length === 1 ? '1 aksel' : `${driveAxles.length} aksler`;
   }
 
-  if (antall === 1 || driveWheels === 1) return 'Enhjulsdrift';
-  if (totalWheels === 4 && driveWheels === 2 && driveAxles.length === 1) {
-    return driveAxles[0].plasseringAksel === 1 ? 'Forhjulsdrift' : 'Bakhjulsdrift';
+  const antallHjul = Number(motor?.antallHjulDrift);
+  if (antallHjul >= 4) return '2 aksler';
+  if (antallHjul === 2 || antallHjul === 1) return '1 aksel';
+
+  return null;
+}
+
+function parseIsoDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseBruktimport(vehicle, forstegang, registrering, generelt) {
+  const godkjenning = vehicle.godkjenning || {};
+  const undertype = codeValue(godkjenning.godkjenningsUndertype)
+    || codeValue(godkjenning.godkjenningUndertype)
+    || codeValue(getAt(vehicle, 'godkjenning.godkjenningsUndertype'));
+  if (undertype && /brukt/i.test(undertype)) return 'Ja';
+  if (undertype && /nytt|coc|ef.?type/i.test(undertype) && !/brukt/i.test(undertype)) return 'Nei';
+
+  const bruktFlag = godkjenning.bruktImport ?? godkjenning.bruktimport ?? vehicle.bruktImport;
+  if (typeof bruktFlag === 'boolean') return bruktFlag ? 'Ja' : 'Nei';
+  if (bruktFlag === 1 || bruktFlag === '1') return 'Ja';
+  if (bruktFlag === 0 || bruktFlag === '0') return 'Nei';
+
+  const forstegangRegistrertRaw = forstegang.forstegangRegistrertDato
+    || forstegang.registrertForstegangUtlandDato
+    || forstegang.forstegangsregistrertDato
+    || getAt(vehicle, 'godkjenning.forstegangsGodkjenning.forstegangRegistrertDato');
+
+  const forstegangNorgeRaw = vehicle.forstegangsregistrering?.registrertForstegangNorgeDato
+    || forstegang.registrertForstegangNorgeDato
+    || registrering.registrertForstegangNorge;
+
+  const forstegangRegistrert = parseIsoDate(forstegangRegistrertRaw);
+  const forstegangNorge = parseIsoDate(forstegangNorgeRaw);
+
+  if (forstegangRegistrert && forstegangNorge) {
+    const diffDays = (forstegangNorge.getTime() - forstegangRegistrert.getTime()) / 86400000;
+    if (diffDays > 30) return 'Ja';
+    if (diffDays <= 2) return 'Nei';
   }
-  if (coded) return String(coded);
+
+  const fabrikkLand = codeValue(firstItem(generelt.fabrikkLand, 'kodeNavn'))
+    || codeValue(generelt.fabrikant?.fabrikantLand);
+  if (forstegangNorge && fabrikkLand && !/norge/i.test(fabrikkLand)) return 'Ja';
+  if (forstegangNorge && !forstegangRegistrert) return 'Nei';
+
   return null;
 }
 
@@ -204,11 +288,19 @@ function parseVehicle(raw) {
 
   const motorEntry = firstItem(motor.motor) || getAt(motor, 'motor.0') || {};
   const drivstoffEntry = firstItem(motorEntry?.drivstoff) || firstItem(motor.drivstoff) || getAt(motorEntry, 'drivstoff.0') || {};
+  const motorer = parseMotorer(motor);
+  const rekkevidde = parseRekkeviddeKm(miljo);
 
   let effektKw = motor.effektKraftuttakKW || motorEntry?.drivstoff?.[0]?.maksNettoEffekt || null;
   if (drivstoffEntry?.maksNettoEffekt) effektKw = drivstoffEntry.maksNettoEffekt;
+  if (!effektKw && motorer.length === 1) effektKw = motorer[0].effektKw;
 
   const euKontrollData = parseEuKontroll(pkk);
+
+  const forstegangRegistrertRaw = forstegang.forstegangRegistrertDato
+    || forstegang.registrertForstegangUtlandDato
+    || forstegang.forstegangsregistrertDato
+    || getAt(vehicle, 'godkjenning.forstegangsGodkjenning.forstegangRegistrertDato');
 
   const regNr = vehicle.kjoretoyId?.kjennemerke
     || firstItem(vehicle.kjennemerke, 'kjennemerke')
@@ -235,6 +327,12 @@ function parseVehicle(raw) {
     hjuldrift: parseHjuldrift(motor, akslinger, ovrige),
     effektKw,
     effektHk: kwToHestekrefter(effektKw),
+    antallMotorer: motorer.length || null,
+    motorer,
+    rekkeviddeKm: rekkevidde.rekkeviddeKmBlandet || rekkevidde.rekkeviddeKm || rekkevidde.rekkeviddeKmNedc || null,
+    rekkeviddeKmBlandet: rekkevidde.rekkeviddeKmBlandet,
+    rekkeviddeKmBy: rekkevidde.rekkeviddeKmBy,
+    rekkeviddeKmNedc: rekkevidde.rekkeviddeKmNedc,
     antallGir: motor.antallGir,
     antallSylindre: motorEntry?.antallSylindre,
     slagvolum: motorEntry?.slagvolum,
@@ -265,12 +363,14 @@ function parseVehicle(raw) {
     kontrollType: euKontrollData.kontrollType,
     understell: vehicle.kjoretoyId?.understellsnummer || generelt.understellsnummer || vehicle.understellsnummer,
     registrertDato: formatNorwegianDate(registrering.registrertForstegangPaEierskap || registrering.fomTidspunkt),
+    forstegangsregistrert: formatNorwegianDate(forstegangRegistrertRaw),
     forstegangsregNorge: formatNorwegianDate(
       vehicle.forstegangsregistrering?.registrertForstegangNorgeDato
       || forstegang.registrertForstegangNorgeDato
       || forstegang.forstegangRegistrertDato
       || registrering.registrertForstegangNorge
     ),
+    bruktimport: parseBruktimport(vehicle, forstegang, registrering, generelt),
     registreringsstatus: codeValue(registrering.registreringsstatus?.kodeBeskrivelse) || codeValue(registrering.registreringsstatus),
     fabrikkLand: codeValue(firstItem(generelt.fabrikkLand, 'kodeNavn')) || codeValue(generelt.fabrikant?.fabrikantLand),
     typebetegnelse: generelt.typebetegnelse,
@@ -323,10 +423,11 @@ function buildDisplaySections(rawVehicle, parsed) {
     ['Identitet', 'Farge', parsed?.farge],
     ['Motor & drivlinje', 'Drivstoff', parsed?.drivstoff],
     ['Motor & drivlinje', 'Girkasse', parsed?.girkasse],
-    ['Motor & drivlinje', 'Hjuldrift', parsed?.hjuldrift],
+    ['Motor & drivlinje', 'Aksler med drift', parsed?.hjuldrift],
     ['Motor & drivlinje', 'Antall hjul med drift', parsed?.antallHjulDrift],
     ['Motor & drivlinje', 'Effekt (kW)', parsed?.effektKw ? parsed.effektKw + ' kW' : null],
     ['Motor & drivlinje', 'Effekt (hk)', parsed?.effektHk ? parsed.effektHk + ' hk' : null],
+    ['Motor & drivlinje', 'Antall motorer', parsed?.antallMotorer],
     ['Motor & drivlinje', 'Antall gir', parsed?.antallGir],
     ['Motor & drivlinje', 'Antall sylindre', parsed?.antallSylindre],
     ['Motor & drivlinje', 'Slagvolum', parsed?.slagvolum ? parsed.slagvolum + ' cm³' : null],
@@ -354,13 +455,19 @@ function buildDisplaySections(rawVehicle, parsed) {
     ['Miljø', 'Forbruk by', parsed?.forbrukBy ? parsed.forbrukBy + ' l/100 km' : null],
     ['Miljø', 'Forbruk landevei', parsed?.forbrukLandevei ? parsed.forbrukLandevei + ' l/100 km' : null],
     ['Miljø', 'WLTP forbruk', parsed?.wltpForbruk ? parsed.wltpForbruk + ' l/100 km' : null],
+    ['Miljø', 'Rekkevidde', parsed?.rekkeviddeKm ? parsed.rekkeviddeKm + ' km' : null],
+    ['Miljø', 'Rekkevidde WLTP blandet', parsed?.rekkeviddeKmBlandet ? parsed.rekkeviddeKmBlandet + ' km' : null],
+    ['Miljø', 'Rekkevidde WLTP by', parsed?.rekkeviddeKmBy ? parsed.rekkeviddeKmBy + ' km' : null],
+    ['Miljø', 'Rekkevidde NEDC', parsed?.rekkeviddeKmNedc ? parsed.rekkeviddeKmNedc + ' km' : null],
     ['Miljø', 'Partikkelutslipp', parsed?.partikkelutslipp],
     ['EU-kontroll', 'Siste EU-kontroll', parsed?.sisteEuKontroll],
     ['EU-kontroll', 'Neste EU-kontroll', parsed?.nesteEuKontroll],
     ['EU-kontroll', 'Kontrollsted', parsed?.kontrollsted],
     ['EU-kontroll', 'Kontrolltype', parsed?.kontrollType],
     ['Registrering', 'Registreringsstatus', parsed?.registreringsstatus],
+    ['Registrering', 'Førstegangsregistrert', parsed?.forstegangsregistrert],
     ['Registrering', '1. registrering Norge', parsed?.forstegangsregNorge],
+    ['Registrering', 'Bruktimport', parsed?.bruktimport],
     ['Registrering', 'Registrert dato', parsed?.registrertDato],
     ['Registrering', 'Unntak ROZ', parsed?.unntakRoz]
   ];
@@ -419,7 +526,7 @@ function sectionsFromParsed(parsed) {
     farge: 'Farge',
     drivstoff: 'Drivstoff',
     girkasse: 'Girkasse',
-    hjuldrift: 'Hjuldrift',
+    hjuldrift: 'Aksler med drift',
     effektKw: 'Effekt (kW)',
     effektHk: 'Effekt (hk)',
     kjoretoyType: 'Teknisk kode',
@@ -433,7 +540,9 @@ function sectionsFromParsed(parsed) {
     sisteEuKontroll: 'Siste EU-kontroll',
     nesteEuKontroll: 'Neste EU-kontroll',
     registreringsstatus: 'Registreringsstatus',
-    forstegangsregNorge: '1. registrering Norge'
+    forstegangsregNorge: '1. registrering Norge',
+    forstegangsregistrert: 'Førstegangsregistrert',
+    bruktimport: 'Bruktimport'
   };
   const map = { Identitet: [], 'Motor & drivlinje': [], Miljø: [], 'EU-kontroll': [], Registrering: [] };
   Object.keys(labels).forEach(function (key) {
@@ -443,7 +552,7 @@ function sectionsFromParsed(parsed) {
       ? 'Motor & drivlinje'
       : ['euroKlasse'].includes(key) ? 'Miljø'
       : ['sisteEuKontroll', 'nesteEuKontroll'].includes(key) ? 'EU-kontroll'
-      : ['registreringsstatus', 'forstegangsregNorge'].includes(key) ? 'Registrering'
+      : ['registreringsstatus', 'forstegangsregNorge', 'forstegangsregistrert', 'bruktimport'].includes(key) ? 'Registrering'
       : 'Identitet';
     map[group].push({ label: labels[key], value: String(val) });
   });

@@ -7,12 +7,18 @@
     "install:all": "npm install && npm install --prefix server && npm install --prefix client",
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "start": "npm run start --prefix server",
+    "start:all": "concurrently -n admin,site -c blue,green \"npm start\" \"npm start --prefix ../x-bilsenter\"",
     "build": "npm run build --prefix client",
+    "vercel-build": "npm install --prefix client && npm install --prefix server && npm run build --prefix client",
     "start:prod": "npm run build && NODE_ENV=production npm run start --prefix server",
     "migrate:export": "npm run migrate:export --prefix server",
-    "migrate:import": "npm run migrate:import --prefix server"
+    "migrate:import": "npm run migrate:import --prefix server",
+    "migrate:uploads": "node scripts/migrate-uploads-to-storage.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
+  },
+  "dependencies": {
+    "serverless-http": "^3.2.0"
   }
 }
