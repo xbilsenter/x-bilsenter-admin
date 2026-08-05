@@ -9,10 +9,12 @@
     "migrate:export": "node ../scripts/migrate-to-supabase.js --export",
     "migrate:import": "node ../scripts/migrate-to-supabase.js --import"
   },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.8.1"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

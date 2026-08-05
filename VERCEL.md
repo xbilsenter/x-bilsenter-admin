@@ -7,7 +7,7 @@ To Vercel-prosjekter (admin + nettside), begge med Supabase.
 ### Opprett prosjekt
 1. [vercel.com](https://vercel.com) → **Add New Project**
 2. Importer repo `x-bilsenter-admin`
-3. **Plan: Pro** (kreves for e-post cron hvert 3. min)
+3. **Plan:** Hobby fungerer for admin-panel og API. **Pro** kreves for e-post-cron hvert 3. min (se nederst).
 
 ### Build-innstillinger (auto fra `vercel.json`)
 | Felt | Verdi |
@@ -59,9 +59,13 @@ NODE_ENV=production
 - Koble **`drift.xbilsenter.no`** til admin-prosjektet (Settings → Domains)
 
 ### Etter deploy
-1. Sjekk `GET /api/public/status` → HTTP 200
-2. Logg inn i admin
-3. Verifiser cron i Vercel → **Cron Jobs** (kjører `/api/cron/mail-sync` hvert 3. min)
+1. Sjekk `GET /api/public/status` → HTTP 200 (f.eks. `https://[prosjekt].vercel.app/api/public/status`)
+2. Koble domene **`drift.xbilsenter.no`** (Settings → Domains) og legg til DNS (CNAME → `cname.vercel-dns.com`)
+3. Logg inn i admin
+4. **Pro:** Legg til cron i Vercel → Settings → Cron Jobs: `GET /api/cron/mail-sync` hvert 3. min
+
+### Viktig: Admin må opprettes som eget Vercel-prosjekt
+Nettsiden (`x-bilsenter`) og admin (`x-bilsenter-admin`) er **to separate prosjekter** i Vercel. Importer repo `xbilsenter/x-bilsenter-admin` og deploy på nytt etter env-variabler er satt.
 
 ---
 
@@ -112,6 +116,9 @@ PM2 lokalt er valgfritt under utvikling. Produksjon = Vercel.
 
 | Problem | Løsning |
 |---------|---------|
+| Admin finnes ikke på Vercel | Opprett **nytt prosjekt** for repo `x-bilsenter-admin` (ikke samme som nettsiden) |
+| `drift.xbilsenter.no` virker ikke | Legg til CNAME i DNS → `cname.vercel-dns.com` etter domene er koblet i Vercel |
+| Build feiler på `better-sqlite3` | Bruk `install:vercel` (i `vercel.json`) + `USE_SUPABASE=true` |
 | 401 på cron | Sett `CRON_SECRET` i Vercel env |
 | CORS-feil | Legg nettside-URL i `CORS_ORIGINS` + `PUBLIC_SITE_ORIGIN` på admin |
 | Skjema lagres ikke | `ADMIN_API_URL` på nettside må peke til admin-URL |

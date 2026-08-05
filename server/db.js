@@ -5,8 +5,4 @@ function usePostgresBackend() {
   return !!(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL);
 }
 
-if (!usePostgresBackend()) {
-  require('./db-sqlite');
-}
-
-module.exports = require('./db-pg');
+module.exports = usePostgresBackend() ? require('./db-pg') : require('./db-sqlite');

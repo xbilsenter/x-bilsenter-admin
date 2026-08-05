@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm run install:all",
-  "buildCommand": "npm run build --prefix client",
+  "installCommand": "npm run install:vercel",
+  "buildCommand": "npm run vercel-build",
   "outputDirectory": "client/dist",
   "framework": null,
   "rewrites": [
@@ -10,14 +10,8 @@
   ],
   "functions": {
     "api/index.js": {
-      "maxDuration": 300,
+      "maxDuration": 60,
       "memory": 1024
     }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/mail-sync",
-      "schedule": "*/3 * * * *"
-    }
-  ]
+  }
 }

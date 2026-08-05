@@ -3,13 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "description": "X Bilsenter AS – driftssystem (CRM)",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client --include=dev",
+    "install:vercel": "npm install && npm install --prefix client --include=dev && npm install --prefix server --ignore-scripts",
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "start": "npm run start --prefix server",
     "start:all": "concurrently -n admin,site -c blue,green \"npm start\" \"npm start --prefix ../x-bilsenter\"",
     "build": "npm run build --prefix client",
-    "vercel-build": "npm install --prefix client && npm install --prefix server && npm run build --prefix client",
+    "vercel-build": "npm install --prefix client --include=dev && npm install --prefix server --ignore-scripts && npm run build --prefix client",
     "start:prod": "npm run build && NODE_ENV=production npm run start --prefix server",
     "migrate:export": "npm run migrate:export --prefix server",
     "migrate:import": "npm run migrate:import --prefix server",
