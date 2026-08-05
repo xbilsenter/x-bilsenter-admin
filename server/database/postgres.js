@@ -71,14 +71,16 @@ function getPool() {
       ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
       max: Number(process.env.DB_POOL_MAX || 10),
       idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
-      connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+      connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || (process.env.VERCEL ? 4000 : 10000)),
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000
     });
     attachPoolErrorHandler(pool);
-    pool.query('SELECT 1').catch(function (err) {
-      console.warn('[postgres] Oppstartstest mot database feilet:', err.message);
-    });
+    if (!process.env.VERCEL) {
+      pool.query('SELECT 1').catch(function (err) {
+        console.warn('[postgres] Oppstartstest mot database feilet:', err.message);
+      });
+    }
   }
   return pool;
 }

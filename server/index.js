@@ -208,6 +208,15 @@ app.use(cors({
 
 app.use(express.json({ limit: '25mb' }));
 
+app.get('/api/health', function (_req, res) {
+  res.json({
+    ok: true,
+    service: 'x-bilsenter-admin',
+    useSupabase: process.env.USE_SUPABASE === 'true',
+    databaseConfigured: !!(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL)
+  });
+});
+
 const upload = multer({
   storage: (isRemoteStorageEnabled() || isVercel)
     ? multer.memoryStorage()
