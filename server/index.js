@@ -206,7 +206,13 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json({ limit: '25mb' }));
+app.use(function (req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    req.body = {};
+    return next();
+  }
+  return express.json({ limit: '25mb' })(req, res, next);
+});
 
 app.get('/api/health', function (_req, res) {
   res.json({
