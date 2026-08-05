@@ -2,7 +2,7 @@
 
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
-const { prepare } = require('./db');
+const { prepare, isPostgres } = require('./db');
 const {
   detectMappeType,
   displayNavnForMappe,
@@ -24,6 +24,7 @@ const MAX_ATTACHMENT_BYTES = Number(process.env.MAIL_MAX_ATTACHMENT_BYTES || 8 *
 const MAX_ATTACHMENTS_PER_MAIL = Number(process.env.MAIL_MAX_ATTACHMENTS || 15);
 const SYNC_DAYS = Number(process.env.MAIL_SYNC_DAYS || 90);
 const SYNC_MAX_PER_FOLDER = Number(process.env.MAIL_SYNC_MAX_PER_FOLDER || 200);
+const FOLDER_DISCOVERY_TTL_MS = Number(process.env.MAIL_FOLDER_DISCOVERY_TTL_MS || 900000);
 
 let backgroundTimer = null;
 let backgroundRunning = false;
@@ -307,13 +308,42 @@ async function syncFolderMessages(client, konto, mappe) {
   return { mappeId: mappe.id, mappeNavn: mappe.navn, imported, updated };
 }
 
+const DISCOVERY_KEY_PREFIX = 'mail_folder_discovery_';
+
+async function foldersNeedDiscovery(kontoId, knownFolderCount) {
+  if (!knownFolderCount) return true;
+  if (FOLDER_DISCOVERY_TTL_MS <= 0) return true;
+
+  const row = await prepare('SELECT value FROM innstillinger WHERE key = ?')
+    .get(DISCOVERY_KEY_PREFIX + kontoId);
+  const lastRun = Number(row?.value || 0);
+  return !lastRun || Date.now() - lastRun > FOLDER_DISCOVERY_TTL_MS;
+}
+
+async function markFoldersDiscovered(kontoId) {
+  const key = DISCOVERY_KEY_PREFIX + kontoId;
+  await prepare('DELETE FROM innstillinger WHERE key = ?').run(key);
+  await prepare(`
+    INSERT INTO innstillinger (key, value, updated_at)
+    VALUES (?, ?, ${isPostgres ? 'NOW()' : "datetime('now')"})
+  `).run(key, String(Date.now()));
+}
+
 async function syncAccountFull(konto) {
   const client = createImapClient(konto);
   await client.connect();
 
   try {
-    await discoverFolders(client, konto.id);
-    const mapper = await getMailMapperForKonto(konto.id);
+    let mapper = await getMailMapperForKonto(konto.id);
+
+    // Mappestrukturen endres sjelden – full LIST + oppdatering av hver mappe
+    // koster mange databasekall, så den kjøres bare periodisk.
+    if (await foldersNeedDiscovery(konto.id, mapper.length)) {
+      await discoverFolders(client, konto.id);
+      mapper = await getMailMapperForKonto(konto.id);
+      await markFoldersDiscovered(konto.id).catch(function () { /* ikke kritisk */ });
+    }
+
     const results = [];
 
     for (const mappe of mapper) {
@@ -326,13 +356,16 @@ async function syncAccountFull(konto) {
       }
     }
 
-    await backfillEpostMappeIds(konto.id);
-    await updateAllMappeCountsForKonto(konto.id);
-    const { setMailKontoLastSync } = require('./db');
-    await setMailKontoLastSync(konto.id, new Date().toISOString());
-
     const imported = results.reduce(function (sum, item) { return sum + (item.imported || 0); }, 0);
     const updated = results.reduce(function (sum, item) { return sum + (item.updated || 0); }, 0);
+
+    if (imported || updated) {
+      await backfillEpostMappeIds(konto.id);
+      await updateAllMappeCountsForKonto(konto.id);
+    }
+
+    const { setMailKontoLastSync } = require('./db');
+    await setMailKontoLastSync(konto.id, new Date().toISOString());
 
     return {
       kontoId: konto.id,
