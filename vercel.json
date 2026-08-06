@@ -4,6 +4,14 @@
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "client/dist",
   "framework": null,
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "x-bilsenter-admin.vercel.app" }],
+      "destination": "https://drift.xbilsenter.no/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/api/ping", "destination": "/api/ping" },
     { "source": "/api/(.*)", "destination": "/api" },

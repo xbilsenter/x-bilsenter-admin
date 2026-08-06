@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-SITE_ORIGIN="${SITE_ORIGIN:-https://x-bilsenter.vercel.app}"
-ADMIN_ORIGIN="${ADMIN_ORIGIN:-https://x-bilsenter-admin.vercel.app}"
+SITE_ORIGIN="${SITE_ORIGIN:-https://xbilsenter.no}"
+ADMIN_ORIGIN="${ADMIN_ORIGIN:-https://drift.xbilsenter.no}"
 CORS_LIST="${CORS_LIST:-$SITE_ORIGIN,https://xbilsenter.no,https://www.xbilsenter.no}"
 
 set_var() {
