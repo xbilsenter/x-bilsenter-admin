@@ -1178,9 +1178,11 @@ function mapEpost(row) {
 const PERMISSION_DEFS = [
   { id: 'dashboard', label: 'Oversikt' },
   { id: 'biler', label: 'Biler' },
+  { id: 'kunder', label: 'Kunder' },
   { id: 'henvendelser', label: 'Henvendelser' },
   { id: 'innboks', label: 'Innboks' },
   { id: 'innbytte', label: 'Innbytte' },
+  { id: 'selgbil', label: 'Selg bil' },
   { id: 'kalender', label: 'Kalender' },
   { id: 'innkjopskalkyle', label: 'Innkjøpskalkyle' },
   { id: 'oppgaver', label: 'Oppgaver' },
@@ -1192,12 +1194,26 @@ const PERMISSION_DEFS = [
 const ALL_PERMISSION_IDS = PERMISSION_DEFS.map(function (p) { return p.id; });
 
 const ROLE_TEMPLATES = {
-  'Daglig leder': ALL_PERMISSION_IDS,
-  Selger: ['dashboard', 'biler', 'henvendelser', 'innboks', 'innbytte', 'kalender', 'vegvesen'],
+  Admin: ALL_PERMISSION_IDS,
+  Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
+  Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
   Verksted: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
-  Regnskap: ['dashboard', 'biler', 'henvendelser', 'innbytte'],
-  'Kun leser': ['dashboard', 'biler', 'henvendelser', 'innbytte', 'kalender']
+  'Kun leser': ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'kalender']
 };
+
+const LEGACY_ROLE_ALIASES = {
+  'Daglig leder': 'Admin',
+  Regnskap: 'Innkjøpssjef'
+};
+
+function resolveRoleKey(role) {
+  const key = String(role || '').trim();
+  return LEGACY_ROLE_ALIASES[key] || key;
+}
+
+function resolveRoleTemplate(role) {
+  return ROLE_TEMPLATES[resolveRoleKey(role)] || ROLE_TEMPLATES.Selger;
+}
 
 function migrateUsers() {
   db.exec(`
@@ -1232,7 +1248,7 @@ function seedDefaultAdminUser() {
     password_hash: bcrypt.hashSync(password, 10),
     name: 'Administrator',
     email: '',
-    role: 'Daglig leder',
+    role: 'Admin',
     permissions: JSON.stringify(ALL_PERMISSION_IDS)
   });
 }
@@ -1297,9 +1313,9 @@ function createUser(data, passwordHash) {
   const permissions = normalizePermissions(
     data.permissions && data.permissions.length
       ? data.permissions
-      : (ROLE_TEMPLATES[role] || ROLE_TEMPLATES.Selger)
+      : resolveRoleTemplate(role)
   );
-  const isAdmin = !!data.isAdmin;
+  const isAdmin = resolveRoleKey(role) === 'Admin' ? true : !!data.isAdmin;
 
   const info = db.prepare(`
     INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin)
@@ -1336,7 +1352,7 @@ function updateUser(id, data, passwordHash) {
     permissions = JSON.stringify(normalizePermissions(data.permissions));
   } else if (data.role != null) {
     const role = String(data.role).trim();
-    permissions = JSON.stringify(normalizePermissions(ROLE_TEMPLATES[role] || parseJson(existing.permissions, [])));
+    permissions = JSON.stringify(normalizePermissions(resolveRoleTemplate(role) || parseJson(existing.permissions, [])));
   }
 
   if (data.isAdmin === false && existing.is_admin && countAdminUsers() <= 1) {
@@ -1344,6 +1360,11 @@ function updateUser(id, data, passwordHash) {
   }
   if (data.aktiv === false && existing.is_admin && countAdminUsers() <= 1) {
     throw new Error('Kan ikke deaktivere siste aktive administrator.');
+  }
+
+  let isAdminValue = data.isAdmin == null ? null : (data.isAdmin ? 1 : 0);
+  if (data.role != null && resolveRoleKey(String(data.role).trim()) === 'Admin') {
+    isAdminValue = 1;
   }
 
   db.prepare(`
@@ -1367,7 +1388,7 @@ function updateUser(id, data, passwordHash) {
     role: data.role != null ? String(data.role).trim() : null,
     permissions,
     aktiv: data.aktiv == null ? null : (data.aktiv ? 1 : 0),
-    is_admin: data.isAdmin == null ? null : (data.isAdmin ? 1 : 0)
+    is_admin: isAdminValue
   });
 
   return getUserById(id);

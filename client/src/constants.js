@@ -280,6 +280,12 @@ export function saveBilerSection(section) {
   }
 }
 
+export function displayRole(role) {
+  if (!role) return 'Administrator';
+  const legacy = { 'Daglig leder': 'Admin', Regnskap: 'Innkjøpssjef' };
+  return legacy[role] || role;
+}
+
 export const TAB_PERMISSIONS = {
   dashboard: 'dashboard',
   biler: 'biler',

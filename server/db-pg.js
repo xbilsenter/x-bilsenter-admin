@@ -16,6 +16,8 @@ const {
   PERMISSION_DEFS,
   ALL_PERMISSION_IDS,
   ROLE_TEMPLATES,
+  resolveRoleKey,
+  resolveRoleTemplate,
   normalizeModulOppsett,
   normalizeVedlikeholdModus,
   normalizeBilStatusFarger,
@@ -211,7 +213,7 @@ async function ensureDefaultAdminUser() {
       username,
       name: 'Administrator',
       email: '',
-      role: 'Daglig leder',
+      role: 'Admin',
       permissions: ALL_PERMISSION_IDS,
       aktiv: true,
       isAdmin: true
@@ -1082,9 +1084,9 @@ async function createUser(data, passwordHash) {
   const permissions = normalizePermissions(
     data.permissions && data.permissions.length
       ? data.permissions
-      : (ROLE_TEMPLATES[role] || ROLE_TEMPLATES.Selger)
+      : resolveRoleTemplate(role)
   );
-  const isAdmin = !!data.isAdmin;
+  const isAdmin = resolveRoleKey(role) === 'Admin' ? true : !!data.isAdmin;
 
   const info = await prepare(`
     INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin)
@@ -1121,7 +1123,7 @@ async function updateUser(id, data, passwordHash) {
     permissions = JSON.stringify(normalizePermissions(data.permissions));
   } else if (data.role != null) {
     const role = String(data.role).trim();
-    permissions = JSON.stringify(normalizePermissions(ROLE_TEMPLATES[role] || parseJson(existing.permissions, [])));
+    permissions = JSON.stringify(normalizePermissions(resolveRoleTemplate(role) || parseJson(existing.permissions, [])));
   }
 
   if (data.isAdmin === false && existing.is_admin && (await countAdminUsers()) <= 1) {
@@ -1129,6 +1131,11 @@ async function updateUser(id, data, passwordHash) {
   }
   if (data.aktiv === false && existing.is_admin && (await countAdminUsers()) <= 1) {
     throw new Error('Kan ikke deaktivere siste aktive administrator.');
+  }
+
+  let isAdminValue = data.isAdmin == null ? null : (data.isAdmin ? 1 : 0);
+  if (data.role != null && resolveRoleKey(String(data.role).trim()) === 'Admin') {
+    isAdminValue = 1;
   }
 
   await prepare(`
@@ -1152,7 +1159,7 @@ async function updateUser(id, data, passwordHash) {
     role: data.role != null ? String(data.role).trim() : null,
     permissions,
     aktiv: data.aktiv == null ? null : (data.aktiv ? 1 : 0),
-    is_admin: data.isAdmin == null ? null : (data.isAdmin ? 1 : 0)
+    is_admin: isAdminValue
   });
 
   return getUserById(id);

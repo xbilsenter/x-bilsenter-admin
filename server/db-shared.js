@@ -143,12 +143,26 @@ const PERMISSION_DEFS = [
 const ALL_PERMISSION_IDS = PERMISSION_DEFS.map(function (p) { return p.id; });
 
 const ROLE_TEMPLATES = {
-  'Daglig leder': ALL_PERMISSION_IDS,
-  Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'innkjopskalkyle', 'vegvesen'],
+  Admin: ALL_PERMISSION_IDS,
+  Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
+  Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
   Verksted: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
-  Regnskap: ['dashboard', 'biler', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle'],
   'Kun leser': ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'kalender']
 };
+
+const LEGACY_ROLE_ALIASES = {
+  'Daglig leder': 'Admin',
+  Regnskap: 'Innkjøpssjef'
+};
+
+function resolveRoleKey(role) {
+  const key = String(role || '').trim();
+  return LEGACY_ROLE_ALIASES[key] || key;
+}
+
+function resolveRoleTemplate(role) {
+  return ROLE_TEMPLATES[resolveRoleKey(role)] || ROLE_TEMPLATES.Selger;
+}
 
 function normalizeModulOppsett(list) {
   const defaults = DEFAULT_INNSTILLINGER.modulOppsett;
@@ -398,6 +412,9 @@ module.exports = {
   PERMISSION_DEFS,
   ALL_PERMISSION_IDS,
   ROLE_TEMPLATES,
+  LEGACY_ROLE_ALIASES,
+  resolveRoleKey,
+  resolveRoleTemplate,
   normalizeModulOppsett,
   normalizeVedlikeholdModus,
   normalizeBilStatusFarger,

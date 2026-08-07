@@ -10,7 +10,7 @@ import {
   openFinnMarkedsSok
 } from './finnMarkedssok.js';
 import {
-  DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess,
+  DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, displayRole,
   canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch,
   normalizeHenvStatusFarger, normalizeBilStatusFarger, DEFAULT_HENV_STATUS_FARGER,
   DEFAULT_INNBYTTE_STATUS_FARGER, normalizeInnbytteStatusFarger,
@@ -731,7 +731,7 @@ export default function App() {
           ))}
           <div className="sb-foot">
             <div className="sb-user">{user?.name || 'Admin'}</div>
-            <div className="sb-role">{user?.role || 'Administrator'}</div>
+            <div className="sb-role">{displayRole(user?.role)}</div>
             <div className="sb-status">
               <div className="sb-dot" />
               <span className="sb-online">Innlogget</span>
@@ -7445,7 +7445,12 @@ function BrukereSection({ currentUser, visTost }) {
     const perms = meta.roleTemplates[role] || [];
     setForm(function (prev) {
       if (!prev) return prev;
-      return { ...prev, role, permissions: [...perms] };
+      return {
+        ...prev,
+        role,
+        permissions: [...perms],
+        isAdmin: role === 'Admin'
+      };
     });
   };
 
@@ -7477,7 +7482,7 @@ function BrukereSection({ currentUser, visTost }) {
     name: b.name,
     email: b.email || '',
     password: '',
-    role: b.role,
+    role: displayRole(b.role),
     permissions: [...(b.permissions || [])],
     aktiv: b.aktiv,
     isAdmin: !!b.isAdmin
@@ -7570,7 +7575,7 @@ function BrukereSection({ currentUser, visTost }) {
                   <tr key={b.id}>
                     <td><strong>{b.name}</strong>{b.isAdmin ? ' · Admin' : ''}</td>
                     <td>{b.username}</td>
-                    <td>{b.role}</td>
+                    <td>{displayRole(b.role)}</td>
                     <td>{(b.permissions || []).length} moduler</td>
                     <td>{b.aktiv ? 'Aktiv' : 'Deaktivert'}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
