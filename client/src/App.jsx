@@ -8207,8 +8207,9 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
   );
 }
 
-function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, compact }) {
+function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, compact, collapsible, defaultOpen }) {
   const [ny, setNy] = useState('');
+  const [open, setOpen] = useState(!!defaultOpen);
 
   const endre = (idx, value) => {
     if (items.some(function (item, i) {
@@ -8238,9 +8239,21 @@ function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, com
 
   return (
     <div className={compact ? '' : 'card settings-card'}>
-      {!compact && (
+      {!compact && collapsible ? (
+        <button
+          type="button"
+          className="settings-collapsible-hd"
+          onClick={() => setOpen(function (prev) { return !prev; })}
+          aria-expanded={open}
+        >
+          <span className="card-ht">{title}</span>
+          <span className="settings-collapsible-meta">{items.length} {items.length === 1 ? 'merke' : 'merker'}</span>
+          <span className="settings-collapsible-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        </button>
+      ) : !compact ? (
         <div className="card-h"><span className="card-ht">{title}</span></div>
-      )}
+      ) : null}
+      {(!collapsible || open) && (
       <div style={{ padding: compact ? 0 : 16 }}>
         {desc && <p className="settings-desc">{desc}</p>}
         <div className="settings-list">
@@ -8269,6 +8282,7 @@ function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, com
           <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -8348,6 +8362,7 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           items={draft.merker}
           onChange={v => setList('merker', v)}
           placeholder="F.eks. Porsche"
+          collapsible
         />
         <StatusListEditor
           title="Bilstatuser og farger"
