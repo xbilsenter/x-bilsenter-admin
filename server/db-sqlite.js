@@ -1197,6 +1197,7 @@ const ROLE_TEMPLATES = {
   Admin: ALL_PERMISSION_IDS,
   Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
   Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
+  Klargjører: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
   Verksted: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
   'Kun leser': ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'kalender']
 };
