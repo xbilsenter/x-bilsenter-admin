@@ -878,6 +878,7 @@ export default function App() {
         <NyBilModal
           onClose={() => setModal(null)}
           lists={lists}
+          visTost={visTost}
           onSave={async (b) => {
             try {
               const res = await postBil(b);
@@ -2233,20 +2234,137 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
 }
 
 // ─── NY BIL MODAL ────────────────────────────────────────────────────────────
-function NyBilModal({ onClose, onSave, lists }) {
+function normalizeBilReg(reg) {
+  return String(reg || '').trim().toUpperCase().replace(/\s/g, '');
+}
+
+function resolveMerkeFromLists(merke, merker) {
+  const normalized = String(merke || '').trim();
+  if (!normalized) return merker[0] || 'Annet';
+  const exact = merker.find(function (m) {
+    return m.toLowerCase() === normalized.toLowerCase();
+  });
+  if (exact) return exact;
+  const partial = merker.find(function (m) {
+    const a = m.toLowerCase();
+    const b = normalized.toLowerCase();
+    return a.includes(b) || b.includes(a);
+  });
+  return partial || merker[0] || 'Annet';
+}
+
+function buildAutosysNotater(vehicle) {
+  const v = vehicle || {};
+  return [
+    'Hentet fra Autosys.',
+    v.drivstoff ? `Drivstoff: ${v.drivstoff}.` : '',
+    v.euroKlasse ? `Euro: ${v.euroKlasse}.` : '',
+    v.hjuldrift ? `Aksler med drift: ${v.hjuldrift}.` : '',
+    v.effektHk ? `Effekt: ${v.effektHk} hk.` : ''
+  ].filter(Boolean).join(' ');
+}
+
+function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
+  const v = vehicle || {};
+  const autosysNotater = buildAutosysNotater(v);
+  const notater = String(prev.notater || '').trim()
+    ? prev.notater
+    : autosysNotater;
+  return {
+    reg: v.regNr || prev.reg,
+    merke: resolveMerkeFromLists(v.merke, lists.merker),
+    modell: v.modell || prev.modell,
+    aar: Number(v.arsmodell) || prev.aar,
+    farge: v.farge || prev.farge,
+    euKontroll: v.nesteEuKontroll || prev.euKontroll,
+    notater,
+    svvData: rawData || v
+  };
+}
+
+function NyBilModal({ onClose, onSave, lists, visTost }) {
   const [f, setF] = useState({
     reg: '', merke: lists.merker[0] || 'Annet', modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
     farge: '', status: lists.bilStatuser[0] || 'Innkjøpt', ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
-    euKontroll: '', forsikring: ''
+    euKontroll: '', forsikring: '', svvData: null
   });
+  const [autosysLoading, setAutosysLoading] = useState(false);
+  const [autosysError, setAutosysError] = useState('');
+  const [autosysPreview, setAutosysPreview] = useState('');
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const hentAutosys = useCallback(async function (regInput) {
+    const reg = normalizeBilReg(regInput != null ? regInput : f.reg);
+    if (!reg || reg.length < 5) {
+      setAutosysError('Skriv inn et gyldig registreringsnummer.');
+      setAutosysPreview('');
+      return;
+    }
+
+    const savedReg = normalizeBilReg(f.svvData?.regNr || f.svvData?.kjoretoyId?.kjennemerke);
+    if (savedReg && savedReg === reg) return;
+
+    setAutosysLoading(true);
+    setAutosysError('');
+    setAutosysPreview('');
+    try {
+      const data = await lookupKjoretoy(reg);
+      const vehicle = data.vehicle;
+      if (!vehicle) throw new Error('Fant ingen kjøretøydata.');
+      setF(function (prev) {
+        return { ...prev, ...applyAutosysToBilForm(vehicle, data.raw || vehicle, lists, prev) };
+      });
+      setAutosysPreview([vehicle.merke, vehicle.modell, vehicle.arsmodell].filter(Boolean).join(' '));
+      if (visTost) visTost('Autosys-data hentet ✓');
+    } catch (err) {
+      setAutosysError(err.message || 'Autosys-oppslag feilet.');
+      setF(function (prev) { return { ...prev, svvData: null }; });
+    } finally {
+      setAutosysLoading(false);
+    }
+  }, [f.reg, f.svvData, lists, visTost]);
+
+  const handleRegBlur = function () {
+    const reg = normalizeBilReg(f.reg);
+    if (reg.length < 5) return;
+    hentAutosys(reg);
+  };
+
+  const handleRegChange = function (value) {
+    setAutosysError('');
+    setAutosysPreview('');
+    setF(function (prev) {
+      return { ...prev, reg: value.toUpperCase(), svvData: null };
+    });
+  };
 
   return (
     <div className="ov" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-title">Legg til ny bil</div>
         <div className="form-row">
-          <div><div className="fl">Reg.nummer</div><input value={f.reg} onChange={e => s('reg', e.target.value)} placeholder="AB12345" /></div>
+          <div>
+            <div className="fl">Reg.nummer</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                value={f.reg}
+                onChange={e => handleRegChange(e.target.value)}
+                onBlur={handleRegBlur}
+                placeholder="AB12345"
+              />
+              <button type="button" className="btn btn-g btn-sm" onClick={() => hentAutosys()} disabled={autosysLoading}>
+                {autosysLoading ? 'Henter…' : 'Hent Autosys'}
+              </button>
+            </div>
+            {autosysError ? (
+              <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>{autosysError}</div>
+            ) : null}
+            {autosysPreview ? (
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>
+                Autosys: {autosysPreview}
+              </div>
+            ) : null}
+          </div>
           <div><div className="fl">Merke</div><select value={f.merke} onChange={e => s('merke', e.target.value)}>{lists.merker.map(m => <option key={m}>{m}</option>)}</select></div>
         </div>
         <div className="form-row gap">
@@ -2273,8 +2391,12 @@ function NyBilModal({ onClose, onSave, lists }) {
           <button type="button" className="btn btn-p" onClick={() => f.reg && f.modell && onSave({
             ...f,
             ...initBilSjekklister(f.status || 'Innkjøpt', lists.bilSjekklister),
-            logg: [],
-            svvData: null
+            logg: f.svvData ? [{
+              tekst: 'Hentet fra Autosys',
+              dato: new Date().toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE }),
+              av: 'System'
+            }] : [],
+            svvData: f.svvData || null
           })}>Lagre bil</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
