@@ -99,6 +99,7 @@ const {
   refreshFoldersFromImap
 } = require('./mail-sync');
 const { createPreviewToken, PREVIEW_TTL_MS } = require('./preview-access');
+const { getSiteOrigin } = require('./site-origin');
 const { runMailSyncCron } = require('./cron-mail-sync');
 const {
   UPLOADS_DIR,
@@ -170,7 +171,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const INGEST_SECRET = process.env.INGEST_SECRET || '';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const PUBLIC_SITE_ORIGIN = process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080';
+const PUBLIC_SITE_ORIGIN = getSiteOrigin();
 const isProd = process.env.NODE_ENV === 'production';
 const isVercel = !!process.env.VERCEL;
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
@@ -511,7 +512,7 @@ app.delete('/api/brukere/:id', requireAuth, requirePermission('brukere'), async 
 
 // ─── Dashboard ───
 app.get('/api/drift/nettside', requireAuth, async function (_req, res) {
-  const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+  const siteUrl = getSiteOrigin();
   const vedlikehold = await getVedlikeholdModus();
   const started = Date.now();
   let online = false;
@@ -566,7 +567,7 @@ app.get('/api/drift/preview-url', requireAuth, function (req, res) {
   }
 
   try {
-    const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+    const siteUrl = getSiteOrigin();
     const token = createPreviewToken(req.user.sub);
     res.json({
       ok: true,
@@ -579,7 +580,7 @@ app.get('/api/drift/preview-url', requireAuth, function (req, res) {
 });
 
 app.post('/api/drift/finn-refresh', requireAuth, requirePermission('innstillinger'), async function (_req, res) {
-  const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+  const siteUrl = getSiteOrigin();
 
   if (!INGEST_SECRET) {
     return res.status(503).json({
@@ -682,7 +683,7 @@ app.get('/api/public/status', async function (_req, res) {
     databaseError = err.message || 'Databasefeil';
   }
 
-  const siteUrl = (process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+  const siteUrl = getSiteOrigin();
   const vedlikehold = await getVedlikeholdModus();
   let nettside = {
     online: false,
