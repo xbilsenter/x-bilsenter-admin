@@ -1234,7 +1234,9 @@ function migrateUsers() {
   `);
 
   const count = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
-  if (count === 0) seedDefaultAdminUser();
+  const adminCount = countAdminUsers();
+  if (count > 0 && adminCount > 0) return;
+  if (count === 0 || adminCount === 0) seedDefaultAdminUser();
 }
 
 function seedDefaultAdminUser() {

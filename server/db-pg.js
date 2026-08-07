@@ -202,6 +202,10 @@ function initDb() {
 }
 
 async function ensureDefaultAdminUser() {
+  const userRow = await prepare('SELECT COUNT(*) AS c FROM users').get();
+  const adminCount = await countAdminUsers();
+  if (userRow.c > 0 && adminCount > 0) return;
+
   const bcrypt = require('bcryptjs');
   const username = process.env.ADMIN_USERNAME || 'admin';
   const password = process.env.ADMIN_PASSWORD || 'admin123';
