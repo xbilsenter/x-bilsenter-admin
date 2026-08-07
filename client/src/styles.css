@@ -20,7 +20,7 @@ body{background:var(--bg);font-family:'Plus Jakarta Sans',sans-serif;color:var(-
 .app{display:flex;min-height:100vh;overflow-x:hidden;}
 
 /* LOGIN */
-.login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:24px 24px 56px;position:relative;}
+.login-page{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:24px 24px 56px;position:relative;}
 .login-card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--radius-lg);padding:36px 32px;width:100%;max-width:400px;box-shadow:var(--shadow-md);}
 .login-status{position:absolute;left:0;right:0;bottom:18px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;padding:0 16px;font-size:10px;color:var(--t4);}
 .login-status__sep{opacity:.55;}
@@ -567,9 +567,9 @@ select option{background:var(--s1);}
   .bil-pipeline-main{grid-template-columns:1fr 1fr;gap:8px;}
   .bil-pipeline-meta,.bil-pipeline-links{grid-column:1/-1;}
   .toast{left:16px;right:16px;bottom:16px;text-align:center;}
-  .login-page{padding:20px 16px 24px;justify-content:center;}
-  .login-card{padding:28px 20px;}
-  .login-status{position:static;margin-top:20px;}
+  .login-page{padding:20px 16px max(56px, env(safe-area-inset-bottom));justify-content:center;}
+  .login-card{padding:28px 20px;transform:translateY(-24px);}
+  .login-status{position:absolute;left:0;right:0;bottom:max(18px, env(safe-area-inset-bottom));margin-top:0;}
   .compose-modal-header{flex-direction:column;align-items:stretch;}
   .bruker-perm-grid{grid-template-columns:1fr;}
   .kal-month-nav{gap:8px;}
