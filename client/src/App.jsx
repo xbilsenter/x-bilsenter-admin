@@ -1844,23 +1844,7 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
   return (
     <div className="tilstandsrapport-seksjon">
       <div className="modal-sec">Tilstandsrapport</div>
-      <div className="tilstandsrapport-grid">
-        <label className="tilstandsrapport-check">
-          <input
-            type="checkbox"
-            checked={tr.medfolger}
-            onChange={function (e) { patch({ medfolger: e.target.checked }); }}
-          />
-          Medfølger
-        </label>
-        <label className="tilstandsrapport-check">
-          <input
-            type="checkbox"
-            checked={tr.nybilgaranti}
-            onChange={function (e) { patch({ nybilgaranti: e.target.checked }); }}
-          />
-          Nybilgaranti
-        </label>
+      <div className={`tilstandsrapport-status${tr.status === 'utfort' ? ' is-utfort' : ''}`}>
         <label className="tilstandsrapport-check">
           <input
             type="checkbox"
@@ -1880,6 +1864,24 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
             }}
           />
           Ikke utført
+        </label>
+      </div>
+      <div className="tilstandsrapport-grid">
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.nybilgaranti}
+            onChange={function (e) { patch({ nybilgaranti: e.target.checked }); }}
+          />
+          Nybilgaranti
+        </label>
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.medfolger}
+            onChange={function (e) { patch({ medfolger: e.target.checked }); }}
+          />
+          Medfølger
         </label>
       </div>
     </div>
