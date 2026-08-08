@@ -355,6 +355,21 @@ export function normalizeBilOkonomi(raw) {
   };
 }
 
+export const DEFAULT_BIL_TILSTANDSRAPPORT = {
+  medfolger: false,
+  nybilgaranti: false,
+  status: 'ikke_utfort'
+};
+
+export function normalizeBilTilstandsrapport(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  return {
+    medfolger: !!o.medfolger,
+    nybilgaranti: !!o.nybilgaranti,
+    status: o.status === 'utfort' ? 'utfort' : 'ikke_utfort'
+  };
+}
+
 export function normalizeEuKontrollDato(value) {
   if (!value) return '';
   const s = String(value).trim();
@@ -491,6 +506,9 @@ export function bilMatchesSearch(bil, query) {
     bil.girkasse,
     bil.utstyr,
     bil.forsikring,
+    bil.tilstandsrapport?.status === 'utfort' ? 'tilstandsrapport utfort' : 'tilstandsrapport ikke utfort',
+    bil.tilstandsrapport?.medfolger ? 'medfolger' : '',
+    bil.tilstandsrapport?.nybilgaranti ? 'nybilgaranti' : '',
     bil.archived ? 'arkiv' : 'lager',
     ...(bil.kommentarer || []).map(function (item) { return item.text; }),
     ...(bil.dokumenter || []).map(function (item) { return item.name; })

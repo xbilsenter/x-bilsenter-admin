@@ -398,6 +398,21 @@ function jsonStringify(value) {
   return JSON.stringify(value);
 }
 
+const DEFAULT_BIL_TILSTANDSRAPPORT = {
+  medfolger: false,
+  nybilgaranti: false,
+  status: 'ikke_utfort'
+};
+
+function normalizeBilTilstandsrapport(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  return {
+    medfolger: !!o.medfolger,
+    nybilgaranti: !!o.nybilgaranti,
+    status: o.status === 'utfort' ? 'utfort' : 'ikke_utfort'
+  };
+}
+
 module.exports = {
   parseJson,
   formatDate,
@@ -433,5 +448,7 @@ module.exports = {
   mergeHenvKommentarer,
   normalizeSmtpPortForStorage,
   normalizePermissions,
-  jsonStringify
+  jsonStringify,
+  DEFAULT_BIL_TILSTANDSRAPPORT,
+  normalizeBilTilstandsrapport
 };

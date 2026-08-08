@@ -22,7 +22,8 @@ import {
   getSavedBilerSection, saveBilerSection,
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
   ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
-  normalizeEuKontrollDato, formatEuKontrollVisning
+  normalizeEuKontrollDato, formatEuKontrollVisning,
+  DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport
 } from './constants.js';
 import {
   getToken, logout,
@@ -1833,6 +1834,58 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
 }
 
 // ─── BIL MODAL ───────────────────────────────────────────────────────────────
+function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
+  const tr = normalizeBilTilstandsrapport(tilstandsrapport);
+
+  const patch = function (next) {
+    onChange({ ...tr, ...next });
+  };
+
+  return (
+    <div className="tilstandsrapport-seksjon">
+      <div className="modal-sec">Tilstandsrapport</div>
+      <div className="tilstandsrapport-grid">
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.medfolger}
+            onChange={function (e) { patch({ medfolger: e.target.checked }); }}
+          />
+          Medfølger
+        </label>
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.nybilgaranti}
+            onChange={function (e) { patch({ nybilgaranti: e.target.checked }); }}
+          />
+          Nybilgaranti
+        </label>
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.status === 'utfort'}
+            onChange={function (e) {
+              if (e.target.checked) patch({ status: 'utfort' });
+            }}
+          />
+          Utført
+        </label>
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.status === 'ikke_utfort'}
+            onChange={function (e) {
+              if (e.target.checked) patch({ status: 'ikke_utfort' });
+            }}
+          />
+          Ikke utført
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal, kunder, currentUser }) {
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
@@ -1980,6 +2033,12 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               <Badge s={bil.status} />
               {bil.archived && <span className="chip chip-gray">Arkivert</span>}
               {bil.euKontroll && <span className="chip chip-orange">Neste EU-kontroll: {formatEuKontrollVisning(bil.euKontroll)}</span>}
+              {normalizeBilTilstandsrapport(bil.tilstandsrapport).status !== 'utfort' && (
+                <span className="chip chip-red">Tilstandsrapport: Ikke utført</span>
+              )}
+              {normalizeBilTilstandsrapport(bil.tilstandsrapport).status === 'utfort' && (
+                <span className="chip chip-green">Tilstandsrapport: Utført</span>
+              )}
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
             </div>
           </div>
@@ -2034,16 +2093,14 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                   </select>
                 </div>
               </div>
-              <div className="form-row gap">
-                <div>
-                  <div className="fl">Frist neste EU-kontroll</div>
-                  <input type="date" value={normalizeEuKontrollDato(bil.euKontroll)} onChange={e => oppdater('euKontroll', e.target.value)} />
-                </div>
-                <div>
-                  <div className="fl">Forsikringsselskap</div>
-                  <input value={bil.forsikring || ''} onChange={e => oppdater('forsikring', e.target.value)} />
-                </div>
+              <div className="gap">
+                <div className="fl">Frist neste EU-kontroll</div>
+                <input type="date" value={normalizeEuKontrollDato(bil.euKontroll)} onChange={e => oppdater('euKontroll', e.target.value)} />
               </div>
+              <BilTilstandsrapportSeksjon
+                tilstandsrapport={bil.tilstandsrapport}
+                onChange={function (next) { oppdater('tilstandsrapport', next, 'Tilstandsrapport oppdatert ✓'); }}
+              />
               <div className="gap">
                 <div className="fl">Ansvarlig</div>
                 <select value={bil.ansvarlig} onChange={e => oppdater('ansvarlig', e.target.value)}>
@@ -2439,7 +2496,7 @@ function NyBilModal({ onClose, onSave, lists, visTost }) {
   const [f, setF] = useState({
     reg: '', merke: lists.merker[0] || 'Annet', modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
     farge: '', status: lists.bilStatuser[0] || 'Innkjøpt', ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
-    euKontroll: '', forsikring: '', svvData: null
+    euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null
   });
   const [autosysLoading, setAutosysLoading] = useState(false);
   const [autosysError, setAutosysError] = useState('');
@@ -2533,16 +2590,21 @@ function NyBilModal({ onClose, onSave, lists, visTost }) {
           <div><div className="fl">Innkjøpspris (kr)</div><input type="number" value={f.innkjop} onChange={e => s('innkjop', +e.target.value)} /></div>
           <div><div className="fl">Salgspris (kr)</div><input type="number" value={f.salg} onChange={e => s('salg', +e.target.value)} /></div>
         </div>
-        <div className="form-row gap">
-          <div><div className="fl">Frist neste EU-kontroll</div><input type="date" value={normalizeEuKontrollDato(f.euKontroll)} onChange={e => s('euKontroll', e.target.value)} /></div>
-          <div><div className="fl">Forsikringsselskap</div><input value={f.forsikring} onChange={e => s('forsikring', e.target.value)} /></div>
+        <div className="gap">
+          <div className="fl">Frist neste EU-kontroll</div>
+          <input type="date" value={normalizeEuKontrollDato(f.euKontroll)} onChange={e => s('euKontroll', e.target.value)} />
         </div>
+        <BilTilstandsrapportSeksjon
+          tilstandsrapport={f.tilstandsrapport}
+          onChange={function (next) { s('tilstandsrapport', next); }}
+        />
         <div className="gap"><div className="fl">Ansvarlig</div><select value={f.ansvarlig} onChange={e => s('ansvarlig', e.target.value)}>{lists.ansatte.map(a => <option key={a}>{a}</option>)}</select></div>
         <div className="gap"><div className="fl">Frist</div><input type="date" value={f.frist} onChange={e => s('frist', e.target.value)} /></div>
         <div className="gap"><div className="fl">Notater</div><textarea rows={2} value={f.notater} onChange={e => s('notater', e.target.value)} /></div>
         <div className="modal-footer">
           <button type="button" className="btn btn-p" onClick={() => f.reg && f.modell && onSave({
             ...f,
+            tilstandsrapport: normalizeBilTilstandsrapport(f.tilstandsrapport),
             ...initBilSjekklister(f.status || 'Innkjøpt', lists.bilSjekklister),
             logg: f.svvData ? [{
               tekst: 'Hentet fra Autosys',
@@ -7314,7 +7376,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
         v.effektHk ? `Effekt: ${v.effektHk} hk.` : ''
       ].filter(Boolean).join(' '),
       euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || '',
-      forsikring: '',
+      tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT },
       ...initBilSjekklister(startStatus, lists.bilSjekklister),
       logg: [{
         tekst: 'Importert fra Statens vegvesen',

@@ -34,7 +34,9 @@ const {
   normalizeHenvKommentarer,
   normalizeSmtpPortForStorage,
   normalizePermissions,
-  jsonStringify
+  jsonStringify,
+  DEFAULT_BIL_TILSTANDSRAPPORT,
+  normalizeBilTilstandsrapport
 } = require('./db-shared');
 
 const dbDriver = require('./database');
@@ -167,7 +169,8 @@ async function ensureBilSchemaExtensions() {
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS intern_info TEXT DEFAULT ''",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS kommentarer JSONB NOT NULL DEFAULT '[]'::jsonb",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS dokumenter JSONB NOT NULL DEFAULT '[]'::jsonb",
-    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS okonomi JSONB NOT NULL DEFAULT '{}'::jsonb"
+    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS okonomi JSONB NOT NULL DEFAULT '{}'::jsonb",
+    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS tilstandsrapport JSONB NOT NULL DEFAULT '{\"medfolger\":false,\"nybilgaranti\":false,\"status\":\"ikke_utfort\"}'::jsonb"
   ];
   for (const sql of statements) {
     await execAsync(sql);
@@ -935,6 +938,7 @@ function mapBil(row, kundeIds) {
     kommentarer: normalizeHenvKommentarer(parseJson(row.kommentarer, [])),
     dokumenter: parseJson(row.dokumenter, []),
     okonomi: parseJson(row.okonomi, {}),
+    tilstandsrapport: normalizeBilTilstandsrapport(parseJson(row.tilstandsrapport, null)),
     sjekklister,
     sjekkliste,
     logg: parseJson(row.logg, []),
@@ -1592,5 +1596,7 @@ module.exports = {
   ensureSjekklisterForStatus,
   parseBilSjekklisterObject,
   getAktivSjekklisteFromRow,
-  sjekklisteFraMalServer
+  sjekklisteFraMalServer,
+  normalizeBilTilstandsrapport,
+  DEFAULT_BIL_TILSTANDSRAPPORT
 };

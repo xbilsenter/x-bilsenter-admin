@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
+const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT } = require('./db-shared');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_PATH = path.join(DATA_DIR, 'xbilsenter.db');
@@ -274,6 +275,7 @@ function migrateBilSchemaExtensions() {
     "ALTER TABLE biler ADD COLUMN kommentarer TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE biler ADD COLUMN dokumenter TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE biler ADD COLUMN okonomi TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE biler ADD COLUMN tilstandsrapport TEXT NOT NULL DEFAULT '{\"medfolger\":false,\"nybilgaranti\":false,\"status\":\"ikke_utfort\"}'",
     "ALTER TABLE biler ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE biler ADD COLUMN sjekklister TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE biler ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
@@ -1124,6 +1126,7 @@ function mapBil(row) {
     kommentarer: parseJson(row.kommentarer, []),
     dokumenter: parseJson(row.dokumenter, []),
     okonomi: parseJson(row.okonomi, {}),
+    tilstandsrapport: normalizeBilTilstandsrapport(parseJson(row.tilstandsrapport, null)),
     sjekkliste: parseJson(row.sjekkliste, []),
     sjekklister: parseJson(row.sjekklister, {}),
     logg: parseJson(row.logg, []),
@@ -1501,5 +1504,7 @@ module.exports = {
   getPermissionDefs,
   getRoleTemplates,
   ALL_PERMISSION_IDS,
-  PASS_MASK
+  PASS_MASK,
+  normalizeBilTilstandsrapport,
+  DEFAULT_BIL_TILSTANDSRAPPORT
 };
