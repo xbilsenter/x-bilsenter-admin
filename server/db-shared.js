@@ -232,19 +232,30 @@ function normalizeInnbytteStatusFarger(statuser, farger) {
 
 function normalizeSjekklisteMalItem(item) {
   if (typeof item === 'string') {
-    const t = item.replace(/^\s+|\s+$/g, '');
-    return t ? { t: t, obligatorisk: true, forhandsvalgt: false } : null;
+    const raw = String(item);
+    if (!raw.trim()) return null;
+    return { t: raw, obligatorisk: true, forhandsvalgt: false };
   }
   if (item && typeof item === 'object') {
-    const t = String(item.t ?? item.text ?? '').replace(/^\s+|\s+$/g, '');
-    if (!t) return null;
+    const raw = String(item.t ?? item.text ?? '');
+    if (!raw.trim()) return null;
     return {
-      t: t,
+      t: raw,
       obligatorisk: item.obligatorisk !== false,
       forhandsvalgt: !!item.forhandsvalgt
     };
   }
   return null;
+}
+
+function trimSjekklisteMalTekst(value) {
+  return String(value || '').replace(/^\s+|\s+$/g, '');
+}
+
+function finalizeSjekklisteMalItems(items) {
+  return normalizeSjekklisteMalItems(items).map(function (item) {
+    return { ...item, t: trimSjekklisteMalTekst(item.t) };
+  }).filter(function (item) { return item.t; });
 }
 
 function normalizeSjekklisteMalItems(items) {
@@ -287,14 +298,14 @@ function normalizeBilSjekklister(statuser, sjekklister, legacyMal) {
     ? sjekklister
     : {};
   const fallback = normalizeSjekklisteMalItems(legacyMal).length
-    ? normalizeSjekklisteMalItems(legacyMal)
-    : normalizeSjekklisteMalItems(DEFAULT_SJEKKLISTE_MAL);
+    ? finalizeSjekklisteMalItems(legacyMal)
+    : finalizeSjekklisteMalItems(DEFAULT_SJEKKLISTE_MAL);
   return (Array.isArray(statuser) ? statuser : []).reduce(function (acc, status) {
     const items = src[status];
     if (Array.isArray(items)) {
-      acc[status] = normalizeSjekklisteMalItems(items);
+      acc[status] = finalizeSjekklisteMalItems(items);
     } else if (Array.isArray(DEFAULT_BIL_SJEKKLISTER[status])) {
-      acc[status] = normalizeSjekklisteMalItems(DEFAULT_BIL_SJEKKLISTER[status]);
+      acc[status] = finalizeSjekklisteMalItems(DEFAULT_BIL_SJEKKLISTER[status]);
     } else {
       acc[status] = fallback.slice();
     }

@@ -18,6 +18,7 @@ import {
   getAktivSjekkliste, withSjekklisteUpdate, withStatusChange,
   initBilSjekklister, normalizeBilSjekklister,
   calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, normalizeSjekklisteMalItems,
+  finalizeSjekklisteMalItems, trimSjekklisteMalTekst,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
   getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
   getSavedBilerSection, saveBilerSection,
@@ -8546,39 +8547,39 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
   const [nyObligatorisk, setNyObligatorisk] = useState(true);
   const [nyForhandsvalgt, setNyForhandsvalgt] = useState(false);
 
-  const setItems = (next, shouldNormalize) => {
-    onChange(shouldNormalize === false ? next : normalizeSjekklisteMalItems(next));
+  const setItems = (next, finalize) => {
+    onChange(finalize ? finalizeSjekklisteMalItems(next) : normalizeSjekklisteMalItems(next));
   };
 
-  const endre = (idx, patch, shouldNormalize) => {
+  const endre = (idx, patch, finalize) => {
     const next = normalized.map(function (item, i) {
       return i === idx ? { ...item, ...patch } : item;
     });
-    setItems(next, shouldNormalize);
+    setItems(next, finalize);
   };
 
   const endreTekst = (idx, value) => {
     if (normalized.some(function (item, i) {
-      return i !== idx && item.t.replace(/^\s+|\s+$/g, '').toLowerCase() === value.replace(/^\s+|\s+$/g, '').toLowerCase();
+      return i !== idx && trimSjekklisteMalTekst(item.t).toLowerCase() === trimSjekklisteMalTekst(value).toLowerCase();
     })) return;
     endre(idx, { t: value }, false);
   };
 
   const leggTil = () => {
-    const t = ny.replace(/^\s+|\s+$/g, '');
-    if (!t || normalized.some(function (item) { return item.t.toLowerCase() === t.toLowerCase(); })) return;
-    setItems([...normalized, { t: t, obligatorisk: nyObligatorisk, forhandsvalgt: nyForhandsvalgt }]);
+    const t = trimSjekklisteMalTekst(ny);
+    if (!t || normalized.some(function (item) { return trimSjekklisteMalTekst(item.t).toLowerCase() === t.toLowerCase(); })) return;
+    setItems([...normalized, { t: t, obligatorisk: nyObligatorisk, forhandsvalgt: nyForhandsvalgt }], true);
     setNy('');
   };
 
-  const fjern = (idx) => setItems(normalized.filter(function (_, i) { return i !== idx; }));
+  const fjern = (idx) => setItems(normalized.filter(function (_, i) { return i !== idx; }), true);
 
   const flytt = (idx, dir) => {
     const next = [...normalized];
     const target = idx + dir;
     if (target < 0 || target >= next.length) return;
     [next[idx], next[target]] = [next[target], next[idx]];
-    setItems(next);
+    setItems(next, true);
   };
 
   return (
@@ -8595,7 +8596,7 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
                   className="sjekkliste-mal-item__text"
                   value={item.t}
                   onChange={(e) => endreTekst(idx, e.target.value)}
-                  onBlur={(e) => endre(idx, { t: e.target.value.replace(/^\s+|\s+$/g, '') })}
+                  onBlur={(e) => endre(idx, { t: trimSjekklisteMalTekst(e.target.value) }, true)}
                   placeholder="F.eks. Vasket innvendig"
                 />
                 <div className="sjekkliste-mal-item__meta">
@@ -8709,7 +8710,7 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
                 {open && (
                   <div style={{ padding: 14, borderTop: '1px solid var(--b2)' }}>
                     <SjekklisteMalEditor
-                      items={items}
+                      items={sjekklister?.[status] || []}
                       onChange={v => setItems(status, v)}
                       placeholder="F.eks. Vasket innvendig"
                       allowEmpty
@@ -8914,7 +8915,14 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           <div className="ph-sub">Vedlikehold, brukere, moduler, mailkontoer, bil-pipeline, sjekklister og statuser</div>
         </div>
         {showInnstillinger && (
-          <button type="button" className="btn btn-p" onClick={() => onSave(draft)}>Lagre lister</button>
+          <button type="button" className="btn btn-p" onClick={() => onSave({
+            ...draft,
+            bilSjekklister: Object.fromEntries(
+              Object.entries(draft.bilSjekklister || {}).map(function ([status, rows]) {
+                return [status, finalizeSjekklisteMalItems(rows)];
+              })
+            )
+          })}>Lagre lister</button>
         )}
       </div>
 
