@@ -330,6 +330,53 @@ export function calcInnkjopspris(input) {
   return utsalgspris - kostnader;
 }
 
+export const DEFAULT_BIL_OKONOMI = {
+  pakost: 0,
+  aukGebyr: 0,
+  garantikost: 0,
+  omregAvgift: 0,
+  kostnader: []
+};
+
+export function normalizeBilOkonomi(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  return {
+    pakost: Number(o.pakost) || 0,
+    aukGebyr: Number(o.aukGebyr) || 0,
+    garantikost: Number(o.garantikost) || 0,
+    omregAvgift: Number(o.omregAvgift) || 0,
+    kostnader: (Array.isArray(o.kostnader) ? o.kostnader : []).map(function (item, index) {
+      return {
+        id: String(item?.id || `kost-${index}`),
+        label: String(item?.label || '').trim(),
+        belop: Number(item?.belop) || 0
+      };
+    }).filter(function (item) { return item.label || item.belop; })
+  };
+}
+
+export function calcBilOkonomi(innkjop, salg, okonomi) {
+  const o = normalizeBilOkonomi(okonomi);
+  const inn = Number(innkjop) || 0;
+  const ut = Number(salg) || 0;
+  const fasteKostnader = o.pakost + o.aukGebyr + o.garantikost + o.omregAvgift;
+  const ekstraKostnader = o.kostnader.reduce(function (sum, item) {
+    return sum + (Number(item.belop) || 0);
+  }, 0);
+  const totaltKostnader = fasteKostnader + ekstraKostnader;
+  const bruttoMargin = ut - inn;
+  const nettoMargin = bruttoMargin - totaltKostnader;
+  const marginProsent = ut > 0 ? Math.round((nettoMargin / ut) * 1000) / 10 : 0;
+  return {
+    bruttoMargin,
+    nettoMargin,
+    totaltKostnader,
+    fasteKostnader,
+    ekstraKostnader,
+    marginProsent
+  };
+}
+
 export function canDeleteHenvKommentar(comment, user) {
   if (!user || !comment) return false;
   if (user.isAdmin) return true;

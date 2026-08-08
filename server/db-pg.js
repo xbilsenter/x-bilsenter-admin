@@ -166,7 +166,8 @@ async function ensureBilSchemaExtensions() {
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS utstyr TEXT DEFAULT ''",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS intern_info TEXT DEFAULT ''",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS kommentarer JSONB NOT NULL DEFAULT '[]'::jsonb",
-    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS dokumenter JSONB NOT NULL DEFAULT '[]'::jsonb"
+    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS dokumenter JSONB NOT NULL DEFAULT '[]'::jsonb",
+    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS okonomi JSONB NOT NULL DEFAULT '{}'::jsonb"
   ];
   for (const sql of statements) {
     await execAsync(sql);
@@ -933,6 +934,7 @@ function mapBil(row, kundeIds) {
     internInfo: row.intern_info || '',
     kommentarer: normalizeHenvKommentarer(parseJson(row.kommentarer, [])),
     dokumenter: parseJson(row.dokumenter, []),
+    okonomi: parseJson(row.okonomi, {}),
     sjekklister,
     sjekkliste,
     logg: parseJson(row.logg, []),

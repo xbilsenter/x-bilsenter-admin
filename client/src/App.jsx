@@ -21,7 +21,7 @@ import {
   getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
   getSavedBilerSection, saveBilerSection,
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
-  ansvarligSelectOptions
+  ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi
 } from './constants.js';
 import {
   getToken, logout,
@@ -1823,10 +1823,19 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
 // ─── BIL MODAL ───────────────────────────────────────────────────────────────
 function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal, kunder, currentUser }) {
   const [bil, setBil] = useState(data);
+  const [activeTab, setActiveTab] = useState('informasjon');
   const [nyOppg, setNyOppg] = useState('');
   const [nyLogg, setNyLogg] = useState('');
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(null);
+
+  const docCount = (bil.dokumenter || []).length;
+  const bilTabs = [
+    { id: 'informasjon', label: 'Informasjon' },
+    { id: 'autosys', label: 'Autosys' },
+    { id: 'okonomi', label: 'Økonomi' },
+    { id: 'vedlegg', label: docCount ? `Vedlegg (${docCount})` : 'Vedlegg' }
+  ];
 
   const avtaler = (kal || [])
     .filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); })
@@ -1851,6 +1860,11 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
     const ny = { ...bil, [k]: v };
     setBil(ny);
     updateBil(bil.id, { [k]: v }, msg);
+  };
+
+  const oppdaterOkonomi = (patch, msg) => {
+    const okonomi = { ...normalizeBilOkonomi(bil.okonomi), ...patch };
+    oppdater('okonomi', okonomi, msg || 'Økonomi oppdatert ✓');
   };
 
   const toggleSjekk = (i) => {
@@ -1943,8 +1957,8 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
 
   return (
     <div className="ov" onClick={onClose}>
-      <div className="modal lg bil-modal" onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
+      <div className="modal xl bil-modal" onClick={e => e.stopPropagation()}>
+        <div className="bil-modal__header">
           <div>
             <div className="modal-title" style={{ marginBottom: 4 }}>
               {bil.merke} {bil.modell}{' '}
@@ -1964,129 +1978,222 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
           )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <div>
-            <div className="modal-sec">Bilinformasjon</div>
-            <div className="form-row gap">
-              <div>
-                <div className="fl">Reg.nummer</div>
-                <input value={bil.reg || ''} onChange={e => oppdater('reg', e.target.value.toUpperCase())} placeholder="AB12345" />
+        <ModalTabs tabs={bilTabs} active={activeTab} onChange={setActiveTab} />
+
+        {activeTab === 'informasjon' && (
+          <div className="bil-modal__grid">
+            <div>
+              <div className="modal-sec">Grunninfo</div>
+              <div className="form-row gap">
+                <div>
+                  <div className="fl">Reg.nummer</div>
+                  <input value={bil.reg || ''} onChange={e => oppdater('reg', e.target.value.toUpperCase())} placeholder="AB12345" />
+                </div>
+                <div>
+                  <div className="fl">Merke</div>
+                  <select value={bil.merke || 'Annet'} onChange={e => oppdater('merke', e.target.value)}>
+                    {lists.merker.map(m => <option key={m}>{m}</option>)}
+                  </select>
+                </div>
               </div>
-              <div>
-                <div className="fl">Merke</div>
-                <select value={bil.merke || 'Annet'} onChange={e => oppdater('merke', e.target.value)}>
-                  {lists.merker.map(m => <option key={m}>{m}</option>)}
+              <div className="form-row gap">
+                <div>
+                  <div className="fl">Modell</div>
+                  <input value={bil.modell || ''} onChange={e => oppdater('modell', e.target.value)} />
+                </div>
+                <div>
+                  <div className="fl">Farge</div>
+                  <input value={bil.farge || ''} onChange={e => oppdater('farge', e.target.value)} />
+                </div>
+              </div>
+              <div className="form-row3 gap">
+                <div>
+                  <div className="fl">Årsmodell</div>
+                  <input type="number" value={bil.aar || 0} onChange={e => oppdater('aar', +e.target.value)} />
+                </div>
+                <div>
+                  <div className="fl">Kilometerstand</div>
+                  <input type="number" value={bil.km || 0} onChange={e => oppdater('km', +e.target.value)} />
+                </div>
+                <div>
+                  <div className="fl">Status</div>
+                  <select value={bil.status} onChange={e => oppdater('status', e.target.value)}>
+                    {lists.bilStatuser.map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row gap">
+                <div>
+                  <div className="fl">EU-kontroll dato</div>
+                  <input type="date" value={bil.euKontroll || ''} onChange={e => oppdater('euKontroll', e.target.value)} />
+                </div>
+                <div>
+                  <div className="fl">Forsikringsselskap</div>
+                  <input value={bil.forsikring || ''} onChange={e => oppdater('forsikring', e.target.value)} />
+                </div>
+              </div>
+              <div className="gap">
+                <div className="fl">Ansvarlig</div>
+                <select value={bil.ansvarlig} onChange={e => oppdater('ansvarlig', e.target.value)}>
+                  {lists.ansatte.map(a => <option key={a}>{a}</option>)}
                 </select>
               </div>
-            </div>
-            <div className="form-row gap">
-              <div>
-                <div className="fl">Modell</div>
-                <input value={bil.modell || ''} onChange={e => oppdater('modell', e.target.value)} />
+              <BilKunderVelger
+                label="Kunder på bilen"
+                kundeIds={bil.kundeIds || (bil.kundeId ? [bil.kundeId] : [])}
+                kunder={kunder}
+                setModal={setModal}
+                onChange={function (ids) { oppdater('kundeIds', ids, 'Kunder oppdatert ✓'); }}
+              />
+              <div className="gap">
+                <div className="fl">Frist</div>
+                <input type="date" value={bil.frist || ''} onChange={e => oppdater('frist', e.target.value)} />
               </div>
-              <div>
-                <div className="fl">Farge</div>
-                <input value={bil.farge || ''} onChange={e => oppdater('farge', e.target.value)} />
+              <div className="gap">
+                <div className="fl">Notater</div>
+                <textarea rows={3} value={bil.notater || ''} onChange={e => oppdater('notater', e.target.value)} />
               </div>
-            </div>
-            <div className="form-row3 gap">
-              <div>
-                <div className="fl">Årsmodell</div>
-                <input type="number" value={bil.aar || 0} onChange={e => oppdater('aar', +e.target.value)} />
+
+              <div className="modal-sec">Utvidet informasjon</div>
+              <div className="form-row gap">
+                <div>
+                  <div className="fl">FINN-kode / annonse-ID</div>
+                  <input value={bil.finnKode || ''} onChange={e => oppdater('finnKode', e.target.value)} placeholder="F.eks. 123456789" />
+                </div>
+                <div>
+                  <div className="fl">Chassisnummer (VIN)</div>
+                  <input value={bil.chassisnr || ''} onChange={e => oppdater('chassisnr', e.target.value.toUpperCase())} />
+                </div>
               </div>
-              <div>
-                <div className="fl">Kilometerstand</div>
-                <input type="number" value={bil.km || 0} onChange={e => oppdater('km', +e.target.value)} />
+              <div className="form-row gap">
+                <div>
+                  <div className="fl">Drivstoff</div>
+                  <input value={bil.drivstoff || ''} onChange={e => oppdater('drivstoff', e.target.value)} />
+                </div>
+                <div>
+                  <div className="fl">Girkasse</div>
+                  <input value={bil.girkasse || ''} onChange={e => oppdater('girkasse', e.target.value)} />
+                </div>
               </div>
-              <div>
-                <div className="fl">Status</div>
-                <select value={bil.status} onChange={e => oppdater('status', e.target.value)}>
-                  {lists.bilStatuser.map(s => <option key={s}>{s}</option>)}
-                </select>
+              <div className="gap">
+                <div className="fl">Utstyr / ekstra info</div>
+                <textarea rows={3} value={bil.utstyr || ''} onChange={e => oppdater('utstyr', e.target.value)} placeholder="Utstyrspakke, hengerfeste, vinterdekk medfølger…" />
               </div>
-            </div>
-            <div className="form-row gap">
-              <div>
-                <div className="fl">Innkjøpspris (kr)</div>
-                <input type="number" value={bil.innkjop || 0} onChange={e => oppdater('innkjop', +e.target.value)} />
+              <div className="gap">
+                <div className="fl">Intern info</div>
+                <textarea rows={3} value={bil.internInfo || ''} onChange={e => oppdater('internInfo', e.target.value)} placeholder="Kun internt — synlig for teamet" />
               </div>
-              <div>
-                <div className="fl">Salgspris (kr)</div>
-                <input type="number" value={bil.salg || 0} onChange={e => oppdater('salg', +e.target.value)} />
+
+              <InternKommentarerSeksjon
+                kommentarer={bil.kommentarer}
+                currentUser={currentUser}
+                onChange={function (next, msg) { oppdater('kommentarer', next, msg); }}
+              />
+
+              <div className="modal-sec">Intern logg</div>
+              {(bil.logg || []).map(function (l, i) {
+                return (
+                  <div className="logg-item" key={i + '-' + (l.dato || '') + '-' + (l.tekst || '')}>
+                    <div className="logg-tekst">{l.tekst}</div>
+                    <div className="logg-meta logg-meta--row">
+                      <span>{l.dato} · {l.av}</span>
+                      {currentUser?.isAdmin && (
+                        <button type="button" className="btn btn-red btn-xs" onClick={function () { slettLoggPost(i); }}>
+                          Slett
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <input placeholder="Legg til loggpost..." value={nyLogg} onChange={e => setNyLogg(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilLogg()} />
+                <button type="button" className="btn btn-g btn-sm" onClick={leggTilLogg}>+</button>
               </div>
-            </div>
-            <div className="gap">
-              <div className="fl">Margin</div>
-              <div className="fv" style={{ color: 'var(--acc)', fontWeight: 700 }}>{nok(bil.salg - bil.innkjop)}</div>
-            </div>
-            <div className="form-row gap">
-              <div>
-                <div className="fl">EU-kontroll dato</div>
-                <input type="date" value={bil.euKontroll || ''} onChange={e => oppdater('euKontroll', e.target.value)} />
-              </div>
-              <div>
-                <div className="fl">Forsikringsselskap</div>
-                <input value={bil.forsikring || ''} onChange={e => oppdater('forsikring', e.target.value)} />
-              </div>
-            </div>
-            <div className="gap">
-              <div className="fl">Ansvarlig</div>
-              <select value={bil.ansvarlig} onChange={e => oppdater('ansvarlig', e.target.value)}>
-                {lists.ansatte.map(a => <option key={a}>{a}</option>)}
-              </select>
-            </div>
-            <BilKunderVelger
-              label="Kunder på bilen"
-              kundeIds={bil.kundeIds || (bil.kundeId ? [bil.kundeId] : [])}
-              kunder={kunder}
-              setModal={setModal}
-              onChange={function (ids) { oppdater('kundeIds', ids, 'Kunder oppdatert ✓'); }}
-            />
-            <div className="gap">
-              <div className="fl">Frist</div>
-              <input type="date" value={bil.frist || ''} onChange={e => oppdater('frist', e.target.value)} />
-            </div>
-            <div className="gap">
-              <div className="fl">Notater</div>
-              <textarea rows={3} value={bil.notater || ''} onChange={e => oppdater('notater', e.target.value)} />
             </div>
 
-            <div className="modal-sec">Utvidet informasjon</div>
-            <div className="form-row gap">
-              <div>
-                <div className="fl">FINN-kode / annonse-ID</div>
-                <input value={bil.finnKode || ''} onChange={e => oppdater('finnKode', e.target.value)} placeholder="F.eks. 123456789" />
+            <div>
+              <div className="modal-sec">Sjekkliste — {bil.status} ({f}/{t} fullført)</div>
+              <div style={{ marginBottom: 10 }}>
+                <div className="prog-bar" style={{ height: 5 }}>
+                  <div className="prog-fill" style={{ width: (t ? f / t * 100 : 0) + '%', height: 5 }} />
+                </div>
               </div>
-              <div>
-                <div className="fl">Chassisnummer (VIN)</div>
-                <input value={bil.chassisnr || ''} onChange={e => oppdater('chassisnr', e.target.value.toUpperCase())} />
+              {list.map((s, i) => (
+                <div className="chk-item" key={i}>
+                  <div className={`chk-box${s.f ? ' done' : ''}`} onClick={() => toggleSjekk(i)}>
+                    {s.f && <span style={{ color: '#fff', fontSize: 10, fontWeight: 900 }}>✓</span>}
+                  </div>
+                  <span className={`chk-txt${s.f ? ' done' : ''}`}>{s.t}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <input placeholder="Ny oppgave..." value={nyOppg} onChange={e => setNyOppg(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilOppg()} />
+                <button type="button" className="btn btn-g btn-sm" onClick={leggTilOppg}>+</button>
               </div>
-            </div>
-            <div className="form-row gap">
-              <div>
-                <div className="fl">Drivstoff</div>
-                <input value={bil.drivstoff || ''} onChange={e => oppdater('drivstoff', e.target.value)} />
-              </div>
-              <div>
-                <div className="fl">Girkasse</div>
-                <input value={bil.girkasse || ''} onChange={e => oppdater('girkasse', e.target.value)} />
-              </div>
-            </div>
-            <div className="gap">
-              <div className="fl">Utstyr / ekstra info</div>
-              <textarea rows={3} value={bil.utstyr || ''} onChange={e => oppdater('utstyr', e.target.value)} placeholder="Utstyrspakke, hengerfeste, vinterdekk medfølger…" />
-            </div>
-            <div className="gap">
-              <div className="fl">Intern info</div>
-              <textarea rows={3} value={bil.internInfo || ''} onChange={e => oppdater('internInfo', e.target.value)} placeholder="Kun internt — synlig for teamet" />
-            </div>
 
-            <InternKommentarerSeksjon
-              kommentarer={bil.kommentarer}
-              currentUser={currentUser}
-              onChange={function (next, msg) { oppdater('kommentarer', next, msg); }}
-            />
+              <div className="modal-sec" style={{ marginTop: 24 }}>Tilknyttet aktivitet</div>
+              <div className="bil-links-stack">
+                <div>
+                  <div className="bil-links-hd">Kalenderavtaler · {avtaler.length}</div>
+                  {avtaler.length === 0 ? (
+                    <div className="bil-links-empty">Ingen avtaler knyttet til {bil.reg}</div>
+                  ) : avtaler.map(function (e) {
+                    const color = KFARGE[e.type] || '#888';
+                    return (
+                      <button
+                        type="button"
+                        key={e.id}
+                        className="bil-link-item"
+                        onClick={() => setModal({ t: 'visKal', d: e })}
+                      >
+                        <div className="bil-link-item__top">
+                          <KBadge type={e.type} />
+                          <span className="bil-link-item__meta">{e.dato} · {formatKalTid(e)}</span>
+                        </div>
+                        <div className="bil-link-item__title">{e.tittel}</div>
+                        <div className="bil-link-item__sub" style={{ color: color }}>{e.ansvarlig}{e.notat ? ` · ${e.notat}` : ''}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div>
+                  <div className="bil-links-hd">Henvendelser · {henvendelser.length}</div>
+                  {henvendelser.length === 0 ? (
+                    <div className="bil-links-empty">Ingen henvendelser knyttet til {bil.reg}</div>
+                  ) : henvendelser.map(function (h) {
+                    return (
+                      <button
+                        type="button"
+                        key={h.id}
+                        className="bil-link-item"
+                        onClick={() => setModal({ t: 'visHenv', d: h })}
+                      >
+                        <div className="bil-link-item__top">
+                          <Badge s={h.status} colors={lists.henvStatusFarger} />
+                          <span className="bil-link-item__meta">{h.dato}</span>
+                        </div>
+                        <div className="bil-link-item__title">{h.navn} · {h.emne}</div>
+                        <div className="bil-link-item__sub">{h.ansvarlig || 'Ikke tildelt'} · {h.epost}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
+        {activeTab === 'autosys' && (
+          <BilAutosysTab bil={bil} oppdater={oppdater} visTost={visTost} lists={lists} />
+        )}
+
+        {activeTab === 'okonomi' && (
+          <BilOkonomiTab bil={bil} oppdater={oppdater} oppdaterOkonomi={oppdaterOkonomi} />
+        )}
+
+        {activeTab === 'vedlegg' && (
+          <div className="bil-modal__vedlegg">
             <div className="modal-sec">Dokumenter · {(bil.dokumenter || []).length}</div>
             {(bil.dokumenter || []).length === 0 && (
               <div style={{ fontSize: 11, color: 'var(--t4)', marginBottom: 8 }}>Ingen dokumenter lastet opp ennå.</div>
@@ -2111,7 +2218,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 </div>
               );
             })}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, marginBottom: 16 }}>
+            <div className="bil-upload-zone">
               <input
                 ref={uploadRef}
                 type="file"
@@ -2123,101 +2230,8 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 {uploading ? 'Laster opp…' : 'PDF, Word, bilder m.m. (maks 8 MB per fil)'}
               </span>
             </div>
-
-            <div className="modal-sec">Intern logg</div>
-            {(bil.logg || []).map(function (l, i) {
-              return (
-                <div className="logg-item" key={i + '-' + (l.dato || '') + '-' + (l.tekst || '')}>
-                  <div className="logg-tekst">{l.tekst}</div>
-                  <div className="logg-meta logg-meta--row">
-                    <span>{l.dato} · {l.av}</span>
-                    {currentUser?.isAdmin && (
-                      <button type="button" className="btn btn-red btn-xs" onClick={function () { slettLoggPost(i); }}>
-                        Slett
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <input placeholder="Legg til loggpost..." value={nyLogg} onChange={e => setNyLogg(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilLogg()} />
-              <button type="button" className="btn btn-g btn-sm" onClick={leggTilLogg}>+</button>
-            </div>
           </div>
-
-          <div>
-            <div className="modal-sec">Sjekkliste — {bil.status} ({f}/{t} fullført)</div>
-            <div style={{ marginBottom: 10 }}>
-              <div className="prog-bar" style={{ height: 5 }}>
-                <div className="prog-fill" style={{ width: (t ? f / t * 100 : 0) + '%', height: 5 }} />
-              </div>
-            </div>
-            {list.map((s, i) => (
-              <div className="chk-item" key={i}>
-                <div className={`chk-box${s.f ? ' done' : ''}`} onClick={() => toggleSjekk(i)}>
-                  {s.f && <span style={{ color: '#fff', fontSize: 10, fontWeight: 900 }}>✓</span>}
-                </div>
-                <span className={`chk-txt${s.f ? ' done' : ''}`}>{s.t}</span>
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <input placeholder="Ny oppgave..." value={nyOppg} onChange={e => setNyOppg(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilOppg()} />
-              <button type="button" className="btn btn-g btn-sm" onClick={leggTilOppg}>+</button>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 22 }}>
-          <div className="modal-sec">Tilknyttet aktivitet</div>
-          <div className="bil-links-grid">
-            <div>
-              <div className="bil-links-hd">Kalenderavtaler · {avtaler.length}</div>
-              {avtaler.length === 0 ? (
-                <div className="bil-links-empty">Ingen avtaler knyttet til {bil.reg}</div>
-              ) : avtaler.map(function (e) {
-                const color = KFARGE[e.type] || '#888';
-                return (
-                  <button
-                    type="button"
-                    key={e.id}
-                    className="bil-link-item"
-                    onClick={() => setModal({ t: 'visKal', d: e })}
-                  >
-                    <div className="bil-link-item__top">
-                      <KBadge type={e.type} />
-                      <span className="bil-link-item__meta">{e.dato} · {formatKalTid(e)}</span>
-                    </div>
-                    <div className="bil-link-item__title">{e.tittel}</div>
-                    <div className="bil-link-item__sub" style={{ color: color }}>{e.ansvarlig}{e.notat ? ` · ${e.notat}` : ''}</div>
-                  </button>
-                );
-              })}
-            </div>
-            <div>
-              <div className="bil-links-hd">Henvendelser · {henvendelser.length}</div>
-              {henvendelser.length === 0 ? (
-                <div className="bil-links-empty">Ingen henvendelser knyttet til {bil.reg}</div>
-              ) : henvendelser.map(function (h) {
-                return (
-                  <button
-                    type="button"
-                    key={h.id}
-                    className="bil-link-item"
-                    onClick={() => setModal({ t: 'visHenv', d: h })}
-                  >
-                    <div className="bil-link-item__top">
-                      <Badge s={h.status} colors={lists.henvStatusFarger} />
-                      <span className="bil-link-item__meta">{h.dato}</span>
-                    </div>
-                    <div className="bil-link-item__title">{h.navn} · {h.emne}</div>
-                    <div className="bil-link-item__sub">{h.ansvarlig || 'Ikke tildelt'} · {h.epost}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        )}
 
         <div className="modal-footer">
           {bil.archived ? (
@@ -2228,6 +2242,133 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
+  const okonomi = normalizeBilOkonomi(bil.okonomi);
+  const stats = calcBilOkonomi(bil.innkjop, bil.salg, okonomi);
+  const [nyKostLabel, setNyKostLabel] = useState('');
+  const [nyKostBelop, setNyKostBelop] = useState('');
+
+  const settOkonomiFelt = (key, value) => {
+    oppdaterOkonomi({ [key]: Number(value) || 0 });
+  };
+
+  const leggTilKostnad = () => {
+    if (!nyKostLabel.trim() && !nyKostBelop) return;
+    const kostnader = [
+      ...okonomi.kostnader,
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        label: nyKostLabel.trim() || 'Kostnad',
+        belop: Number(nyKostBelop) || 0
+      }
+    ];
+    oppdaterOkonomi({ kostnader }, 'Kostnad lagt til ✓');
+    setNyKostLabel('');
+    setNyKostBelop('');
+  };
+
+  const oppdaterKostnad = (id, patch) => {
+    const kostnader = okonomi.kostnader.map(function (item) {
+      return item.id === id ? { ...item, ...patch } : item;
+    });
+    oppdaterOkonomi({ kostnader });
+  };
+
+  const slettKostnad = (id) => {
+    oppdaterOkonomi({
+      kostnader: okonomi.kostnader.filter(function (item) { return item.id !== id; })
+    }, 'Kostnad slettet ✓');
+  };
+
+  return (
+    <div className="bil-modal__okonomi">
+      <div className="bil-okonomi-grid">
+        <div>
+          <div className="modal-sec">Innkjøp og salg</div>
+          <div className="form-row gap">
+            <div>
+              <div className="fl">Innkjøpspris (kr)</div>
+              <input type="number" value={bil.innkjop || 0} onChange={e => oppdater('innkjop', +e.target.value, 'Innkjøp oppdatert ✓')} />
+            </div>
+            <div>
+              <div className="fl">Salgspris (kr)</div>
+              <input type="number" value={bil.salg || 0} onChange={e => oppdater('salg', +e.target.value, 'Salgspris oppdatert ✓')} />
+            </div>
+          </div>
+        </div>
+        <div className="bil-okonomi-summary">
+          <div className="bil-okonomi-summary__item">
+            <div className="fl">Brutto margin</div>
+            <div className="fv" style={{ fontWeight: 700 }}>{nok(stats.bruttoMargin)}</div>
+          </div>
+          <div className="bil-okonomi-summary__item">
+            <div className="fl">Totale kostnader</div>
+            <div className="fv">{nok(stats.totaltKostnader)}</div>
+          </div>
+          <div className="bil-okonomi-summary__item bil-okonomi-summary__item--highlight">
+            <div className="fl">Netto margin</div>
+            <div className="fv" style={{ color: stats.nettoMargin >= 0 ? 'var(--acc)' : 'var(--red)', fontWeight: 800, fontSize: 18 }}>
+              {nok(stats.nettoMargin)}
+            </div>
+            {bil.salg > 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 4 }}>{stats.marginProsent}% av salgspris</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-sec">Faste kostnader</div>
+      <div className="bil-okonomi-kostnader">
+        {[
+          ['pakost', 'Påkost / klargjøring'],
+          ['aukGebyr', 'Auksjonsgebyr'],
+          ['garantikost', 'Garantikost'],
+          ['omregAvgift', 'Omregistreringsavgift']
+        ].map(function (entry) {
+          const key = entry[0];
+          const label = entry[1];
+          return (
+            <div key={key}>
+              <div className="fl">{label}</div>
+              <input type="number" value={okonomi[key] || 0} onChange={e => settOkonomiFelt(key, e.target.value)} />
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="modal-sec">Andre kostnader</div>
+      {okonomi.kostnader.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--t4)', marginBottom: 8 }}>Ingen ekstra kostnader registrert.</div>
+      ) : null}
+      {okonomi.kostnader.map(function (item) {
+        return (
+          <div className="bil-kostnad-row" key={item.id}>
+            <input
+              value={item.label}
+              placeholder="Beskrivelse"
+              onChange={e => oppdaterKostnad(item.id, { label: e.target.value })}
+            />
+            <input
+              type="number"
+              value={item.belop || 0}
+              placeholder="Beløp"
+              onChange={e => oppdaterKostnad(item.id, { belop: +e.target.value })}
+            />
+            <button type="button" className="btn btn-red btn-xs" onClick={function () { slettKostnad(item.id); }}>
+              Slett
+            </button>
+          </div>
+        );
+      })}
+      <div className="bil-kostnad-row bil-kostnad-row--new">
+        <input value={nyKostLabel} placeholder="Ny kostnad..." onChange={e => setNyKostLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilKostnad()} />
+        <input type="number" value={nyKostBelop} placeholder="Beløp" onChange={e => setNyKostBelop(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilKostnad()} />
+        <button type="button" className="btn btn-g btn-sm" onClick={leggTilKostnad}>+</button>
       </div>
     </div>
   );
@@ -6860,6 +7001,135 @@ function NoPlate({ regNr }) {
         <span className="svv-plate__country">N</span>
       </div>
       <span className="svv-plate__text">{formatNoPlate(regNr)}</span>
+    </div>
+  );
+}
+
+function resolveVehicleFromSvvData(svvData) {
+  if (!svvData || typeof svvData !== 'object') return null;
+  if (svvData.regNr || (svvData.merke && svvData.modell)) return svvData;
+  if (svvData.vehicle && typeof svvData.vehicle === 'object') return svvData.vehicle;
+  return null;
+}
+
+function BilAutosysTab({ bil, oppdater, visTost, lists }) {
+  const [laster, setLaster] = useState(false);
+  const [feil, setFeil] = useState('');
+  const vehicle = resolveVehicleFromSvvData(bil.svvData);
+  const sections = vehicle ? buildSvvSectionsFromVehicle(vehicle) : [];
+
+  const hentOgLagre = useCallback(async function () {
+    const reg = String(bil.reg || '').trim().toUpperCase().replace(/\s/g, '');
+    if (!reg || reg.length < 5) {
+      setFeil('Mangler gyldig registreringsnummer på bilen.');
+      return;
+    }
+    setLaster(true);
+    setFeil('');
+    try {
+      const data = await lookupKjoretoy(reg);
+      const parsed = data.vehicle;
+      if (!parsed) throw new Error('Fant ingen kjøretøydata.');
+      const svvPayload = { vehicle: parsed, raw: data.raw || null, fetchedAt: new Date().toISOString() };
+      oppdater('svvData', svvPayload, 'Autosys-data oppdatert ✓');
+      const autosysFields = applyAutosysToBilForm(parsed, data.raw || parsed, lists, bil);
+      const patch = {};
+      ['drivstoff', 'girkasse', 'farge', 'euKontroll', 'chassisnr'].forEach(function (key) {
+        if (autosysFields[key] && !bil[key]) patch[key] = autosysFields[key];
+      });
+      if (autosysFields.chassisnr && !bil.chassisnr) patch.chassisnr = parsed.understell || autosysFields.chassisnr;
+      if (parsed.understell && !bil.chassisnr) patch.chassisnr = parsed.understell;
+      if (Object.keys(patch).length) {
+        Object.entries(patch).forEach(function (entry) {
+          oppdater(entry[0], entry[1]);
+        });
+      }
+      if (visTost) visTost('Autosys-data hentet ✓');
+    } catch (err) {
+      setFeil(err.message || 'Oppslag feilet.');
+    } finally {
+      setLaster(false);
+    }
+  }, [bil, lists, oppdater, visTost]);
+
+  const displayVehicle = vehicle || resolveVehicleFromSvvData(bil.svvData?.vehicle);
+
+  return (
+    <div className="bil-modal__autosys">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div className="modal-sec" style={{ marginBottom: 4 }}>Autosys · Statens vegvesen</div>
+          <div style={{ fontSize: 11, color: 'var(--t4)' }}>
+            Teknisk kjøretøydata lagret på {bil.reg || '—'}
+          </div>
+        </div>
+        <button type="button" className="btn btn-g btn-sm" onClick={hentOgLagre} disabled={laster}>
+          {laster ? 'Henter…' : displayVehicle ? 'Oppdater oppslag' : 'Hent fra Autosys'}
+        </button>
+      </div>
+
+      {laster ? (
+        <div className="fv" style={{ fontSize: 12, color: 'var(--t3)', padding: '24px 0' }}>Henter data fra Autosys…</div>
+      ) : null}
+
+      {!laster && feil ? (
+        <div style={{ color: 'var(--red)', fontSize: 12, background: 'var(--redl)', padding: '10px 14px', borderRadius: 7, marginBottom: 12 }}>
+          {feil}
+        </div>
+      ) : null}
+
+      {!laster && !displayVehicle && !feil ? (
+        <div style={{ fontSize: 12, color: 'var(--t4)', padding: '20px 0' }}>
+          Ingen Autosys-data er lagret for denne bilen ennå. Klikk «Hent fra Autosys» for å hente og lagre data.
+        </div>
+      ) : null}
+
+      {!laster && displayVehicle ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+            <NoPlate regNr={displayVehicle.regNr || bil.reg} />
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>
+                {displayVehicle.merke} {displayVehicle.modell}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
+                {[displayVehicle.arsmodell, displayVehicle.kjoretoyGruppe || displayVehicle.kjoretoyType].filter(Boolean).join(' · ') || 'Kjøretøy funnet'}
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {displayVehicle.registreringsstatus ? (
+                <span className={`chip ${displayVehicle.registreringsstatus === 'Registrert' ? 'chip-green' : 'chip-orange'}`}>
+                  {displayVehicle.registreringsstatus}
+                </span>
+              ) : null}
+              {displayVehicle.farge ? (
+                <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(displayVehicle.farge), border: '1px solid var(--b2)' }} />
+                  {displayVehicle.farge}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {sections.map(function (section) {
+            return (
+              <div key={section.title} style={{ marginBottom: 20 }}>
+                <div className="modal-sec">{section.title}</div>
+                <div className="svv-grid">
+                  {section.fields.map(function (field) {
+                    return (
+                      <div className="svv-field" key={section.title + field.label}>
+                        <div className="fl">{field.label}</div>
+                        <div className="fv">{field.value}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      ) : null}
     </div>
   );
 }

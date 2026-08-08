@@ -2033,6 +2033,7 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
       logg = COALESCE(@logg, logg),
       kommentarer = COALESCE(@kommentarer, kommentarer),
       dokumenter = COALESCE(@dokumenter, dokumenter),
+      okonomi = COALESCE(@okonomi, okonomi),
       svv_data = COALESCE(@svv_data, svv_data),
       archived = COALESCE(@archived, archived),
       archived_at = CASE WHEN @archived IS NOT NULL THEN @archivedAt ELSE archived_at END,
@@ -2066,6 +2067,7 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
     logg: b.logg != null ? JSON.stringify(b.logg) : null,
     kommentarer: kommentarerJson,
     dokumenter: b.dokumenter != null ? JSON.stringify(b.dokumenter) : null,
+    okonomi: b.okonomi != null ? JSON.stringify(b.okonomi) : null,
     svv_data: b.svvData != null ? JSON.stringify(b.svvData) : null,
     archived: b.archived != null ? (b.archived ? 1 : 0) : null,
     archivedAt: b.archived === true ? new Date().toISOString() : (b.archived === false ? null : null)

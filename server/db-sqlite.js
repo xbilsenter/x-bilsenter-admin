@@ -213,6 +213,7 @@ function initDb() {
   migrateModulOppsett();
   migrateInnkjopskalkyleAutosys();
   migrateInnkjopskalkyleUpdatedBy();
+  migrateBilSchemaExtensions();
 }
 
 function normalizeModulOppsett(list) {
@@ -260,6 +261,27 @@ function migrateInnkjopskalkyleUpdatedBy() {
   } catch {
     /* column exists */
   }
+}
+
+function migrateBilSchemaExtensions() {
+  const columns = [
+    "ALTER TABLE biler ADD COLUMN finn_kode TEXT DEFAULT ''",
+    "ALTER TABLE biler ADD COLUMN chassisnr TEXT DEFAULT ''",
+    "ALTER TABLE biler ADD COLUMN drivstoff TEXT DEFAULT ''",
+    "ALTER TABLE biler ADD COLUMN girkasse TEXT DEFAULT ''",
+    "ALTER TABLE biler ADD COLUMN utstyr TEXT DEFAULT ''",
+    "ALTER TABLE biler ADD COLUMN intern_info TEXT DEFAULT ''",
+    "ALTER TABLE biler ADD COLUMN kommentarer TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE biler ADD COLUMN dokumenter TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE biler ADD COLUMN okonomi TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE biler ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE biler ADD COLUMN sjekklister TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE biler ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE biler ADD COLUMN archived_at TEXT DEFAULT NULL"
+  ];
+  columns.forEach(function (sql) {
+    try { db.exec(sql); } catch { /* column exists */ }
+  });
 }
 
 function migrateModulOppsett() {
@@ -1087,14 +1109,27 @@ function mapBil(row) {
     salg: row.salg,
     farge: row.farge,
     status: row.status,
+    sortOrder: Number(row.sort_order ?? 0),
     ansvarlig: row.ansvarlig,
     frist: row.frist,
     notater: row.notater,
     euKontroll: row.eu_kontroll,
     forsikring: row.forsikring,
+    finnKode: row.finn_kode || '',
+    chassisnr: row.chassisnr || '',
+    drivstoff: row.drivstoff || '',
+    girkasse: row.girkasse || '',
+    utstyr: row.utstyr || '',
+    internInfo: row.intern_info || '',
+    kommentarer: parseJson(row.kommentarer, []),
+    dokumenter: parseJson(row.dokumenter, []),
+    okonomi: parseJson(row.okonomi, {}),
     sjekkliste: parseJson(row.sjekkliste, []),
+    sjekklister: parseJson(row.sjekklister, {}),
     logg: parseJson(row.logg, []),
-    svvData: parseJson(row.svv_data, null)
+    svvData: parseJson(row.svv_data, null),
+    archived: !!row.archived,
+    archivedAt: row.archived_at || null
   };
 }
 

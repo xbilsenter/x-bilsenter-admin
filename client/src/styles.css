@@ -191,7 +191,25 @@ tr:hover td{background:var(--accl);}
 .modal{background:var(--s1);border:1px solid var(--b2);border-radius:var(--radius-lg);padding:26px;width:680px;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-md);}
 .modal.lg{width:820px;}
 .modal.lg.bil-modal{width:920px;max-height:92vh;overflow-y:auto;}
+.modal.xl.bil-modal{width:1040px;max-height:92vh;overflow-y:auto;display:flex;flex-direction:column;}
 .modal.xl{width:960px;}
+.bil-modal__header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;gap:12px;}
+.bil-modal__grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+.bil-modal__vedlegg{min-height:200px;}
+.bil-modal__autosys{min-height:240px;}
+.bil-modal__okonomi{min-height:240px;}
+.bil-links-stack{display:flex;flex-direction:column;gap:14px;}
+.bil-upload-zone{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap;}
+.bil-okonomi-grid{display:grid;grid-template-columns:1fr 280px;gap:20px;margin-bottom:8px;}
+.bil-okonomi-summary{display:flex;flex-direction:column;gap:10px;background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:14px;}
+.bil-okonomi-summary__item--highlight{padding-top:8px;border-top:1px solid var(--b1);}
+.bil-okonomi-kostnader{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;}
+.bil-kostnad-row{display:grid;grid-template-columns:1fr 120px auto;gap:8px;margin-bottom:8px;align-items:center;}
+.bil-kostnad-row--new{margin-top:10px;}
+@media(max-width:900px){
+  .bil-modal__grid,.bil-okonomi-grid,.bil-okonomi-kostnader{grid-template-columns:1fr;}
+  .bil-okonomi-summary{order:-1;}
+}
 .modal.sm{width:480px;}
 .modal-title{font-size:18px;font-weight:800;color:var(--t1);margin-bottom:18px;}
 .modal-close{width:32px;height:32px;border:1px solid var(--b2);background:var(--s2);color:var(--t3);border-radius:8px;font-size:22px;line-height:1;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;transition:.12s;}
