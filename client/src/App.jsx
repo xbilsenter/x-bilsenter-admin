@@ -1890,7 +1890,6 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
   const [nyOppg, setNyOppg] = useState('');
-  const [nyLogg, setNyLogg] = useState('');
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(null);
 
@@ -1942,21 +1941,6 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
     if (!nyOppg.trim()) return;
     oppdater('sjekkliste', [...getAktivSjekkliste(bil), { t: nyOppg, f: false }]);
     setNyOppg('');
-  };
-
-  const leggTilLogg = () => {
-    if (!nyLogg.trim()) return;
-    const dato = new Date().toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE });
-    const av = currentUser?.name || currentUser?.username || 'Ukjent';
-    oppdater('logg', [...(bil.logg || []), { tekst: nyLogg, dato, av }]);
-    setNyLogg('');
-  };
-
-  const slettLoggPost = (index) => {
-    if (!currentUser?.isAdmin) return;
-    if (!window.confirm('Slette denne loggposten?')) return;
-    const logg = (bil.logg || []).filter(function (_item, i) { return i !== index; });
-    oppdater('logg', logg, 'Loggpost slettet ✓');
   };
 
   const lastOppDokumenter = async (event) => {
@@ -2144,27 +2128,6 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 currentUser={currentUser}
                 onChange={function (next, msg) { oppdater('kommentarer', next, msg); }}
               />
-
-              <div className="modal-sec">Intern logg</div>
-              {(bil.logg || []).map(function (l, i) {
-                return (
-                  <div className="logg-item" key={i + '-' + (l.dato || '') + '-' + (l.tekst || '')}>
-                    <div className="logg-tekst">{l.tekst}</div>
-                    <div className="logg-meta logg-meta--row">
-                      <span>{l.dato} · {l.av}</span>
-                      {currentUser?.isAdmin && (
-                        <button type="button" className="btn btn-red btn-xs" onClick={function () { slettLoggPost(i); }}>
-                          Slett
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                <input placeholder="Legg til loggpost..." value={nyLogg} onChange={e => setNyLogg(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilLogg()} />
-                <button type="button" className="btn btn-g btn-sm" onClick={leggTilLogg}>+</button>
-              </div>
             </div>
 
             <div>
