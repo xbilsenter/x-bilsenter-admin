@@ -26,6 +26,7 @@ import {
   ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
+  normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
@@ -501,9 +502,11 @@ export default function App() {
       if (res.item) setBiler(prev => prev.map(b => b.id === id ? res.item : b));
       if (localMsg) visTost(localMsg);
       refreshStats();
+      return res.item || null;
     } catch {
       visTost('Kunne ikke lagre bil ✗');
       loadData();
+      return null;
     }
   };
 
@@ -2115,35 +2118,73 @@ function BilArsprovekjennemerkeTab({ bil, biler, oppdaterArsprove }) {
   );
 }
 
+function buildAutosysLagring(parsed, raw, lists, prevBil) {
+  const svvPayload = {
+    vehicle: parsed,
+    raw: raw || null,
+    fetchedAt: new Date().toISOString()
+  };
+  const patch = { svvData: svvPayload };
+  const localUpdate = { svvData: svvPayload };
+  const euIso = normalizeEuKontrollDato(parsed.nesteEuKontroll);
+  if (euIso) {
+    patch.euKontroll = euIso;
+    localUpdate.euKontroll = euIso;
+  }
+  const autosysFields = applyAutosysToBilForm(parsed, raw || parsed, lists, prevBil);
+  if (autosysFields.farge && !prevBil.farge) {
+    patch.farge = autosysFields.farge;
+    localUpdate.farge = autosysFields.farge;
+  }
+  return { patch, localUpdate, parsed };
+}
+
+async function hentAutosysPayload(reg, lists, prevBil) {
+  const normalized = normalizeBilReg(reg);
+  if (!isValidBilReg(normalized)) {
+    throw new Error('Mangler gyldig registreringsnummer på bilen.');
+  }
+  const data = await lookupKjoretoy(normalized);
+  const parsed = data.vehicle;
+  if (!parsed) throw new Error('Fant ingen kjøretøydata.');
+  return buildAutosysLagring(parsed, data.raw || null, lists, prevBil);
+}
+
 function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, henv, setModal, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
   const [nyOppg, setNyOppg] = useState('');
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(null);
-  const autosysHentRef = useRef(null);
 
   useEffect(function () {
-    const reg = String(data.reg || '').trim().toUpperCase().replace(/\s/g, '');
-    if (reg.length < 5) return;
-    if (getRegistreringsstatusFromSvvData(data.svvData)) return;
-    if (autosysHentRef.current === data.id) return;
-    autosysHentRef.current = data.id;
+    setBil(data);
+  }, [data.id]);
+
+  const lagreAutosys = useCallback(async function (options) {
+    const reg = normalizeBilReg(bil.reg);
+    const result = await hentAutosysPayload(reg, lists, bil);
+    setBil(function (prev) { return { ...prev, ...result.localUpdate }; });
+    const saved = await updateBil(bil.id, result.patch, options?.silent ? undefined : 'Autosys-data oppdatert ✓');
+    if (saved) setBil(saved);
+    return result.parsed;
+  }, [bil, lists, updateBil]);
+
+  useEffect(function () {
+    const reg = normalizeBilReg(data.reg);
+    if (!isValidBilReg(reg)) return;
+    if (hasAutosysVehicleData(data.svvData)) return;
 
     let cancelled = false;
-    lookupKjoretoy(reg).then(function (res) {
-      if (cancelled || !res?.vehicle) return;
-      const parsed = res.vehicle;
-      const svvPayload = { vehicle: parsed, raw: res.raw || null, fetchedAt: new Date().toISOString() };
-      setBil(function (prev) { return { ...prev, svvData: svvPayload }; });
-      const patch = { svvData: svvPayload };
-      const euIso = normalizeEuKontrollDato(parsed.nesteEuKontroll);
-      if (euIso) patch.euKontroll = euIso;
-      updateBil(data.id, patch);
+    hentAutosysPayload(reg, lists, data).then(async function (result) {
+      if (cancelled) return;
+      setBil(function (prev) { return { ...prev, ...result.localUpdate }; });
+      const saved = await updateBil(data.id, result.patch);
+      if (!cancelled && saved) setBil(saved);
     }).catch(function () { /* stille bakgrunnshenting */ });
 
     return function () { cancelled = true; };
-  }, [data.id, data.reg, data.svvData, updateBil]);
+  }, [data.id, data.reg, data.svvData, lists, updateBil]);
 
   const docCount = (bil.dokumenter || []).length;
   const bilTabs = [
@@ -2162,21 +2203,27 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     .sort(function (a, b) { return String(b.dato || '').localeCompare(String(a.dato || '')); });
 
   const oppdater = (k, v, msg) => {
-    if (k === 'status' && v !== bil.status) {
-      const next = withStatusChange(bil, v, lists.bilSjekklister);
-      setBil({ ...bil, ...next });
-      updateBil(bil.id, next, msg);
+    if (k === 'status') {
+      setBil(function (prev) {
+        if (v === prev.status) return prev;
+        const next = withStatusChange(prev, v, lists.bilSjekklister);
+        updateBil(prev.id, next, msg);
+        return { ...prev, ...next };
+      });
       return;
     }
     if (k === 'sjekkliste') {
-      const next = withSjekklisteUpdate(bil, v);
-      setBil({ ...bil, ...next });
-      updateBil(bil.id, { sjekklister: next.sjekklister, sjekkliste: next.sjekkliste }, msg);
+      setBil(function (prev) {
+        const next = withSjekklisteUpdate(prev, v);
+        updateBil(prev.id, { sjekklister: next.sjekklister, sjekkliste: next.sjekkliste }, msg);
+        return { ...prev, ...next };
+      });
       return;
     }
-    const ny = { ...bil, [k]: v };
-    setBil(ny);
-    updateBil(bil.id, { [k]: v }, msg);
+    setBil(function (prev) {
+      updateBil(prev.id, { [k]: v }, msg);
+      return { ...prev, [k]: v };
+    });
   };
 
   const oppdaterOkonomi = (patch, msg) => {
@@ -2494,7 +2541,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
         )}
 
         {activeTab === 'autosys' && (
-          <BilAutosysTab bil={bil} oppdater={oppdater} visTost={visTost} lists={lists} />
+          <BilAutosysTab bil={bil} lagreAutosys={lagreAutosys} visTost={visTost} />
         )}
 
         {activeTab === 'okonomi' && (
@@ -2689,10 +2736,6 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
 }
 
 // ─── NY BIL MODAL ────────────────────────────────────────────────────────────
-function normalizeBilReg(reg) {
-  return String(reg || '').trim().toUpperCase().replace(/\s/g, '');
-}
-
 function resolveMerkeFromLists(merke, merker) {
   const normalized = String(merke || '').trim();
   if (!normalized) return merker[0] || 'Annet';
@@ -2735,7 +2778,7 @@ function NyBilModal({ onClose, onSave, lists, visTost }) {
 
   const hentAutosys = useCallback(async function (regInput) {
     const reg = normalizeBilReg(regInput != null ? regInput : f.reg);
-    if (!reg || reg.length < 5) {
+    if (!isValidBilReg(reg)) {
       setAutosysError('Skriv inn et gyldig registreringsnummer.');
       setAutosysPreview('');
       return;
@@ -7311,37 +7354,36 @@ function NoPlate({ regNr }) {
   );
 }
 
-function BilAutosysTab({ bil, oppdater, visTost, lists }) {
+function BilAutosysTab({ bil, lagreAutosys, visTost }) {
   const [laster, setLaster] = useState(false);
   const [feil, setFeil] = useState('');
+  const autoHentRef = useRef(false);
   const vehicle = getVehicleFromSvvData(bil.svvData);
   const sections = vehicle ? buildSvvSectionsFromVehicle(vehicle) : [];
 
   const hentOgLagre = useCallback(async function () {
-    const reg = String(bil.reg || '').trim().toUpperCase().replace(/\s/g, '');
-    if (!reg || reg.length < 5) {
-      setFeil('Mangler gyldig registreringsnummer på bilen.');
-      return;
-    }
     setLaster(true);
     setFeil('');
     try {
-      const data = await lookupKjoretoy(reg);
-      const parsed = data.vehicle;
-      if (!parsed) throw new Error('Fant ingen kjøretøydata.');
-      const svvPayload = { vehicle: parsed, raw: data.raw || null, fetchedAt: new Date().toISOString() };
-      oppdater('svvData', svvPayload, 'Autosys-data oppdatert ✓');
-      const euIso = normalizeEuKontrollDato(parsed.nesteEuKontroll);
-      if (euIso) oppdater('euKontroll', euIso, 'Frist neste EU-kontroll oppdatert ✓');
-      const autosysFields = applyAutosysToBilForm(parsed, data.raw || parsed, lists, bil);
-      if (autosysFields.farge && !bil.farge) oppdater('farge', autosysFields.farge);
+      await lagreAutosys();
       if (visTost) visTost('Autosys-data hentet ✓');
     } catch (err) {
       setFeil(err.message || 'Oppslag feilet.');
     } finally {
       setLaster(false);
     }
-  }, [bil, lists, oppdater, visTost]);
+  }, [lagreAutosys, visTost]);
+
+  useEffect(function () {
+    autoHentRef.current = false;
+  }, [bil.id]);
+
+  useEffect(function () {
+    if (autoHentRef.current || vehicle || laster) return;
+    if (!isValidBilReg(bil.reg)) return;
+    autoHentRef.current = true;
+    hentOgLagre();
+  }, [bil.id, bil.reg, vehicle, laster, hentOgLagre]);
 
   const displayVehicle = vehicle || getVehicleFromSvvData(bil.svvData?.vehicle);
   const fargeNavn = displayVehicle ? formatSvvFargeNavn(displayVehicle.farge) : '';

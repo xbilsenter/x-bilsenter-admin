@@ -546,6 +546,23 @@ export function formatSvvFargeNavn(farge) {
   return first || s;
 }
 
+/** Normaliser norsk reg.nr (samme logikk som Vegvesen-oppslag på server). */
+export function normalizeBilReg(reg) {
+  return String(reg || '').trim().toUpperCase().replace(/\s/g, '').replace(/[^A-Z0-9ÆØÅ]/g, '');
+}
+
+export function isValidBilReg(reg) {
+  const normalized = normalizeBilReg(reg);
+  return normalized.length >= 4 && normalized.length <= 7;
+}
+
+/** Sjekk om lagret Autosys/Vegvesen-data faktisk inneholder kjøretøy. */
+export function hasAutosysVehicleData(svvData) {
+  const vehicle = getVehicleFromSvvData(svvData);
+  if (!vehicle || typeof vehicle !== 'object') return false;
+  return !!(vehicle.regNr || vehicle.merke || vehicle.modell || vehicle.registreringsstatus || vehicle.understell);
+}
+
 export const DEFAULT_BIL_ARSPROVEKJENNEMERKE = {
   skiltnummer: '',
   fraDato: '',
