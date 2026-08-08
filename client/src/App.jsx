@@ -2041,8 +2041,8 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 const tr = normalizeBilTilstandsrapport(bil.tilstandsrapport);
                 return (
                   <>
-                    {tr.nybilgaranti && <span className="chip chip-green">Nybilgaranti</span>}
-                    {tr.medfolger && <span className="chip chip-green">Medfølger</span>}
+                    {tr.nybilgaranti && <span className="chip chip-green">Tilstandsrapport: Nybilgaranti</span>}
+                    {tr.medfolger && <span className="chip chip-green">Tilstandsrapport: Medfølger</span>}
                     {tr.status === 'utfort' && <span className="chip chip-green">Tilstandsrapport: Utført</span>}
                     {tr.status === 'ikke_utfort' && <span className="chip chip-red">Tilstandsrapport: Ikke utført</span>}
                   </>
