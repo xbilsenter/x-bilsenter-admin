@@ -2093,7 +2093,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                   <input value={bil.farge || ''} onChange={e => oppdater('farge', e.target.value)} />
                 </div>
               </div>
-              <div className="form-row3 gap">
+              <div className="form-row gap">
                 <div>
                   <div className="fl">Årsmodell</div>
                   <input type="number" value={bil.aar || 0} onChange={e => oppdater('aar', +e.target.value)} />
@@ -2101,12 +2101,6 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 <div>
                   <div className="fl">Kilometerstand</div>
                   <input type="number" value={bil.km || 0} onChange={e => oppdater('km', +e.target.value)} />
-                </div>
-                <div>
-                  <div className="fl">Status</div>
-                  <select value={bil.status} onChange={e => oppdater('status', e.target.value)}>
-                    {lists.bilStatuser.map(s => <option key={s}>{s}</option>)}
-                  </select>
                 </div>
               </div>
               <div className="gap">
