@@ -8663,7 +8663,7 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
   };
 
   return (
-    <div className="card settings-card" style={{ gridColumn: '1 / -1' }}>
+    <div className="card settings-card">
       <div className="card-h"><span className="card-ht">Sjekklister per pipeline-status</span></div>
       <div style={{ padding: 16 }}>
         <p className="settings-desc">
