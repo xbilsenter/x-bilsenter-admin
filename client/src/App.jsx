@@ -27,7 +27,7 @@ import {
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
-  buildMerkeOptions, resolveMerkeFromLists,
+  buildMerkeOptions, resolveMerkeFromLists, formatBilFarge,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
@@ -1600,7 +1600,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
           {renderBilActionBtns(bil)}
         </div>
         <div className="bil-name">{bil.merke} {bil.modell}</div>
-        <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {bil.farge}</div>
+        <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge)}</div>
         {(linkKal > 0 || linkHenv > 0) && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
             {linkKal > 0 && <span className="chip chip-gray">{linkKal} avtale{linkKal > 1 ? 'r' : ''}</span>}
@@ -1652,7 +1652,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             </div>
             <div className="bil-name">{bil.merke} {bil.modell}</div>
           </div>
-          <div className="bil-pipeline-meta">{bil.aar} · {fmtKm(bil.km)} km · {bil.farge || '—'}</div>
+          <div className="bil-pipeline-meta">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge) || '—'}</div>
           <div className="bil-pipeline-pris">{nok(bil.salg)}</div>
           <div className="bil-pipeline-ans">{bil.ansvarlig || '—'}</div>
           <div className="bil-pipeline-prog">
@@ -2134,7 +2134,7 @@ function buildAutosysLagring(parsed, raw, lists, prevBil) {
     localUpdate.euKontroll = euIso;
   }
   const autosysFields = applyAutosysToBilForm(parsed, raw || parsed, lists, prevBil);
-  if (autosysFields.farge && !prevBil.farge) {
+  if (autosysFields.farge) {
     patch.farge = autosysFields.farge;
     localUpdate.farge = autosysFields.farge;
   }
@@ -2414,7 +2414,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                 </div>
                 <div>
                   <div className="fl">Farge</div>
-                  <input value={bil.farge || ''} onChange={e => oppdater('farge', e.target.value)} />
+                  <input value={formatBilFarge(bil.farge)} onChange={e => oppdater('farge', formatSvvFargeNavn(e.target.value))} />
                 </div>
               </div>
               <div className="form-row gap">
@@ -7715,7 +7715,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
                 {resultat.farge && (
                   <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(resultat.farge), border: '1px solid var(--b2)' }} />
-                    {resultat.farge}
+                  {formatSvvFargeNavn(resultat.farge)}
                   </span>
                 )}
               </div>

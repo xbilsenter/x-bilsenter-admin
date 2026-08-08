@@ -41,6 +41,7 @@ const {
   normalizeBilArsprovekjennemerke,
   normalizeMerkerList
 } = require('./db-shared');
+const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
 const dbDriver = require('./database');
 const { prepare, exec: execAsync, transaction, isPostgres } = dbDriver;
@@ -944,7 +945,7 @@ function mapBil(row, kundeIds) {
     km: row.km,
     innkjop: row.innkjop,
     salg: row.salg,
-    farge: row.farge,
+    farge: formatSvvFargeNavn(row.farge) || '',
     status: row.status,
     sortOrder: Number(row.sort_order ?? 0),
     ansvarlig: row.ansvarlig,
@@ -966,7 +967,7 @@ function mapBil(row, kundeIds) {
     sjekklister,
     sjekkliste,
     logg: parseJson(row.logg, []),
-    svvData: parseJson(row.svv_data, null),
+    svvData: normalizeSvvDataFarge(parseJson(row.svv_data, null)),
     kundeId: row.kunde_id || null,
     kundeIds: ids,
     archived: !!row.archived,

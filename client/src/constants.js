@@ -607,10 +607,42 @@ export function registreringsstatusChip(status) {
 export function formatSvvFargeNavn(farge) {
   let s = String(farge || '').trim();
   if (!s) return '';
-  s = s.replace(/\s+herunder\b.*/i, '').trim();
+
+  const herunderIdx = s.search(/\bherunder\b/i);
+  if (herunderIdx >= 0) {
+    s = s.slice(0, herunderIdx).trim();
+  }
+
   s = s.replace(/\s*\([^)]*\)/g, ' ').trim();
-  const first = s.split(/[,;/]/)[0].trim();
-  return first || s;
+  s = s.split(/[,;/]/)[0].trim();
+
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length === 1) {
+    const w = words[0];
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }
+
+  const knownMulti = [
+    'Mørk blå', 'Lys blå', 'Mørk grå', 'Lys grå', 'Mørk grønn', 'Lys grønn',
+    'Mørk rød', 'Lys rød', 'Metallic grå', 'Metallic blå', 'Metallic sort'
+  ];
+  const lower = s.toLowerCase();
+  const multi = knownMulti.find(function (k) { return lower === k.toLowerCase(); });
+  if (multi) return multi;
+
+  if (words.length > 1) {
+    const first = words[0];
+    if (/^(grå|sort|hvit|sølv|blå|rød|grønn|gull|oransje|brun|beige|fiolett|gul|rosa)$/i.test(first)) {
+      return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+    }
+  }
+
+  return s;
+}
+
+/** Visningsverdi for lagret bil.farge. */
+export function formatBilFarge(farge) {
+  return formatSvvFargeNavn(farge) || String(farge || '').trim();
 }
 
 /** Normaliser norsk reg.nr (samme logikk som Vegvesen-oppslag på server). */

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { lookupKjoretoy, lookupOmregistreringsavgift, postInnkjopskalkyle, patchInnkjopskalkyle, deleteInnkjopskalkyle } from '../api.js';
-import { AUKSJON_PLATTFORMER, calcInnkjopspris } from '../constants.js';
+import { AUKSJON_PLATTFORMER, calcInnkjopspris, formatSvvFargeNavn } from '../constants.js';
 import {
   buildKalkyleFinnSok,
   canKalkyleFinnMarkedsSok,
@@ -128,7 +128,7 @@ function buildAutosysRows(data) {
     ['Bruktimport', data.bruktimport || '—'],
     ['Neste EU-kontroll', data.nesteEuKontroll || '—'],
     ['Siste EU-kontroll', data.sisteEuKontroll || '—'],
-    ['Farge', data.farge || '—'],
+    ['Farge', formatSvvFargeNavn(data.farge) || '—'],
     ['Karosseri', data.karosseriType || '—'],
     ['Registreringsstatus', data.registreringsstatus || '—']
   );

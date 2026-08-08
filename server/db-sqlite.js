@@ -5,6 +5,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeMerkerList } = require('./db-shared');
 const { MERKER } = require('./merker');
+const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_PATH = path.join(DATA_DIR, 'xbilsenter.db');
@@ -1126,7 +1127,7 @@ function mapBil(row) {
     km: row.km,
     innkjop: row.innkjop,
     salg: row.salg,
-    farge: row.farge,
+    farge: formatSvvFargeNavn(row.farge) || '',
     status: row.status,
     sortOrder: Number(row.sort_order ?? 0),
     ansvarlig: row.ansvarlig,
@@ -1148,7 +1149,7 @@ function mapBil(row) {
     sjekkliste: parseJson(row.sjekkliste, []),
     sjekklister: parseJson(row.sjekklister, {}),
     logg: parseJson(row.logg, []),
-    svvData: parseJson(row.svv_data, null),
+    svvData: normalizeSvvDataFarge(parseJson(row.svv_data, null)),
     archived: !!row.archived,
     archivedAt: row.archived_at || null
   };

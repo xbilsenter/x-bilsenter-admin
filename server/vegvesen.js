@@ -1,5 +1,6 @@
 'use strict';
 
+const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 const VEGVESEN_URL = 'https://www.vegvesen.no/ws/no/vegvesen/kjoretoy/felles/datautlevering/enkeltoppslag/kjoretoydata';
 const ATLAS_URL = 'https://akfell-datautlevering.atlas.vegvesen.no/enkeltoppslag/kjoretoydata';
 
@@ -350,7 +351,11 @@ function parseVehicle(raw) {
     variant: ef.variant || firstItem(generelt.variant, 'variant') || displayValue(generelt.variant),
     versjon: ef.versjon || firstItem(generelt.versjon, 'versjon') || displayValue(generelt.versjon),
     arsmodell,
-    farge: codeValue(firstItem(karosseri.rFarge, 'kodeNavn')) || codeValue(firstItem(karosseri.rFarge, 'kodeBeskrivelse')) || codeValue(firstItem(karosseri.rFarge)),
+    farge: formatSvvFargeNavn(
+      codeValue(firstItem(karosseri.rFarge, 'kodeNavn'))
+      || codeValue(firstItem(karosseri.rFarge, 'kodeBeskrivelse'))
+      || codeValue(firstItem(karosseri.rFarge))
+    ),
     drivstoff: codeValue(miljoGruppe.drivstoffKodeMiljodata) || codeValue(drivstoffEntry?.drivstoffKode) || codeValue(drivstoffEntry),
     girkasse: codeValue(motor.girkassetype) || codeValue(firstItem(motor.girkassetype, 'kodeBeskrivelse')),
     hjuldrift: parseHjuldrift(motor, akslinger, ovrige),
