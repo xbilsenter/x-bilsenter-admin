@@ -76,7 +76,9 @@ const {
   sjekklisteFraMalServer,
   parseJson,
   normalizeBilTilstandsrapport,
-  DEFAULT_BIL_TILSTANDSRAPPORT
+  DEFAULT_BIL_TILSTANDSRAPPORT,
+  normalizeBilArsprovekjennemerke,
+  DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
 
 const {
@@ -1931,6 +1933,7 @@ app.post('/api/biler', requireAuth, async function (req, res) {
       eu_kontroll: b.euKontroll || '',
       forsikring: b.forsikring || '',
       tilstandsrapport: JSON.stringify(normalizeBilTilstandsrapport(b.tilstandsrapport || DEFAULT_BIL_TILSTANDSRAPPORT)),
+      arsprovekjennemerke: JSON.stringify(normalizeBilArsprovekjennemerke(b.arsprovekjennemerke || DEFAULT_BIL_ARSPROVEKJENNEMERKE)),
       sjekkliste: JSON.stringify(b.sjekkliste || aktivSjekkliste),
       sjekklister: JSON.stringify(sjekklister),
       logg: JSON.stringify(b.logg || []),
@@ -1940,15 +1943,15 @@ app.post('/api/biler', requireAuth, async function (req, res) {
     let info;
     try {
       info = await prepare(`
-        INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, tilstandsrapport, sjekkliste, sjekklister, logg, svv_data)
-        VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @tilstandsrapport, @sjekkliste, @sjekklister, @logg, @svv_data)
+        INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, tilstandsrapport, arsprovekjennemerke, sjekkliste, sjekklister, logg, svv_data)
+        VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @tilstandsrapport, @arsprovekjennemerke, @sjekkliste, @sjekklister, @logg, @svv_data)
       `).run(insertParams);
     } catch (err) {
       if (err.code === '23505' && String(err.constraint || '').includes('biler_pkey')) {
         await syncPostgresSequences();
         info = await prepare(`
-          INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, tilstandsrapport, sjekkliste, sjekklister, logg, svv_data)
-          VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @tilstandsrapport, @sjekkliste, @sjekklister, @logg, @svv_data)
+          INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, tilstandsrapport, arsprovekjennemerke, sjekkliste, sjekklister, logg, svv_data)
+          VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @tilstandsrapport, @arsprovekjennemerke, @sjekkliste, @sjekklister, @logg, @svv_data)
         `).run(insertParams);
       } else {
         throw err;
@@ -2043,6 +2046,7 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
       dokumenter = COALESCE(@dokumenter, dokumenter),
       okonomi = COALESCE(@okonomi, okonomi),
       tilstandsrapport = COALESCE(@tilstandsrapport, tilstandsrapport),
+      arsprovekjennemerke = COALESCE(@arsprovekjennemerke, arsprovekjennemerke),
       svv_data = COALESCE(@svv_data, svv_data),
       archived = COALESCE(@archived, archived),
       archived_at = CASE WHEN @archived IS NOT NULL THEN @archivedAt ELSE archived_at END,
@@ -2079,6 +2083,9 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
     okonomi: b.okonomi != null ? JSON.stringify(b.okonomi) : null,
     tilstandsrapport: b.tilstandsrapport != null
       ? JSON.stringify(normalizeBilTilstandsrapport(b.tilstandsrapport))
+      : null,
+    arsprovekjennemerke: b.arsprovekjennemerke != null
+      ? JSON.stringify(normalizeBilArsprovekjennemerke(b.arsprovekjennemerke))
       : null,
     svv_data: b.svvData != null ? JSON.stringify(b.svvData) : null,
     archived: b.archived != null ? (b.archived ? 1 : 0) : null,

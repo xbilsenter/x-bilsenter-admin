@@ -416,6 +416,34 @@ function normalizeBilTilstandsrapport(raw) {
   };
 }
 
+const DEFAULT_BIL_ARSPROVEKJENNEMERKE = {
+  skiltnummer: '',
+  fraDato: '',
+  tilDato: '',
+  status: 'ingen',
+  notater: ''
+};
+
+function normalizeBilArsprovekjennemerke(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const status = ['ingen', 'bestilt', 'aktiv', 'utlopt'].includes(o.status) ? o.status : 'ingen';
+  const iso = function (value) {
+    if (!value) return '';
+    const s = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const nb = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (nb) return `${nb[3]}-${nb[2]}-${nb[1]}`;
+    return '';
+  };
+  return {
+    skiltnummer: String(o.skiltnummer || '').trim().toUpperCase(),
+    fraDato: iso(o.fraDato),
+    tilDato: iso(o.tilDato),
+    status: status,
+    notater: String(o.notater || '')
+  };
+}
+
 module.exports = {
   parseJson,
   formatDate,
@@ -453,5 +481,7 @@ module.exports = {
   normalizePermissions,
   jsonStringify,
   DEFAULT_BIL_TILSTANDSRAPPORT,
-  normalizeBilTilstandsrapport
+  normalizeBilTilstandsrapport,
+  DEFAULT_BIL_ARSPROVEKJENNEMERKE,
+  normalizeBilArsprovekjennemerke
 };

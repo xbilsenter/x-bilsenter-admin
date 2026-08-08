@@ -416,6 +416,38 @@ export function euKontrollChipClass(value) {
   return 'chip-orange';
 }
 
+export const DEFAULT_BIL_ARSPROVEKJENNEMERKE = {
+  skiltnummer: '',
+  fraDato: '',
+  tilDato: '',
+  status: 'ingen',
+  notater: ''
+};
+
+export const ARSPROVEKJENNEMERKE_STATUSER = [
+  { id: 'ingen', label: 'Ingen' },
+  { id: 'bestilt', label: 'Bestilt' },
+  { id: 'aktiv', label: 'Aktiv' },
+  { id: 'utlopt', label: 'Utløpt' }
+];
+
+export function normalizeBilArsprovekjennemerke(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const status = ['ingen', 'bestilt', 'aktiv', 'utlopt'].includes(o.status) ? o.status : 'ingen';
+  return {
+    skiltnummer: String(o.skiltnummer || '').trim().toUpperCase(),
+    fraDato: normalizeEuKontrollDato(o.fraDato),
+    tilDato: normalizeEuKontrollDato(o.tilDato),
+    status: status,
+    notater: String(o.notater || '')
+  };
+}
+
+export function arsprovekjennemerkeStatusLabel(status) {
+  const item = ARSPROVEKJENNEMERKE_STATUSER.find(function (row) { return row.id === status; });
+  return item ? item.label : 'Ingen';
+}
+
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
   const inn = Number(innkjop) || 0;
@@ -535,6 +567,8 @@ export function bilMatchesSearch(bil, query) {
     bil.tilstandsrapport?.status === 'utfort' ? 'tilstandsrapport utfort' : 'tilstandsrapport ikke utfort',
     bil.tilstandsrapport?.medfolger ? 'medfolger' : '',
     bil.tilstandsrapport?.nybilgaranti ? 'nybilgaranti' : '',
+    bil.arsprovekjennemerke?.skiltnummer,
+    bil.arsprovekjennemerke?.status,
     bil.archived ? 'arkiv' : 'lager',
     ...(bil.kommentarer || []).map(function (item) { return item.text; }),
     ...(bil.dokumenter || []).map(function (item) { return item.name; })

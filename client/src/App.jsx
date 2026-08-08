@@ -23,7 +23,9 @@ import {
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
   ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
-  DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport
+  DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
+  DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
+  ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel
 } from './constants.js';
 import {
   getToken, logout,
@@ -1886,6 +1888,68 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
   );
 }
 
+function BilArsprovekjennemerkeTab({ bil, oppdaterArsprove }) {
+  const data = normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke);
+
+  const patch = function (next) {
+    oppdaterArsprove({ ...data, ...next });
+  };
+
+  return (
+    <div className="bil-modal__arsprove">
+      <div className="arsprove-kommende">
+        <div className="arsprove-kommende__title">Vegvesen-registrering (kommer)</div>
+        <p className="arsprove-kommende__text">
+          Her kommer det snart modul for API-kobling mot Statens vegvesen for registrering og oppfølging av årsprøvekjennemerke på{' '}
+          <strong>{bil.reg || 'bilen'}</strong>.
+        </p>
+        <button type="button" className="btn btn-g btn-sm" disabled title="Vegvesen API kommer snart">
+          Registrer via Vegvesen
+        </button>
+      </div>
+
+      <div className="modal-sec">Manuell registrering</div>
+      <div className="form-row gap">
+        <div>
+          <div className="fl">Skiltnummer</div>
+          <input
+            value={data.skiltnummer}
+            onChange={function (e) { patch({ skiltnummer: e.target.value.toUpperCase() }); }}
+            placeholder="Prøveskilt / reg.nr"
+          />
+        </div>
+        <div>
+          <div className="fl">Status</div>
+          <select value={data.status} onChange={function (e) { patch({ status: e.target.value }); }}>
+            {ARSPROVEKJENNEMERKE_STATUSER.map(function (s) {
+              return <option key={s.id} value={s.id}>{s.label}</option>;
+            })}
+          </select>
+        </div>
+      </div>
+      <div className="form-row gap">
+        <div>
+          <div className="fl">Gyldig fra</div>
+          <input type="date" value={data.fraDato} onChange={function (e) { patch({ fraDato: e.target.value }); }} />
+        </div>
+        <div>
+          <div className="fl">Gyldig til</div>
+          <input type="date" value={data.tilDato} onChange={function (e) { patch({ tilDato: e.target.value }); }} />
+        </div>
+      </div>
+      <div className="gap">
+        <div className="fl">Notater</div>
+        <textarea
+          rows={3}
+          value={data.notater}
+          onChange={function (e) { patch({ notater: e.target.value }); }}
+          placeholder="Interne notater om årsprøvekjennemerke…"
+        />
+      </div>
+    </div>
+  );
+}
+
 function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal, kunder, currentUser }) {
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
@@ -1898,6 +1962,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
     { id: 'informasjon', label: 'Informasjon' },
     { id: 'autosys', label: 'Autosys' },
     { id: 'okonomi', label: 'Økonomi' },
+    { id: 'arsprove', label: 'Årsprøvekjennemerke' },
     { id: 'vedlegg', label: docCount ? `Vedlegg (${docCount})` : 'Vedlegg' }
   ];
 
@@ -1929,6 +1994,11 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
   const oppdaterOkonomi = (patch, msg) => {
     const okonomi = { ...normalizeBilOkonomi(bil.okonomi), ...patch };
     oppdater('okonomi', okonomi, msg || 'Økonomi oppdatert ✓');
+  };
+
+  const oppdaterArsprove = (patch, msg) => {
+    const arsprovekjennemerke = { ...normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke), ...patch };
+    oppdater('arsprovekjennemerke', arsprovekjennemerke, msg || 'Årsprøvekjennemerke oppdatert ✓');
   };
 
   const toggleSjekk = (i) => {
@@ -2031,6 +2101,15 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 );
               })()}
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
+              {(() => {
+                const ap = normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke);
+                if (ap.status === 'ingen' && !ap.skiltnummer) return null;
+                const chipClass = ap.status === 'aktiv' ? 'chip-green' : (ap.status === 'utlopt' ? 'chip-red' : 'chip-orange');
+                const label = ap.skiltnummer
+                  ? `Årsprøve: ${ap.skiltnummer} · ${arsprovekjennemerkeStatusLabel(ap.status)}`
+                  : `Årsprøve: ${arsprovekjennemerkeStatusLabel(ap.status)}`;
+                return <span className={`chip ${chipClass}`}>{label}</span>;
+              })()}
             </div>
           </div>
           {!bil.archived && (
@@ -2208,6 +2287,10 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
 
         {activeTab === 'okonomi' && (
           <BilOkonomiTab bil={bil} oppdater={oppdater} oppdaterOkonomi={oppdaterOkonomi} />
+        )}
+
+        {activeTab === 'arsprove' && (
+          <BilArsprovekjennemerkeTab bil={bil} oppdaterArsprove={oppdaterArsprove} />
         )}
 
         {activeTab === 'vedlegg' && (

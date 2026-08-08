@@ -197,7 +197,12 @@ tr:hover td{background:var(--accl);}
 .bil-modal__flytt{min-width:168px;flex-shrink:0;}
 .bil-modal__flytt-select{width:100%;font-size:12px;font-weight:600;}
 .bil-modal__grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+.bil-modal__arsprove{min-height:240px;}
 .bil-modal__vedlegg{min-height:200px;}
+.arsprove-kommende{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:14px 16px;margin-bottom:18px;}
+.arsprove-kommende__title{font-size:13px;font-weight:700;color:var(--t1);margin-bottom:6px;}
+.arsprove-kommende__text{font-size:12px;color:var(--t3);line-height:1.55;margin:0 0 12px;}
+.modal.xl.bil-modal .modal-tabs{flex-wrap:wrap;}
 .bil-modal__autosys{min-height:240px;}
 .bil-modal__okonomi{min-height:240px;}
 .bil-links-stack{display:flex;flex-direction:column;gap:14px;}
