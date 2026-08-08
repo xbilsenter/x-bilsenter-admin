@@ -2156,20 +2156,32 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               })()}
             </div>
           </div>
-          {!bil.archived && (
-            <div className="bil-modal__flytt">
-              <div className="fl">Flytt bil</div>
-              <select
-                className="bil-modal__flytt-select"
-                value={bil.status}
-                onChange={function (e) { flyttTilStatus(e.target.value); }}
-              >
-                {lists.bilStatuser.map(function (s) {
-                  return <option key={s} value={s}>{s}</option>;
-                })}
-              </select>
-            </div>
-          )}
+          <div className="bil-modal__actions">
+            {!bil.archived && (
+              <>
+                <div className="bil-modal__flytt">
+                  <div className="fl">Flytt bil</div>
+                  <select
+                    className="bil-modal__flytt-select"
+                    value={bil.status}
+                    onChange={function (e) { flyttTilStatus(e.target.value); }}
+                  >
+                    {lists.bilStatuser.map(function (s) {
+                      return <option key={s} value={s}>{s}</option>;
+                    })}
+                  </select>
+                </div>
+                <button type="button" className="btn btn-g btn-sm bil-modal__arkiv-btn" onClick={arkiver}>
+                  Arkiver bil
+                </button>
+              </>
+            )}
+            {bil.archived && (
+              <button type="button" className="btn btn-p btn-sm bil-modal__arkiv-btn" onClick={gjenopprett}>
+                Gjenopprett til lager
+              </button>
+            )}
+          </div>
         </div>
 
         <ModalTabs tabs={bilTabs} active={activeTab} onChange={setActiveTab} />
@@ -2379,11 +2391,6 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
         )}
 
         <div className="modal-footer">
-          {bil.archived ? (
-            <button type="button" className="btn btn-p" onClick={gjenopprett}>Gjenopprett til lager</button>
-          ) : (
-            <button type="button" className="btn btn-g" onClick={arkiver}>Arkiver bil</button>
-          )}
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
