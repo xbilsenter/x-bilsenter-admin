@@ -129,7 +129,7 @@ tr:hover td{background:var(--accl);}
 .bil-pipeline-body{min-height:48px;padding:8px;transition:background .12s,box-shadow .12s;}
 .bil-pipeline-body--drop{background:var(--accl);box-shadow:inset 0 0 0 2px rgba(25,186,96,.25);}
 .bil-pipeline-empty{padding:14px 10px;font-size:11px;color:var(--t4);text-align:center;}
-.bil-pipeline-row{display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:9px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;margin-bottom:6px;cursor:grab;user-select:none;transition:all .12s;}
+.bil-pipeline-row{display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;margin-bottom:6px;cursor:grab;user-select:none;transition:all .12s;}
 .bil-pipeline-row:last-child{margin-bottom:0;}
 .bil-pipeline-row--dragging{opacity:.45;}
 .bil-pipeline-row:hover{border-color:var(--acc);box-shadow:0 2px 8px rgba(25,186,96,.12);}
@@ -141,10 +141,8 @@ tr:hover td{background:var(--accl);}
 .bil-arkiv-actions{display:flex;gap:6px;flex-shrink:0;}
 .bil-archive-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 6px;opacity:.45;border-radius:4px;line-height:1;}
 .bil-card-actions{display:flex;gap:2px;align-items:center;}
-.bil-card-footer{display:flex;justify-content:flex-end;margin-top:8px;padding-top:4px;}
 .bil-card:hover .bil-archive-btn,.bil-pipeline-row:hover .bil-archive-btn{opacity:1;}
 .bil-archive-btn:hover{background:var(--s3);opacity:1;}
-.bil-pipeline-row-inner{display:flex;align-items:center;gap:10px;width:100%;}
 .bil-slettelog-table-wrap{overflow:auto;}
 .bil-slettelog-table{width:100%;border-collapse:collapse;font-size:12px;}
 .bil-slettelog-table th,.bil-slettelog-table td{padding:8px 10px;border-bottom:1px solid var(--b1);text-align:left;vertical-align:top;}
@@ -203,6 +201,8 @@ tr:hover td{background:var(--accl);}
 .bil-modal__header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;gap:12px;flex-shrink:0;}
 .bil-modal__body{flex:1;min-height:0;overflow-y:auto;}
 .modal.xl.bil-modal .modal-footer{flex-shrink:0;margin-top:0;}
+.bil-modal__footer{align-items:center;}
+.bil-modal__slett-btn{margin-left:auto;}
 .bil-modal__actions{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:168px;flex-shrink:0;}
 .bil-modal__flytt{min-width:0;}
 .bil-modal__flytt-select{width:100%;font-size:12px;font-weight:600;}

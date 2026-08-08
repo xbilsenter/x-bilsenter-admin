@@ -813,7 +813,6 @@ export default function App() {
               reorderBiler={reorderBiler}
               kunder={kunder}
               currentUser={user}
-              deleteBil={deleteBilItem}
             />
           )}
           {tab === 'kunder' && (
@@ -915,6 +914,7 @@ export default function App() {
           data={modal.d}
           onClose={() => setModal(null)}
           updateBil={updateBil}
+          deleteBil={deleteBilItem}
           visTost={visTost}
           lists={lists}
           kal={kal}
@@ -1426,7 +1426,7 @@ function BilSlettelogPanel() {
   );
 }
 
-function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler, currentUser, deleteBil }) {
+function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler, currentUser }) {
   const [mFilter, setMFilter] = useState('Alle');
   const [sFilter, setSFilter] = useState('Alle');
   const [search, setSearch] = useState('');
@@ -1463,7 +1463,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     ? biler.filter(function (b) { return bilMatchesSearch(b, searchQuery); })
     : [];
   const searchActive = searchQuery.length > 0;
-  const kanSletteBil = canDeleteBil(currentUser);
   const [visSlettelog, setVisSlettelog] = useState(false);
 
   useEffect(function () {
@@ -1559,10 +1558,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     setModal({ t: 'visBil', d: bil });
   };
 
-  const slettBil = (bil) => {
-    deleteBil(bil);
-  };
-
   const renderBilActionBtns = (bil, opts) => {
     const showArchive = opts?.showArchive !== false;
     if (!showArchive || bil.archived) return null;
@@ -1575,21 +1570,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
           onClick={function () { archiveBil(bil); }}
         >
           📦
-        </button>
-      </div>
-    );
-  };
-
-  const renderBilSlettBtn = (bil) => {
-    if (!kanSletteBil) return null;
-    return (
-      <div className="bil-card-footer" onClick={function (e) { e.stopPropagation(); }}>
-        <button
-          type="button"
-          className="btn btn-red btn-xs"
-          onClick={function () { slettBil(bil); }}
-        >
-          Slett
         </button>
       </div>
     );
@@ -1632,7 +1612,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             <div className="prog-bar"><div className="prog-fill" style={{ width: pst + '%' }} /></div>
           </>
         )}
-        {renderBilSlettBtn(bil)}
       </div>
     );
   };
@@ -1659,7 +1638,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
         onDrop={(e) => handleListeDrop(e, status, bil.id)}
         onClick={() => openBil(bil)}
       >
-        <div className="bil-pipeline-row-inner">
         <span className="bil-pipeline-grip" aria-hidden="true">⋮⋮</span>
         <div className="bil-pipeline-main">
           <div className="bil-pipeline-ident">
@@ -1688,8 +1666,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             {linkKal === 0 && linkHenv === 0 && <span style={{ fontSize: 11, color: 'var(--t4)' }}>—</span>}
           </div>
         </div>
-        </div>
-        {renderBilSlettBtn(bil)}
       </div>
     );
   };
@@ -1849,9 +1825,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
                   </div>
                   <div className="bil-arkiv-actions">
                     <button type="button" className="btn btn-p btn-sm" onClick={function () { openBil(bil); }}>Åpne</button>
-                    {kanSletteBil && (
-                      <button type="button" className="btn btn-red btn-sm" onClick={function () { slettBil(bil); }}>Slett</button>
-                    )}
                   </div>
                 </div>
               );
@@ -1893,9 +1866,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
                   <div className="bil-arkiv-actions">
                     <button type="button" className="btn btn-g btn-sm" onClick={() => openBil(bil)}>Åpne</button>
                     <button type="button" className="btn btn-p btn-sm" onClick={() => restoreBil(bil)}>Gjenopprett</button>
-                    {kanSletteBil && (
-                      <button type="button" className="btn btn-red btn-sm" onClick={function () { slettBil(bil); }}>Slett</button>
-                    )}
                   </div>
                 </div>
               );
@@ -2145,7 +2115,7 @@ function BilArsprovekjennemerkeTab({ bil, biler, oppdaterArsprove }) {
   );
 }
 
-function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal, kunder, biler, currentUser }) {
+function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, henv, setModal, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
   const [nyOppg, setNyOppg] = useState('');
@@ -2289,6 +2259,14 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
     }, 'Gjenopprettet til lager ✓');
     onClose();
   };
+
+  const slettBilPermanent = async () => {
+    if (!deleteBil) return;
+    const ok = await deleteBil(bil);
+    if (ok) onClose();
+  };
+
+  const kanSletteBil = canDeleteBil(currentUser);
 
   return (
     <div className="ov" onClick={onClose}>
@@ -2569,9 +2547,14 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
         )}
         </div>
 
-        <div className="modal-footer">
+        <div className="modal-footer bil-modal__footer">
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
+          {kanSletteBil && (
+            <button type="button" className="btn btn-red bil-modal__slett-btn" onClick={slettBilPermanent}>
+              Slett bil
+            </button>
+          )}
         </div>
       </div>
     </div>
