@@ -25,7 +25,8 @@ import {
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
-  ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel
+  ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
+  PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt
 } from './constants.js';
 import {
   getToken, logout,
@@ -886,6 +887,7 @@ export default function App() {
           henv={henv}
           setModal={setModal}
           kunder={kunder}
+          biler={biler}
           currentUser={user}
         />
       )}
@@ -1888,8 +1890,9 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
   );
 }
 
-function BilArsprovekjennemerkeTab({ bil, oppdaterArsprove }) {
+function BilArsprovekjennemerkeTab({ bil, biler, oppdaterArsprove }) {
   const data = normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke);
+  const valgtSkiltId = normalizeProvaskiltId(data.skiltnummer);
 
   const patch = function (next) {
     oppdaterArsprove({ ...data, ...next });
@@ -1897,10 +1900,42 @@ function BilArsprovekjennemerkeTab({ bil, oppdaterArsprove }) {
 
   return (
     <div className="bil-modal__arsprove">
+      <div className="modal-sec">Prøveskilt i bedriften</div>
+      <div className="arsprove-skilt-grid">
+        {PROVASKILT_SETT.map(function (skilt) {
+          const bruker = finnBilMedProvaskilt(biler, skilt.id, bil.id);
+          const erValgt = valgtSkiltId === skilt.id;
+          const erOpptatt = !!bruker;
+          return (
+            <button
+              type="button"
+              key={skilt.id}
+              className={`arsprove-skilt-card${erValgt ? ' is-selected' : ''}${erOpptatt && !erValgt ? ' is-opptatt' : ''}`}
+              onClick={function () {
+                if (erOpptatt && !erValgt) return;
+                patch({ skiltnummer: skilt.label });
+              }}
+              disabled={erOpptatt && !erValgt}
+            >
+              <div className="arsprove-skilt-card__nr">{skilt.label}</div>
+              <div className="arsprove-skilt-card__meta">
+                {erValgt ? (
+                  <span className="chip chip-green">Valgt på denne bilen</span>
+                ) : erOpptatt ? (
+                  <span className="chip chip-orange">På {bruker.reg}</span>
+                ) : (
+                  <span className="chip chip-green">Ledig</span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="arsprove-kommende">
         <div className="arsprove-kommende__title">Vegvesen-registrering (kommer)</div>
         <p className="arsprove-kommende__text">
-          Her kommer det snart modul for API-kobling mot Statens vegvesen for registrering og oppfølging av årsprøvekjennemerke på{' '}
+          Her kommer det snart modul for API-kobling mot Statens vegvesen for registrering av årsprøvekjennemerke på{' '}
           <strong>{bil.reg || 'bilen'}</strong>.
         </p>
         <button type="button" className="btn btn-g btn-sm" disabled title="Vegvesen API kommer snart">
@@ -1908,15 +1943,27 @@ function BilArsprovekjennemerkeTab({ bil, oppdaterArsprove }) {
         </button>
       </div>
 
-      <div className="modal-sec">Manuell registrering</div>
+      <div className="modal-sec">Registrering</div>
       <div className="form-row gap">
         <div>
-          <div className="fl">Skiltnummer</div>
-          <input
-            value={data.skiltnummer}
-            onChange={function (e) { patch({ skiltnummer: e.target.value.toUpperCase() }); }}
-            placeholder="Prøveskilt / reg.nr"
-          />
+          <div className="fl">Prøveskilt</div>
+          <select
+            value={valgtSkiltId}
+            onChange={function (e) {
+              const skilt = PROVASKILT_SETT.find(function (s) { return s.id === e.target.value; });
+              patch({ skiltnummer: skilt ? skilt.label : '' });
+            }}
+          >
+            <option value="">Velg prøveskilt…</option>
+            {PROVASKILT_SETT.map(function (s) {
+              const opptatt = finnBilMedProvaskilt(biler, s.id, bil.id);
+              return (
+                <option key={s.id} value={s.id} disabled={!!opptatt && valgtSkiltId !== s.id}>
+                  {s.label}{opptatt && valgtSkiltId !== s.id ? ` (på ${opptatt.reg})` : ''}
+                </option>
+              );
+            })}
+          </select>
         </div>
         <div>
           <div className="fl">Status</div>
@@ -1950,7 +1997,7 @@ function BilArsprovekjennemerkeTab({ bil, oppdaterArsprove }) {
   );
 }
 
-function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal, kunder, currentUser }) {
+function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModal, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
   const [nyOppg, setNyOppg] = useState('');
@@ -2290,7 +2337,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
         )}
 
         {activeTab === 'arsprove' && (
-          <BilArsprovekjennemerkeTab bil={bil} oppdaterArsprove={oppdaterArsprove} />
+          <BilArsprovekjennemerkeTab bil={bil} biler={biler} oppdaterArsprove={oppdaterArsprove} />
         )}
 
         {activeTab === 'vedlegg' && (

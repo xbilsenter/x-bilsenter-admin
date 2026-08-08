@@ -198,6 +198,13 @@ tr:hover td{background:var(--accl);}
 .bil-modal__flytt-select{width:100%;font-size:12px;font-weight:600;}
 .bil-modal__grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
 .bil-modal__arsprove{min-height:240px;}
+.arsprove-skilt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px;}
+.arsprove-skilt-card{appearance:none;border:1px solid var(--b1);border-radius:10px;background:var(--s2);padding:14px 16px;text-align:left;cursor:pointer;transition:border-color .12s ease,background .12s ease;}
+.arsprove-skilt-card:hover:not(:disabled){border-color:var(--acc);background:var(--accl);}
+.arsprove-skilt-card.is-selected{border-color:var(--acc);background:var(--accl);box-shadow:0 0 0 1px rgba(25,186,96,.25);}
+.arsprove-skilt-card.is-opptatt{opacity:.72;cursor:not-allowed;}
+.arsprove-skilt-card__nr{font-size:20px;font-weight:800;color:var(--t1);letter-spacing:.06em;margin-bottom:8px;}
+.arsprove-skilt-card__meta{display:flex;flex-wrap:wrap;gap:6px;}
 .bil-modal__vedlegg{min-height:200px;}
 .arsprove-kommende{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:14px 16px;margin-bottom:18px;}
 .arsprove-kommende__title{font-size:13px;font-weight:700;color:var(--t1);margin-bottom:6px;}

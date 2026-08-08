@@ -431,11 +431,44 @@ export const ARSPROVEKJENNEMERKE_STATUSER = [
   { id: 'utlopt', label: 'Utløpt' }
 ];
 
+/** Faste prøveskilt-sett i bedriften */
+export const PROVASKILT_SETT = [
+  { id: 'AGZ51', label: 'AGZ 51' },
+  { id: 'AJB82', label: 'AJB 82' }
+];
+
+export function normalizeProvaskiltId(value) {
+  return String(value || '').trim().toUpperCase().replace(/\s/g, '');
+}
+
+export function formatProvaskiltLabel(value) {
+  const id = normalizeProvaskiltId(value);
+  const found = PROVASKILT_SETT.find(function (s) { return s.id === id; });
+  if (found) return found.label;
+  const match = id.match(/^([A-ZÆØÅ]{2,3})(\d{1,5})$/);
+  return match ? `${match[1]} ${match[2]}` : id;
+}
+
+export function finnBilMedProvaskilt(biler, skiltId, excludeBilId) {
+  const target = normalizeProvaskiltId(skiltId);
+  if (!target) return null;
+  return (Array.isArray(biler) ? biler : []).find(function (b) {
+    if (excludeBilId != null && Number(b.id) === Number(excludeBilId)) return false;
+    const ap = normalizeBilArsprovekjennemerke(b.arsprovekjennemerke);
+    if (!ap.skiltnummer) return false;
+    if (normalizeProvaskiltId(ap.skiltnummer) !== target) return false;
+    return ap.status === 'aktiv' || ap.status === 'bestilt';
+  }) || null;
+}
+
 export function normalizeBilArsprovekjennemerke(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const status = ['ingen', 'bestilt', 'aktiv', 'utlopt'].includes(o.status) ? o.status : 'ingen';
+  const skiltRaw = String(o.skiltnummer || '').trim();
+  const skiltId = normalizeProvaskiltId(skiltRaw);
+  const known = PROVASKILT_SETT.find(function (s) { return s.id === skiltId; });
   return {
-    skiltnummer: String(o.skiltnummer || '').trim().toUpperCase(),
+    skiltnummer: known ? known.label : (skiltRaw ? formatProvaskiltLabel(skiltRaw) : ''),
     fraDato: normalizeEuKontrollDato(o.fraDato),
     tilDato: normalizeEuKontrollDato(o.tilDato),
     status: status,
