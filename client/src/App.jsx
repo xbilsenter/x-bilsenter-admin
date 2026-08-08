@@ -7388,14 +7388,24 @@ function BilAutosysTab({ bil, lagreAutosys, visTost }) {
   const displayVehicle = vehicle || getVehicleFromSvvData(bil.svvData?.vehicle);
   const fargeNavn = displayVehicle ? formatSvvFargeNavn(displayVehicle.farge) : '';
 
+  const knappTekst = laster ? 'Henter…' : (displayVehicle ? 'Oppdater oppslag' : 'Hent fra Autosys');
+  const oppdaterKnapp = (
+    <button type="button" className="btn btn-g btn-sm" onClick={hentOgLagre} disabled={laster}>
+      {knappTekst}
+    </button>
+  );
+
   return (
     <div className="bil-modal__autosys">
       <div className="bil-modal__autosys-content">
-        <div style={{ marginBottom: 16 }}>
-          <div className="modal-sec" style={{ marginBottom: 4 }}>Autosys · Statens vegvesen</div>
-          <div style={{ fontSize: 11, color: 'var(--t4)' }}>
-            Teknisk kjøretøydata lagret på {bil.reg || '—'}
+        <div className="bil-modal__autosys-hd">
+          <div>
+            <div className="modal-sec" style={{ marginBottom: 4 }}>Autosys · Statens vegvesen</div>
+            <div style={{ fontSize: 11, color: 'var(--t4)' }}>
+              Teknisk kjøretøydata lagret på {bil.reg || '—'}
+            </div>
           </div>
+          {!displayVehicle ? oppdaterKnapp : null}
         </div>
 
         {laster ? (
@@ -7410,13 +7420,13 @@ function BilAutosysTab({ bil, lagreAutosys, visTost }) {
 
         {!laster && !displayVehicle && !feil ? (
           <div style={{ fontSize: 12, color: 'var(--t4)', padding: '20px 0' }}>
-            Ingen Autosys-data er lagret for denne bilen ennå. Klikk «Hent fra Autosys» nederst for å hente og lagre data.
+            Ingen Autosys-data er lagret for denne bilen ennå. Klikk «Hent fra Autosys» for å hente og lagre data.
           </div>
         ) : null}
 
         {!laster && displayVehicle ? (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
               <NoPlate regNr={displayVehicle.regNr || bil.reg} />
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>
@@ -7426,18 +7436,21 @@ function BilAutosysTab({ bil, lagreAutosys, visTost }) {
                   {[displayVehicle.arsmodell, displayVehicle.kjoretoyGruppe || displayVehicle.kjoretoyType].filter(Boolean).join(' · ') || 'Kjøretøy funnet'}
                 </div>
               </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {(() => {
-                  const regChip = registreringsstatusChip(displayVehicle.registreringsstatus);
-                  if (!regChip) return null;
-                  return <span className={`chip ${regChip.className}`}>{regChip.label}</span>;
-                })()}
-                {fargeNavn ? (
-                  <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(fargeNavn), border: '1px solid var(--b2)' }} />
-                    {fargeNavn}
-                  </span>
-                ) : null}
+              <div className="bil-modal__autosys-meta">
+                <div className="bil-modal__autosys-chips">
+                  {(() => {
+                    const regChip = registreringsstatusChip(displayVehicle.registreringsstatus);
+                    if (!regChip) return null;
+                    return <span className={`chip ${regChip.className}`}>{regChip.label}</span>;
+                  })()}
+                  {fargeNavn ? (
+                    <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(fargeNavn), border: '1px solid var(--b2)' }} />
+                      {fargeNavn}
+                    </span>
+                  ) : null}
+                </div>
+                {oppdaterKnapp}
               </div>
             </div>
 
@@ -7460,12 +7473,6 @@ function BilAutosysTab({ bil, lagreAutosys, visTost }) {
             })}
           </>
         ) : null}
-      </div>
-
-      <div className="bil-modal__autosys-footer">
-        <button type="button" className="btn btn-g btn-sm" onClick={hentOgLagre} disabled={laster}>
-          {laster ? 'Henter…' : displayVehicle ? 'Oppdater oppslag' : 'Hent fra Autosys'}
-        </button>
       </div>
     </div>
   );
