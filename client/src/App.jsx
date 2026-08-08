@@ -8207,9 +8207,92 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
   );
 }
 
-function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, compact, collapsible, defaultOpen }) {
+function SelectListEditor({ title, desc, items, onChange, placeholder, selectLabel }) {
+  const [selectedIdx, setSelectedIdx] = useState(0);
   const [ny, setNy] = useState('');
-  const [open, setOpen] = useState(!!defaultOpen);
+
+  const safeIdx = items.length ? Math.min(selectedIdx, items.length - 1) : 0;
+
+  const endre = (idx, value) => {
+    if (items.some(function (item, i) {
+      return i !== idx && item.toLowerCase() === value.toLowerCase();
+    })) return;
+    const next = [...items];
+    next[idx] = value;
+    onChange(next);
+  };
+
+  const leggTil = () => {
+    const v = ny.trim();
+    if (!v || items.some(item => item.toLowerCase() === v.toLowerCase())) return;
+    onChange([...items, v]);
+    setSelectedIdx(items.length);
+    setNy('');
+  };
+
+  const fjern = () => {
+    if (items.length <= 1) return;
+    onChange(items.filter((_, i) => i !== safeIdx));
+    setSelectedIdx(Math.max(0, safeIdx - 1));
+  };
+
+  const flytt = (dir) => {
+    const target = safeIdx + dir;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    [next[safeIdx], next[target]] = [next[target], next[safeIdx]];
+    onChange(next);
+    setSelectedIdx(target);
+  };
+
+  return (
+    <div className="card settings-card">
+      <div className="card-h"><span className="card-ht">{title}</span></div>
+      <div className="settings-compact">
+        {desc && <p className="settings-desc">{desc}</p>}
+        <div className="fl">{selectLabel || 'Velg i listen'}</div>
+        <select
+          className="settings-select"
+          value={String(safeIdx)}
+          onChange={e => setSelectedIdx(Number(e.target.value))}
+          disabled={!items.length}
+        >
+          {items.length ? items.map(function (item, idx) {
+            return <option key={'merke-' + idx} value={idx}>{item}</option>;
+          }) : (
+            <option value="0">Ingen registrert</option>
+          )}
+        </select>
+        {items.length > 0 && (
+          <div className="settings-select-tools">
+            <input
+              className="settings-item__input"
+              value={items[safeIdx] || ''}
+              onChange={e => endre(safeIdx, e.target.value)}
+            />
+            <div className="settings-item__actions">
+              <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(-1)} disabled={safeIdx === 0}>↑</button>
+              <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(1)} disabled={safeIdx === items.length - 1}>↓</button>
+              <button type="button" className="btn btn-g btn-sm" onClick={fjern} disabled={items.length <= 1}>✕</button>
+            </div>
+          </div>
+        )}
+        <div className="settings-add">
+          <input
+            value={ny}
+            onChange={e => setNy(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && leggTil()}
+            placeholder={placeholder || 'Legg til...'}
+          />
+          <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, compact }) {
+  const [ny, setNy] = useState('');
 
   const endre = (idx, value) => {
     if (items.some(function (item, i) {
@@ -8239,21 +8322,9 @@ function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, com
 
   return (
     <div className={compact ? '' : 'card settings-card'}>
-      {!compact && collapsible ? (
-        <button
-          type="button"
-          className="settings-collapsible-hd"
-          onClick={() => setOpen(function (prev) { return !prev; })}
-          aria-expanded={open}
-        >
-          <span className="card-ht">{title}</span>
-          <span className="settings-collapsible-meta">{items.length} {items.length === 1 ? 'merke' : 'merker'}</span>
-          <span className="settings-collapsible-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
-        </button>
-      ) : !compact ? (
+      {!compact && (
         <div className="card-h"><span className="card-ht">{title}</span></div>
-      ) : null}
-      {(!collapsible || open) && (
+      )}
       <div style={{ padding: compact ? 0 : 16 }}>
         {desc && <p className="settings-desc">{desc}</p>}
         <div className="settings-list">
@@ -8282,7 +8353,6 @@ function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, com
           <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
         </div>
       </div>
-      )}
     </div>
   );
 }
@@ -8329,25 +8399,8 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
         )}
       </div>
 
-      {showBrukere && (
-        <BrukereSection currentUser={currentUser} visTost={visTost} />
-      )}
-
       {showInnstillinger && (
         <>
-          <VedlikeholdSection
-            vedlikeholdModus={draft.vedlikeholdModus}
-            onSave={lagreVedlikehold}
-            visTost={visTost}
-          />
-          <ModulOppsettSection
-            modulOppsett={draft.modulOppsett}
-            onChange={onModulOppsettChange}
-            onSave={lagreModulOppsett}
-            visTost={visTost}
-          />
-          <MailKontoerSection onStatusChange={onStatusChange} visTost={visTost} />
-          <EpostMalerSection visTost={visTost} />
           <div className="settings-grid">
         <ListEditor
           title="Ansvarlige"
@@ -8356,13 +8409,19 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           onChange={v => setList('ansatte', v)}
           placeholder="Navn på ansatt"
         />
-        <ListEditor
+        <SelectListEditor
           title="Bilmerker"
           desc="Brukes ved registrering og filtrering av biler."
           items={draft.merker}
           onChange={v => setList('merker', v)}
           placeholder="F.eks. Porsche"
-          collapsible
+          selectLabel="Velg merke"
+        />
+        <ListEditor
+          title="Kalendertyper"
+          items={draft.kalTyper}
+          onChange={v => setList('kalTyper', v)}
+          placeholder="F.eks. Møte"
         />
         <StatusListEditor
           title="Bilstatuser og farger"
@@ -8378,12 +8437,6 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           placeholder="F.eks. Klargjøring"
           defaultColors={DEFAULT_BIL_STATUS_FARGER}
           normalizeColors={normalizeBilStatusFarger}
-        />
-        <BilSjekklisterEditor
-          statuser={draft.bilStatuser || []}
-          farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
-          sjekklister={draft.bilSjekklister || DEFAULT_BIL_SJEKKLISTER}
-          onChange={v => setDraft(prev => ({ ...prev, bilSjekklister: v }))}
         />
         <StatusListEditor
           title="Henvendelsesstatuser og farger"
@@ -8411,14 +8464,36 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           defaultColors={DEFAULT_INNBYTTE_STATUS_FARGER}
           normalizeColors={normalizeInnbytteStatusFarger}
         />
-        <ListEditor
-          title="Kalendertyper"
-          items={draft.kalTyper}
-          onChange={v => setList('kalTyper', v)}
-          placeholder="F.eks. Møte"
+        <BilSjekklisterEditor
+          statuser={draft.bilStatuser || []}
+          farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
+          sjekklister={draft.bilSjekklister || DEFAULT_BIL_SJEKKLISTER}
+          onChange={v => setDraft(prev => ({ ...prev, bilSjekklister: v }))}
         />
           </div>
+
+          <div className="settings-stack">
+            <div className="settings-stack-row">
+              <VedlikeholdSection
+                vedlikeholdModus={draft.vedlikeholdModus}
+                onSave={lagreVedlikehold}
+                visTost={visTost}
+              />
+              <ModulOppsettSection
+                modulOppsett={draft.modulOppsett}
+                onChange={onModulOppsettChange}
+                onSave={lagreModulOppsett}
+                visTost={visTost}
+              />
+            </div>
+            <MailKontoerSection onStatusChange={onStatusChange} visTost={visTost} />
+            <EpostMalerSection visTost={visTost} />
+          </div>
         </>
+      )}
+
+      {showBrukere && (
+        <BrukereSection currentUser={currentUser} visTost={visTost} />
       )}
     </>
   );

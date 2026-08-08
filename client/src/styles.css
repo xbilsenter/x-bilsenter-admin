@@ -353,15 +353,17 @@ select option{background:var(--s1);}
 .inbox-behavior{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:12px 14px;margin-bottom:14px;}
 
 /* INNSTILLINGER */
-.settings-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+.settings-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px;}
 .settings-card{margin-bottom:0;}
-.settings-collapsible-hd{
-  width:100%;display:flex;align-items:center;gap:10px;padding:14px 16px;
-  background:transparent;border:0;border-bottom:1px solid var(--b1);cursor:pointer;text-align:left;
+.settings-compact{padding:16px;}
+.settings-select{
+  width:100%;padding:10px 12px;background:var(--s1);border:1px solid var(--b2);
+  border-radius:var(--radius-sm);color:var(--t1);font-family:inherit;font-size:13px;font-weight:600;
 }
-.settings-collapsible-hd .card-ht{flex:1;}
-.settings-collapsible-meta{font-size:11px;color:var(--t4);font-weight:600;}
-.settings-collapsible-chevron{font-size:12px;color:var(--t3);line-height:1;}
+.settings-select-tools{display:flex;align-items:center;gap:8px;margin-top:10px;}
+.settings-select-tools .settings-item__input{flex:1;}
+.settings-stack{display:flex;flex-direction:column;gap:12px;}
+.settings-stack-row{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
 .settings-desc{font-size:11px;color:var(--t4);line-height:1.5;margin:0 0 12px;}
 .settings-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
 .settings-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;}
@@ -373,7 +375,7 @@ select option{background:var(--s1);}
 .settings-item__actions{display:flex;gap:4px;flex-shrink:0;}
 .settings-add{display:flex;gap:8px;align-items:center;}
 .settings-add input{flex:1;}
-@media(max-width:900px){.settings-grid{grid-template-columns:1fr;}}
+@media(max-width:900px){.settings-grid,.settings-stack-row{grid-template-columns:1fr;}}
 
 .bil-links-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .bil-links-hd{font-size:11px;font-weight:700;color:var(--t2);margin-bottom:8px;}
