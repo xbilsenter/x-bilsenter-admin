@@ -59,12 +59,16 @@ export const DEFAULT_BIL_SJEKKLISTER = {
 export function normalizeSjekklisteMalItem(item) {
   if (typeof item === 'string') {
     const t = item.trim();
-    return t ? { t: t, obligatorisk: true } : null;
+    return t ? { t: t, obligatorisk: true, forhandsvalgt: false } : null;
   }
   if (item && typeof item === 'object') {
     const t = String(item.t || item.text || '').trim();
     if (!t) return null;
-    return { t: t, obligatorisk: item.obligatorisk !== false };
+    return {
+      t: t,
+      obligatorisk: item.obligatorisk !== false,
+      forhandsvalgt: !!item.forhandsvalgt
+    };
   }
   return null;
 }
@@ -135,7 +139,7 @@ export function normalizeBilSjekklister(statuser, sjekklister, legacyMal) {
 
 export function sjekklisteFraMal(mal) {
   return normalizeSjekklisteMalItems(mal).map(function (item) {
-    return { t: item.t, f: false, obligatorisk: item.obligatorisk };
+    return { t: item.t, f: !!item.forhandsvalgt, obligatorisk: item.obligatorisk };
   });
 }
 

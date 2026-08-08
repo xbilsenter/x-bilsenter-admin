@@ -8544,6 +8544,7 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
   const normalized = normalizeSjekklisteMalItems(items);
   const [ny, setNy] = useState('');
   const [nyObligatorisk, setNyObligatorisk] = useState(true);
+  const [nyForhandsvalgt, setNyForhandsvalgt] = useState(false);
 
   const setItems = (next) => onChange(normalizeSjekklisteMalItems(next));
 
@@ -8564,7 +8565,7 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
   const leggTil = () => {
     const t = ny.trim();
     if (!t || normalized.some(function (item) { return item.t.toLowerCase() === t.toLowerCase(); })) return;
-    setItems([...normalized, { t: t, obligatorisk: nyObligatorisk }]);
+    setItems([...normalized, { t: t, obligatorisk: nyObligatorisk, forhandsvalgt: nyForhandsvalgt }]);
     setNy('');
   };
 
@@ -8601,6 +8602,14 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
                   <option value="obligatorisk">Obligatorisk</option>
                   <option value="frivillig">Frivillig</option>
                 </select>
+                <label className="sjekkliste-mal-check" title="Krysses av automatisk når bilen kommer til denne statusen">
+                  <input
+                    type="checkbox"
+                    checked={!!item.forhandsvalgt}
+                    onChange={(e) => endre(idx, { forhandsvalgt: e.target.checked })}
+                  />
+                  <span>Valgt ved ankomst</span>
+                </label>
                 <div className="settings-item__actions">
                   <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
                   <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === normalized.length - 1}>↓</button>
@@ -8625,6 +8634,14 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
             <option value="obligatorisk">Obligatorisk</option>
             <option value="frivillig">Frivillig</option>
           </select>
+          <label className="sjekkliste-mal-check">
+            <input
+              type="checkbox"
+              checked={nyForhandsvalgt}
+              onChange={e => setNyForhandsvalgt(e.target.checked)}
+            />
+            <span>Valgt ved ankomst</span>
+          </label>
           <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
         </div>
       </div>
@@ -8645,7 +8662,8 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
       <div style={{ padding: 16 }}>
         <p className="settings-desc">
           Definer egne gjøremål for hver stasjon i bil-pipeline. Marker punkter som obligatoriske eller frivillige —
-          fremdrift og oppgave-telling baseres kun på obligatoriske punkter.
+          fremdrift og oppgave-telling baseres kun på obligatoriske punkter. Kryss av «Valgt ved ankomst» for punkter
+          som skal være ferdig når bilen flyttes til statusen.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {(statuser || []).map(function (status) {
