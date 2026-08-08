@@ -1,5 +1,7 @@
 'use strict';
 
+const { MERKER, normalizeMerkerList } = require('./merker');
+
 function parseJson(value, fallback) {
   if (value == null || value === '') return fallback;
   if (typeof value === 'object') return value;
@@ -76,11 +78,7 @@ const DEFAULT_INNBYTTE_STATUS_FARGER = {
 
 const DEFAULT_INNSTILLINGER = {
   ansatte: ['Waleed', 'Ahmed', 'Sara', 'Mikael', 'Lena'],
-  merker: [
-    'Audi', 'BMW', 'Chevrolet', 'Citroën', 'Dacia', 'Ford', 'Honda', 'Hyundai',
-    'Kia', 'Mazda', 'Mercedes', 'Mitsubishi', 'Nissan', 'Opel', 'Peugeot', 'Renault',
-    'Seat', 'Skoda', 'Subaru', 'Suzuki', 'Tesla', 'Toyota', 'Volkswagen', 'Volvo', 'Annet'
-  ],
+  merker: MERKER,
   bilStatuser: [
     'Innkjøpt', 'Transport', 'Klargjøring', 'Lakkering',
     'Fotografering', 'Verksted', 'Tilstandsrapport',
@@ -556,5 +554,6 @@ module.exports = {
   DEFAULT_BIL_TILSTANDSRAPPORT,
   normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE,
-  normalizeBilArsprovekjennemerke
+  normalizeBilArsprovekjennemerke,
+  normalizeMerkerList
 };

@@ -27,6 +27,7 @@ import {
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
+  buildMerkeOptions, resolveMerkeFromLists,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
@@ -932,6 +933,7 @@ export default function App() {
         <NyBilModal
           onClose={() => setModal(null)}
           lists={lists}
+          biler={biler}
           visTost={visTost}
           onSave={async (b) => {
             try {
@@ -2314,6 +2316,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
   };
 
   const kanSletteBil = canDeleteBil(currentUser);
+  const merkeOptions = buildMerkeOptions(lists.merker, biler, bil.merke);
 
   return (
     <div className="ov" onClick={onClose}>
@@ -2400,7 +2403,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                 <div>
                   <div className="fl">Merke</div>
                   <select value={bil.merke || 'Annet'} onChange={e => oppdater('merke', e.target.value)}>
-                    {lists.merker.map(m => <option key={m}>{m}</option>)}
+                    {merkeOptions.map(m => <option key={m}>{m}</option>)}
                   </select>
                 </div>
               </div>
@@ -2736,26 +2739,12 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
 }
 
 // ─── NY BIL MODAL ────────────────────────────────────────────────────────────
-function resolveMerkeFromLists(merke, merker) {
-  const normalized = String(merke || '').trim();
-  if (!normalized) return merker[0] || 'Annet';
-  const exact = merker.find(function (m) {
-    return m.toLowerCase() === normalized.toLowerCase();
-  });
-  if (exact) return exact;
-  const partial = merker.find(function (m) {
-    const a = m.toLowerCase();
-    const b = normalized.toLowerCase();
-    return a.includes(b) || b.includes(a);
-  });
-  return partial || merker[0] || 'Annet';
-}
-
 function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
   const v = vehicle || {};
+  const merker = buildMerkeOptions(lists.merker, null, v.merke || prev.merke);
   return {
     reg: v.regNr || prev.reg,
-    merke: resolveMerkeFromLists(v.merke, lists.merker),
+    merke: resolveMerkeFromLists(v.merke, merker),
     modell: v.modell || prev.modell,
     aar: Number(v.arsmodell) || prev.aar,
     farge: formatSvvFargeNavn(v.farge) || prev.farge,
@@ -2765,9 +2754,10 @@ function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
   };
 }
 
-function NyBilModal({ onClose, onSave, lists, visTost }) {
+function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
+  const merkeOptions = buildMerkeOptions(lists.merker, biler, null);
   const [f, setF] = useState({
-    reg: '', merke: lists.merker[0] || 'Annet', modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
+    reg: '', merke: merkeOptions.includes('Annet') ? 'Annet' : (merkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
     farge: '', status: lists.bilStatuser[0] || 'Innkjøpt', ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
     euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null
   });
@@ -2848,7 +2838,7 @@ function NyBilModal({ onClose, onSave, lists, visTost }) {
               </div>
             ) : null}
           </div>
-          <div><div className="fl">Merke</div><select value={f.merke} onChange={e => s('merke', e.target.value)}>{lists.merker.map(m => <option key={m}>{m}</option>)}</select></div>
+          <div><div className="fl">Merke</div><select value={f.merke} onChange={e => s('merke', e.target.value)}>{merkeOptions.map(m => <option key={m}>{m}</option>)}</select></div>
         </div>
         <div className="form-row gap">
           <div><div className="fl">Modell</div><input value={f.modell} onChange={e => s('modell', e.target.value)} /></div>

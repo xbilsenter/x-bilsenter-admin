@@ -38,7 +38,8 @@ const {
   DEFAULT_BIL_TILSTANDSRAPPORT,
   normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE,
-  normalizeBilArsprovekjennemerke
+  normalizeBilArsprovekjennemerke,
+  normalizeMerkerList
 } = require('./db-shared');
 
 const dbDriver = require('./database');
@@ -631,7 +632,7 @@ async function getInnstillinger() {
   return {
     vedlikeholdModus: normalizeVedlikeholdModus(parseJson(byKey.vedlikehold_modus, DEFAULT_VEDLIKEHOLD)),
     ansatte: parseJson(byKey.ansatte, DEFAULT_INNSTILLINGER.ansatte),
-    merker: parseJson(byKey.merker, DEFAULT_INNSTILLINGER.merker),
+    merker: normalizeMerkerList(parseJson(byKey.merker, null), DEFAULT_INNSTILLINGER.merker),
     bilStatuser,
     bilStatusFarger: normalizeBilStatusFarger(
       bilStatuser,

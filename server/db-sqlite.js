@@ -3,7 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
-const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE } = require('./db-shared');
+const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeMerkerList } = require('./db-shared');
+const { MERKER } = require('./merker');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_PATH = path.join(DATA_DIR, 'xbilsenter.db');
@@ -888,11 +889,7 @@ function setMailKontoLastSync(id, iso) {
 
 const DEFAULT_INNSTILLINGER = {
   ansatte: ['Waleed', 'Ahmed', 'Sara', 'Mikael', 'Lena'],
-  merker: [
-    'Audi', 'BMW', 'Chevrolet', 'Citroën', 'Dacia', 'Ford', 'Honda', 'Hyundai',
-    'Kia', 'Mazda', 'Mercedes', 'Mitsubishi', 'Nissan', 'Opel', 'Peugeot', 'Renault',
-    'Seat', 'Skoda', 'Subaru', 'Suzuki', 'Tesla', 'Toyota', 'Volkswagen', 'Volvo', 'Annet'
-  ],
+  merker: MERKER,
   bilStatuser: [
     'Innkjøpt', 'Transport', 'Klargjøring', 'Lakkering',
     'Fotografering', 'Verksted', 'Tilstandsrapport',
@@ -948,7 +945,7 @@ function getInnstillinger() {
 
   return {
     ansatte: parseJson(byKey.ansatte, DEFAULT_INNSTILLINGER.ansatte),
-    merker: parseJson(byKey.merker, DEFAULT_INNSTILLINGER.merker),
+    merker: normalizeMerkerList(parseJson(byKey.merker, null), DEFAULT_INNSTILLINGER.merker),
     bilStatuser: parseJson(byKey.bil_statuser, DEFAULT_INNSTILLINGER.bilStatuser),
     henvStatuser: parseJson(byKey.henv_statuser, DEFAULT_INNSTILLINGER.henvStatuser),
     innbytteStatuser: parseJson(byKey.innbytte_statuser, DEFAULT_INNSTILLINGER.innbytteStatuser),
