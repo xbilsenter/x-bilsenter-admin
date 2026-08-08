@@ -232,11 +232,11 @@ function normalizeInnbytteStatusFarger(statuser, farger) {
 
 function normalizeSjekklisteMalItem(item) {
   if (typeof item === 'string') {
-    const t = item.trim();
+    const t = item.replace(/^\s+|\s+$/g, '');
     return t ? { t: t, obligatorisk: true, forhandsvalgt: false } : null;
   }
   if (item && typeof item === 'object') {
-    const t = String(item.t || item.text || '').trim();
+    const t = String(item.t ?? item.text ?? '').replace(/^\s+|\s+$/g, '');
     if (!t) return null;
     return {
       t: t,

@@ -413,12 +413,19 @@ select option{background:var(--s1);}
 .settings-item__actions{display:flex;gap:4px;flex-shrink:0;}
 .settings-add{display:flex;gap:8px;align-items:center;}
 .settings-add input{flex:1;}
-.sjekkliste-mal-row{align-items:center;flex-wrap:wrap;}
+.sjekkliste-mal-list{gap:10px;}
+.sjekkliste-mal-item{display:flex;flex-direction:column;gap:8px;padding:10px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;}
+.sjekkliste-mal-item__text{
+  width:100%;padding:8px 10px;background:var(--s1);border:1px solid var(--b2);
+  border-radius:var(--radius-sm);color:var(--t1);font-family:inherit;font-size:12px;font-weight:700;
+}
+.sjekkliste-mal-item__meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .sjekkliste-mal-type{min-width:118px;font-size:11px;font-weight:600;}
 .sjekkliste-mal-check{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t3);white-space:nowrap;cursor:pointer;user-select:none;}
 .sjekkliste-mal-check input{margin:0;cursor:pointer;}
-.sjekkliste-mal-add{align-items:center;flex-wrap:wrap;}
-.sjekkliste-mal-add input{min-width:180px;}
+.sjekkliste-mal-add{display:flex;flex-direction:column;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--b2);}
+.sjekkliste-status-list{display:flex;flex-direction:column;gap:16px;}
+.sjekkliste-status-block{border:1px solid var(--b2);border-radius:9px;overflow:hidden;}
 @media(max-width:900px){.settings-grid,.settings-stack-row{grid-template-columns:1fr;}}
 
 .bil-links-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}

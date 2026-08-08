@@ -8546,24 +8546,26 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
   const [nyObligatorisk, setNyObligatorisk] = useState(true);
   const [nyForhandsvalgt, setNyForhandsvalgt] = useState(false);
 
-  const setItems = (next) => onChange(normalizeSjekklisteMalItems(next));
+  const setItems = (next, shouldNormalize) => {
+    onChange(shouldNormalize === false ? next : normalizeSjekklisteMalItems(next));
+  };
 
-  const endre = (idx, patch) => {
+  const endre = (idx, patch, shouldNormalize) => {
     const next = normalized.map(function (item, i) {
       return i === idx ? { ...item, ...patch } : item;
     });
-    setItems(next);
+    setItems(next, shouldNormalize);
   };
 
   const endreTekst = (idx, value) => {
     if (normalized.some(function (item, i) {
-      return i !== idx && item.t.toLowerCase() === value.toLowerCase();
+      return i !== idx && item.t.replace(/^\s+|\s+$/g, '').toLowerCase() === value.replace(/^\s+|\s+$/g, '').toLowerCase();
     })) return;
-    endre(idx, { t: value });
+    endre(idx, { t: value }, false);
   };
 
   const leggTil = () => {
-    const t = ny.trim();
+    const t = ny.replace(/^\s+|\s+$/g, '');
     if (!t || normalized.some(function (item) { return item.t.toLowerCase() === t.toLowerCase(); })) return;
     setItems([...normalized, { t: t, obligatorisk: nyObligatorisk, forhandsvalgt: nyForhandsvalgt }]);
     setNy('');
@@ -8585,35 +8587,39 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
         <div className="card-h"><span className="card-ht">Sjekkliste</span></div>
       )}
       <div style={{ padding: compact ? 0 : 16 }}>
-        <div className="settings-list">
+        <div className="settings-list sjekkliste-mal-list">
           {normalized.map(function (item, idx) {
             return (
-              <div className="settings-item sjekkliste-mal-row" key={'sjekk-mal-' + idx}>
+              <div className="sjekkliste-mal-item" key={'sjekk-mal-' + idx}>
                 <input
-                  className="settings-item__input"
+                  className="sjekkliste-mal-item__text"
                   value={item.t}
                   onChange={(e) => endreTekst(idx, e.target.value)}
+                  onBlur={(e) => endre(idx, { t: e.target.value.replace(/^\s+|\s+$/g, '') })}
+                  placeholder="F.eks. Vasket innvendig"
                 />
-                <select
-                  className="sjekkliste-mal-type"
-                  value={item.obligatorisk ? 'obligatorisk' : 'frivillig'}
-                  onChange={(e) => endre(idx, { obligatorisk: e.target.value === 'obligatorisk' })}
-                >
-                  <option value="obligatorisk">Obligatorisk</option>
-                  <option value="frivillig">Frivillig</option>
-                </select>
-                <label className="sjekkliste-mal-check" title="Krysses av automatisk når bilen kommer til denne statusen">
-                  <input
-                    type="checkbox"
-                    checked={!!item.forhandsvalgt}
-                    onChange={(e) => endre(idx, { forhandsvalgt: e.target.checked })}
-                  />
-                  <span>Valgt ved ankomst</span>
-                </label>
-                <div className="settings-item__actions">
-                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
-                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === normalized.length - 1}>↓</button>
-                  <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={!allowEmpty && normalized.length <= 1}>✕</button>
+                <div className="sjekkliste-mal-item__meta">
+                  <select
+                    className="sjekkliste-mal-type"
+                    value={item.obligatorisk ? 'obligatorisk' : 'frivillig'}
+                    onChange={(e) => endre(idx, { obligatorisk: e.target.value === 'obligatorisk' })}
+                  >
+                    <option value="obligatorisk">Obligatorisk</option>
+                    <option value="frivillig">Frivillig</option>
+                  </select>
+                  <label className="sjekkliste-mal-check" title="Krysses av automatisk når bilen kommer til denne statusen">
+                    <input
+                      type="checkbox"
+                      checked={!!item.forhandsvalgt}
+                      onChange={(e) => endre(idx, { forhandsvalgt: e.target.checked })}
+                    />
+                    <span>Valgt ved ankomst</span>
+                  </label>
+                  <div className="settings-item__actions">
+                    <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
+                    <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === normalized.length - 1}>↓</button>
+                    <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={!allowEmpty && normalized.length <= 1}>✕</button>
+                  </div>
                 </div>
               </div>
             );
@@ -8621,28 +8627,31 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
         </div>
         <div className="settings-add sjekkliste-mal-add">
           <input
+            className="sjekkliste-mal-item__text"
             value={ny}
             onChange={e => setNy(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && leggTil()}
             placeholder={placeholder || 'Legg til punkt...'}
           />
-          <select
-            className="sjekkliste-mal-type"
-            value={nyObligatorisk ? 'obligatorisk' : 'frivillig'}
-            onChange={e => setNyObligatorisk(e.target.value === 'obligatorisk')}
-          >
-            <option value="obligatorisk">Obligatorisk</option>
-            <option value="frivillig">Frivillig</option>
-          </select>
-          <label className="sjekkliste-mal-check">
-            <input
-              type="checkbox"
-              checked={nyForhandsvalgt}
-              onChange={e => setNyForhandsvalgt(e.target.checked)}
-            />
-            <span>Valgt ved ankomst</span>
-          </label>
-          <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
+          <div className="sjekkliste-mal-item__meta">
+            <select
+              className="sjekkliste-mal-type"
+              value={nyObligatorisk ? 'obligatorisk' : 'frivillig'}
+              onChange={e => setNyObligatorisk(e.target.value === 'obligatorisk')}
+            >
+              <option value="obligatorisk">Obligatorisk</option>
+              <option value="frivillig">Frivillig</option>
+            </select>
+            <label className="sjekkliste-mal-check">
+              <input
+                type="checkbox"
+                checked={nyForhandsvalgt}
+                onChange={e => setNyForhandsvalgt(e.target.checked)}
+              />
+              <span>Valgt ved ankomst</span>
+            </label>
+            <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
+          </div>
         </div>
       </div>
     </div>
@@ -8665,14 +8674,14 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
           fremdrift og oppgave-telling baseres kun på obligatoriske punkter. Kryss av «Valgt ved ankomst» for punkter
           som skal være ferdig når bilen flyttes til statusen.
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="sjekkliste-status-list">
           {(statuser || []).map(function (status) {
             const items = normalizeSjekklisteMalItems(sjekklister?.[status] || []);
             const open = openStatus === status;
             const color = (farger && farger[status]) || '#6B7280';
             const obligCount = items.filter(function (item) { return item.obligatorisk; }).length;
             return (
-              <div key={status} style={{ border: '1px solid var(--b2)', borderRadius: 9, overflow: 'hidden' }}>
+              <div key={status} className="sjekkliste-status-block">
                 <button
                   type="button"
                   onClick={() => setOpenStatus(open ? null : status)}
