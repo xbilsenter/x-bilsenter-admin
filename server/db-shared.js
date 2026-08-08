@@ -401,7 +401,7 @@ function jsonStringify(value) {
 const DEFAULT_BIL_TILSTANDSRAPPORT = {
   medfolger: false,
   nybilgaranti: false,
-  status: null
+  status: 'ikke_utfort'
 };
 
 function normalizeBilTilstandsrapport(raw) {

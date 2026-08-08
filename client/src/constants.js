@@ -358,7 +358,7 @@ export function normalizeBilOkonomi(raw) {
 export const DEFAULT_BIL_TILSTANDSRAPPORT = {
   medfolger: false,
   nybilgaranti: false,
-  status: null
+  status: 'ikke_utfort'
 };
 
 export function normalizeBilTilstandsrapport(raw) {
