@@ -194,6 +194,8 @@ tr:hover td{background:var(--accl);}
 .modal.xl.bil-modal{width:1040px;max-height:92vh;overflow-y:auto;display:flex;flex-direction:column;}
 .modal.xl{width:960px;}
 .bil-modal__header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;gap:12px;}
+.bil-modal__flytt{min-width:168px;flex-shrink:0;}
+.bil-modal__flytt-select{width:100%;font-size:12px;font-weight:600;}
 .bil-modal__grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
 .bil-modal__vedlegg{min-height:200px;}
 .bil-modal__autosys{min-height:240px;}

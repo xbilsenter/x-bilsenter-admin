@@ -1996,11 +1996,9 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
   const f = list.filter(s => s.f).length;
   const t = list.length;
 
-  const nesteStatus = () => {
-    const idx = lists.bilStatuser.indexOf(bil.status);
-    if (idx < lists.bilStatuser.length - 1) {
-      oppdater('status', lists.bilStatuser[idx + 1], `Flyttet til ${lists.bilStatuser[idx + 1]} ✓`);
-    }
+  const flyttTilStatus = (nextStatus) => {
+    if (!nextStatus || nextStatus === bil.status) return;
+    oppdater('status', nextStatus, `Flyttet til ${nextStatus} ✓`);
   };
 
   const arkiver = () => {
@@ -2051,10 +2049,19 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
             </div>
           </div>
-          {bil.status !== 'Solgt' && bil.status !== 'Etteroppfølging' && !bil.archived && (
-            <button type="button" className="btn btn-p btn-sm" onClick={nesteStatus}>
-              → {lists.bilStatuser[lists.bilStatuser.indexOf(bil.status) + 1]}
-            </button>
+          {!bil.archived && (
+            <div className="bil-modal__flytt">
+              <div className="fl">Flytt bil</div>
+              <select
+                className="bil-modal__flytt-select"
+                value={bil.status}
+                onChange={function (e) { flyttTilStatus(e.target.value); }}
+              >
+                {lists.bilStatuser.map(function (s) {
+                  return <option key={s} value={s}>{s}</option>;
+                })}
+              </select>
+            </div>
           )}
         </div>
 
@@ -2124,10 +2131,6 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 onChange={function (ids) { oppdater('kundeIds', ids, 'Kunder oppdatert ✓'); }}
               />
               <div className="gap">
-                <div className="fl">Frist</div>
-                <input type="date" value={bil.frist || ''} onChange={e => oppdater('frist', e.target.value)} />
-              </div>
-              <div className="gap">
                 <div className="fl">Notater</div>
                 <textarea rows={3} value={bil.notater || ''} onChange={e => oppdater('notater', e.target.value)} />
               </div>
@@ -2140,10 +2143,6 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               <div className="gap">
                 <div className="fl">Utstyr / ekstra info</div>
                 <textarea rows={3} value={bil.utstyr || ''} onChange={e => oppdater('utstyr', e.target.value)} placeholder="Utstyrspakke, hengerfeste, vinterdekk medfølger…" />
-              </div>
-              <div className="gap">
-                <div className="fl">Intern info</div>
-                <textarea rows={3} value={bil.internInfo || ''} onChange={e => oppdater('internInfo', e.target.value)} placeholder="Kun internt — synlig for teamet" />
               </div>
 
               <InternKommentarerSeksjon
