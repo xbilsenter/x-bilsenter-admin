@@ -390,6 +390,29 @@ export function formatEuKontrollVisning(value) {
   return `${parts[2]}.${parts[1]}.${parts[0]}`;
 }
 
+/** Måneder igjen til EU-frist (kalender, Europe/Oslo). Negativ = passert. */
+export function euKontrollManederIgjen(value) {
+  const iso = normalizeEuKontrollDato(value);
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+
+  const todayIso = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' });
+  const [ty, tm, td] = todayIso.split('-').map(Number);
+  const [ey, em, ed] = iso.split('-').map(Number);
+
+  let months = (ey - ty) * 12 + (em - tm);
+  if (ed < td) months -= 1;
+  return months;
+}
+
+/** Grønn >15 mnd, oransje 3–15 mnd, rød <3 mnd (eller passert). */
+export function euKontrollChipClass(value) {
+  const months = euKontrollManederIgjen(value);
+  if (months == null) return 'chip-gray';
+  if (months < 3) return 'chip-red';
+  if (months > 15) return 'chip-green';
+  return 'chip-orange';
+}
+
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
   const inn = Number(innkjop) || 0;

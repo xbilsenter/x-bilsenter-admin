@@ -22,7 +22,7 @@ import {
   getSavedBilerSection, saveBilerSection,
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
   ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
-  normalizeEuKontrollDato, formatEuKontrollVisning,
+  normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport
 } from './constants.js';
 import {
@@ -2032,7 +2032,11 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Badge s={bil.status} />
               {bil.archived && <span className="chip chip-gray">Arkivert</span>}
-              {bil.euKontroll && <span className="chip chip-orange">Neste EU-kontroll: {formatEuKontrollVisning(bil.euKontroll)}</span>}
+              {bil.euKontroll && (
+                <span className={`chip ${euKontrollChipClass(bil.euKontroll)}`}>
+                  Neste EU-kontroll: {formatEuKontrollVisning(bil.euKontroll)}
+                </span>
+              )}
               {normalizeBilTilstandsrapport(bil.tilstandsrapport).status !== 'utfort' && (
                 <span className="chip chip-red">Tilstandsrapport: Ikke utført</span>
               )}
