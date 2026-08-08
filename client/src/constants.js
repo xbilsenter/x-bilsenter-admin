@@ -381,6 +381,19 @@ export function canAccess(user, permission) {
   return (user.permissions || []).includes(permission);
 }
 
+const LEGACY_ROLE_ALIASES = { Admin: 'Daglig leder', Regnskap: 'Innkjøpssjef' };
+
+export function resolveRoleKey(role) {
+  const key = String(role || '').trim();
+  return LEGACY_ROLE_ALIASES[key] || key;
+}
+
+export function canDeleteBil(user) {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  return resolveRoleKey(user.role) === 'Innkjøpssjef';
+}
+
 export const AUKSJON_PLATTFORMER = [
   'Rebil',
   'AYVENS',

@@ -140,8 +140,15 @@ tr:hover td{background:var(--accl);}
 .bil-arkiv-main{flex:1;min-width:0;}
 .bil-arkiv-actions{display:flex;gap:6px;flex-shrink:0;}
 .bil-archive-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 6px;opacity:.45;border-radius:4px;line-height:1;}
-.bil-card:hover .bil-archive-btn,.bil-pipeline-row:hover .bil-archive-btn{opacity:1;}
-.bil-archive-btn:hover{background:var(--s3);opacity:1;}
+.bil-delete-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 6px;opacity:.45;border-radius:4px;line-height:1;}
+.bil-card-actions{display:flex;gap:2px;align-items:center;}
+.bil-card:hover .bil-archive-btn,.bil-pipeline-row:hover .bil-archive-btn,
+.bil-card:hover .bil-delete-btn,.bil-pipeline-row:hover .bil-delete-btn{opacity:1;}
+.bil-archive-btn:hover,.bil-delete-btn:hover{background:var(--s3);opacity:1;}
+.bil-slettelog-table-wrap{overflow:auto;}
+.bil-slettelog-table{width:100%;border-collapse:collapse;font-size:12px;}
+.bil-slettelog-table th,.bil-slettelog-table td{padding:8px 10px;border-bottom:1px solid var(--b1);text-align:left;vertical-align:top;}
+.bil-slettelog-table th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);}
 .bil-pipeline-grip{color:var(--t4);font-size:14px;line-height:1;flex-shrink:0;cursor:grab;}
 .bil-pipeline-main{flex:1;min-width:0;display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(120px,1fr) 90px 90px 120px 90px;gap:10px;align-items:center;}
 .bil-pipeline-ident{min-width:0;}

@@ -215,6 +215,7 @@ function initDb() {
   migrateInnkjopskalkyleAutosys();
   migrateInnkjopskalkyleUpdatedBy();
   migrateBilSchemaExtensions();
+  migrateBilSlettinger();
 }
 
 function normalizeModulOppsett(list) {
@@ -285,6 +286,24 @@ function migrateBilSchemaExtensions() {
   columns.forEach(function (sql) {
     try { db.exec(sql); } catch { /* column exists */ }
   });
+}
+
+function migrateBilSlettinger() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bil_slettinger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bil_id INTEGER,
+      reg TEXT NOT NULL,
+      merke TEXT DEFAULT '',
+      modell TEXT DEFAULT '',
+      status TEXT DEFAULT '',
+      slettet_av_id INTEGER,
+      slettet_av_navn TEXT NOT NULL,
+      slettet_av_rolle TEXT DEFAULT '',
+      slettet_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_bil_slettinger_at ON bil_slettinger(slettet_at DESC);
+  `);
 }
 
 function migrateModulOppsett() {

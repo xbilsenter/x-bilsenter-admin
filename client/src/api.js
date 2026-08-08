@@ -206,6 +206,14 @@ export function patchBil(id, body) {
   });
 }
 
+export function deleteBil(id) {
+  return request(`/biler/${id}`, { method: 'DELETE' });
+}
+
+export function getBilSlettelog() {
+  return request('/biler/slettelog');
+}
+
 export function reorderBiler(updates) {
   return request('/biler/reorder', {
     method: 'POST',

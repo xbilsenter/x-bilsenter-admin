@@ -165,6 +165,12 @@ function resolveRoleTemplate(role) {
   return ROLE_TEMPLATES[resolveRoleKey(role)] || ROLE_TEMPLATES.Selger;
 }
 
+function canDeleteBil(user) {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  return resolveRoleKey(user.role) === 'Innkjøpssjef';
+}
+
 function normalizeModulOppsett(list) {
   const defaults = DEFAULT_INNSTILLINGER.modulOppsett;
   const defaultById = {};
@@ -527,6 +533,7 @@ module.exports = {
   LEGACY_ROLE_ALIASES,
   resolveRoleKey,
   resolveRoleTemplate,
+  canDeleteBil,
   normalizeModulOppsett,
   normalizeVedlikeholdModus,
   normalizeBilStatusFarger,

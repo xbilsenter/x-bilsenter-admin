@@ -192,11 +192,30 @@ function withInitTimeout(promise, ms) {
   ]);
 }
 
+async function ensureBilSlettingerSchema() {
+  await execAsync(`
+    CREATE TABLE IF NOT EXISTS public.bil_slettinger (
+      id BIGSERIAL PRIMARY KEY,
+      bil_id BIGINT,
+      reg TEXT NOT NULL,
+      merke TEXT DEFAULT '',
+      modell TEXT DEFAULT '',
+      status TEXT DEFAULT '',
+      slettet_av_id BIGINT,
+      slettet_av_navn TEXT NOT NULL,
+      slettet_av_rolle TEXT DEFAULT '',
+      slettet_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_bil_slettinger_at ON public.bil_slettinger (slettet_at DESC);
+  `);
+}
+
 const dbReady = withInitTimeout(
   ensureMailFoldersSchema()
     .then(function () { return ensureSelgBilSchema(); })
     .then(function () { return ensureInnkjopskalkyleSchema(); })
     .then(function () { return ensureBilSchemaExtensions(); })
+    .then(function () { return ensureBilSlettingerSchema(); })
     .then(function () { return syncPostgresSequences(); })
     .then(function () { return ensureDefaultAdminUser(); }),
   Number(process.env.DB_INIT_TIMEOUT_MS || 15000)

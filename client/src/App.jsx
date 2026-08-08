@@ -10,7 +10,7 @@ import {
   openFinnMarkedsSok
 } from './finnMarkedssok.js';
 import {
-  DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, displayRole,
+  DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, canDeleteBil, displayRole,
   canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch,
   normalizeHenvStatusFarger, normalizeBilStatusFarger, DEFAULT_HENV_STATUS_FARGER,
   DEFAULT_INNBYTTE_STATUS_FARGER, normalizeInnbytteStatusFarger,
@@ -37,7 +37,7 @@ import {
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
-  getBiler, postBil, patchBil, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
+  getBiler, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
   getKalender, postKalender, patchKalender, deleteKalender,
   getInnkjopskalkyle,
   lookupKjoretoy, getInnstillinger, getLister, patchInnstillinger,
@@ -540,6 +540,25 @@ export default function App() {
     }
   };
 
+  const deleteBilItem = async (bil) => {
+    if (!bil?.id) return false;
+    if (!window.confirm(`Slette ${bil.reg} permanent?\n\nBilen fjernes helt fra systemet og kan ikke gjenopprettes.`)) return false;
+    try {
+      await deleteBilApi(bil.id);
+      setBiler(function (prev) { return prev.filter(function (b) { return b.id !== bil.id; }); });
+      setModal(function (prev) {
+        if (prev?.t === 'visBil' && prev.d?.id === bil.id) return null;
+        return prev;
+      });
+      visTost(`${bil.reg} slettet ✓`);
+      refreshStats();
+      return true;
+    } catch (err) {
+      visTost(err?.message || 'Kunne ikke slette bil ✗');
+      return false;
+    }
+  };
+
   const updateHenv = async (id, patch, localMsg) => {
     setHenv(prev => prev.map(h => h.id === id ? { ...h, ...patch } : h));
     try {
@@ -782,7 +801,18 @@ export default function App() {
             />
           )}
           {tab === 'biler' && (
-            <BilerView biler={biler} setModal={setModal} lists={lists} kal={kal} henv={henv} updateBil={updateBil} reorderBiler={reorderBiler} kunder={kunder} />
+            <BilerView
+              biler={biler}
+              setModal={setModal}
+              lists={lists}
+              kal={kal}
+              henv={henv}
+              updateBil={updateBil}
+              reorderBiler={reorderBiler}
+              kunder={kunder}
+              currentUser={user}
+              deleteBil={deleteBilItem}
+            />
           )}
           {tab === 'kunder' && (
             <KunderView
@@ -1322,7 +1352,79 @@ function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte
 }
 
 // ─── BILER VIEW ──────────────────────────────────────────────────────────────
-function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler }) {
+function BilSlettelogPanel() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(function () {
+    let cancelled = false;
+    setLoading(true);
+    getBilSlettelog()
+      .then(function (res) {
+        if (!cancelled) setItems(res.items || []);
+      })
+      .catch(function () {
+        if (!cancelled) setItems([]);
+      })
+      .finally(function () {
+        if (!cancelled) setLoading(false);
+      });
+    return function () { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="card bil-slettelog" style={{ marginBottom: 12 }}>
+      <div className="card-h">
+        <span className="card-ht">Slettelog for biler</span>
+        <span style={{ fontSize: 11, color: 'var(--t3)' }}>Kun synlig for daglig leder/admin</span>
+      </div>
+      <div style={{ padding: '12px 14px' }}>
+        {loading ? (
+          <div style={{ fontSize: 12, color: 'var(--t3)' }}>Laster slettelog…</div>
+        ) : items.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--t3)' }}>Ingen slettede biler er loggført ennå.</div>
+        ) : (
+          <div className="bil-slettelog-table-wrap">
+            <table className="bil-slettelog-table">
+              <thead>
+                <tr>
+                  <th>Tidspunkt</th>
+                  <th>Bil</th>
+                  <th>Status</th>
+                  <th>Slettet av</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(function (row) {
+                  const tid = row.slettetAt
+                    ? new Date(row.slettetAt).toLocaleString('nb-NO', {
+                      timeZone: NORSK_TIDSSONE,
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                    : '—';
+                  return (
+                    <tr key={row.id}>
+                      <td>{tid}</td>
+                      <td><strong>{row.reg}</strong> · {row.merke} {row.modell}</td>
+                      <td>{row.status || '—'}</td>
+                      <td>{row.slettetAvNavn}{row.slettetAvRolle ? ` (${displayRole(row.slettetAvRolle)})` : ''}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler, currentUser, deleteBil }) {
   const [mFilter, setMFilter] = useState('Alle');
   const [sFilter, setSFilter] = useState('Alle');
   const [search, setSearch] = useState('');
@@ -1359,6 +1461,8 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
     ? biler.filter(function (b) { return bilMatchesSearch(b, searchQuery); })
     : [];
   const searchActive = searchQuery.length > 0;
+  const kanSletteBil = canDeleteBil(currentUser);
+  const [visSlettelog, setVisSlettelog] = useState(false);
 
   useEffect(function () {
     if (mFilter !== 'Alle' && !merker.includes(mFilter)) setMFilter('Alle');
@@ -1453,6 +1557,38 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
     setModal({ t: 'visBil', d: bil });
   };
 
+  const slettBil = (bil) => {
+    deleteBil(bil);
+  };
+
+  const renderBilActionBtns = (bil, opts) => {
+    const showArchive = opts?.showArchive !== false;
+    return (
+      <div className="bil-card-actions" onClick={function (e) { e.stopPropagation(); }}>
+        {kanSletteBil && (
+          <button
+            type="button"
+            className="bil-delete-btn"
+            title="Slett bil permanent"
+            onClick={function () { slettBil(bil); }}
+          >
+            🗑
+          </button>
+        )}
+        {showArchive && !bil.archived && (
+          <button
+            type="button"
+            className="bil-archive-btn"
+            title="Arkiver bil"
+            onClick={function () { archiveBil(bil); }}
+          >
+            📦
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const renderBilKanbanCard = (bil) => {
     const list = getAktivSjekkliste(bil);
     const prog = calcSjekklisteFremdrift(list);
@@ -1470,14 +1606,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
           <div className="bil-reg">{bil.reg}</div>
-          <button
-            type="button"
-            className="bil-archive-btn"
-            title="Arkiver bil"
-            onClick={(e) => { e.stopPropagation(); archiveBil(bil); }}
-          >
-            📦
-          </button>
+          {renderBilActionBtns(bil)}
         </div>
         <div className="bil-name">{bil.merke} {bil.modell}</div>
         <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {bil.farge}</div>
@@ -1528,14 +1657,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
           <div className="bil-pipeline-ident">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div className="bil-reg">{bil.reg}</div>
-              <button
-                type="button"
-                className="bil-archive-btn"
-                title="Arkiver bil"
-                onClick={(e) => { e.stopPropagation(); archiveBil(bil); }}
-              >
-                📦
-              </button>
+              {renderBilActionBtns(bil)}
             </div>
             <div className="bil-name">{bil.merke} {bil.modell}</div>
           </div>
@@ -1573,7 +1695,17 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
               : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
+        {currentUser?.isAdmin && (
+          <button
+            type="button"
+            className="btn btn-g btn-sm"
+            onClick={function () { setVisSlettelog(function (v) { return !v; }); }}
+          >
+            {visSlettelog ? 'Skjul slettelog' : 'Slettelog'}
+          </button>
+        )}
       </div>
+      {currentUser?.isAdmin && visSlettelog && <BilSlettelogPanel />}
       <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
         <div className="fl">Søk i alle biler</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1707,6 +1839,9 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
                   </div>
                   <div className="bil-arkiv-actions">
                     <button type="button" className="btn btn-p btn-sm" onClick={function () { openBil(bil); }}>Åpne</button>
+                    {kanSletteBil && (
+                      <button type="button" className="btn btn-red btn-sm" onClick={function () { slettBil(bil); }}>Slett</button>
+                    )}
                   </div>
                 </div>
               );
@@ -1748,6 +1883,9 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
                   <div className="bil-arkiv-actions">
                     <button type="button" className="btn btn-g btn-sm" onClick={() => openBil(bil)}>Åpne</button>
                     <button type="button" className="btn btn-p btn-sm" onClick={() => restoreBil(bil)}>Gjenopprett</button>
+                    {kanSletteBil && (
+                      <button type="button" className="btn btn-red btn-sm" onClick={function () { slettBil(bil); }}>Slett</button>
+                    )}
                   </div>
                 </div>
               );

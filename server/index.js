@@ -81,6 +81,7 @@ const {
   normalizeBilArsprovekjennemerke,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
+const { canDeleteBil, resolveRoleKey } = require('./db-shared');
 
 const {
   lookupVehicleFull,
@@ -2094,6 +2095,84 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
   });
 
   res.json({ ok: true, item: mapBil(await prepare('SELECT * FROM biler WHERE id = ?').get(id)) });
+});
+
+app.get('/api/biler/slettelog', requireAuth, async function (req, res) {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ ok: false, error: 'Kun daglig leder/admin har tilgang til sletteloggen.' });
+  }
+  try {
+    const rows = await prepare(`
+      SELECT id, bil_id, reg, merke, modell, status, slettet_av_id, slettet_av_navn, slettet_av_rolle, slettet_at
+      FROM bil_slettinger
+      ORDER BY slettet_at DESC
+      LIMIT 200
+    `).all();
+    res.json({
+      ok: true,
+      items: rows.map(function (row) {
+        return {
+          id: row.id,
+          bilId: row.bil_id,
+          reg: row.reg,
+          merke: row.merke,
+          modell: row.modell,
+          status: row.status,
+          slettetAvId: row.slettet_av_id,
+          slettetAvNavn: row.slettet_av_navn,
+          slettetAvRolle: row.slettet_av_rolle,
+          slettetAt: row.slettet_at
+        };
+      })
+    });
+  } catch (err) {
+    console.error('GET /api/biler/slettelog feilet:', err.message);
+    res.status(500).json({ ok: false, error: 'Kunne ikke hente slettelog.' });
+  }
+});
+
+app.delete('/api/biler/:id', requireAuth, async function (req, res) {
+  if (!canDeleteBil(req.user)) {
+    return res.status(403).json({ ok: false, error: 'Kun daglig leder og innkjøpssjef kan slette biler.' });
+  }
+
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+
+  const row = await prepare('SELECT * FROM biler WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Bilen finnes ikke.' });
+
+  try {
+    const ansvarlig = await getAnsvarligNavn(req);
+    const slettetAvRolle = resolveRoleKey(req.user?.role || '');
+
+    await prepare(`
+      INSERT INTO bil_slettinger (bil_id, reg, merke, modell, status, slettet_av_id, slettet_av_navn, slettet_av_rolle, slettet_at)
+      VALUES (@bilId, @reg, @merke, @modell, @status, @slettetAvId, @slettetAvNavn, @slettetAvRolle, datetime('now'))
+    `).run({
+      bilId: id,
+      reg: row.reg || '',
+      merke: row.merke || '',
+      modell: row.modell || '',
+      status: row.status || '',
+      slettetAvId: req.user?.sub || null,
+      slettetAvNavn: ansvarlig || req.user?.username || 'Ukjent',
+      slettetAvRolle: slettetAvRolle
+    });
+
+    await cleanupRemovedUploadFiles(parseJson(row.dokumenter, []), []);
+    try {
+      await prepare('DELETE FROM bil_kunder WHERE bil_id = ?').run(id);
+    } catch (_err) {
+      /* bil_kunder finnes kun i Postgres/Supabase-oppsett */
+    }
+    await prepare('DELETE FROM biler WHERE id = ?').run(id);
+
+    res.json({ ok: true, id: id, reg: row.reg });
+  } catch (err) {
+    console.error('DELETE /api/biler/:id feilet:', err.message);
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke slette bil.' });
+  }
 });
 
 app.post('/api/biler/:id/dokumenter', requireAuth, function (req, res, next) {
