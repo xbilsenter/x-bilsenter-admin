@@ -28,6 +28,7 @@ const {
   parseBilSjekklisterObject,
   getAktivSjekklisteFromRow,
   ensureSjekklisterForStatus,
+  syncBilSjekklisterFromMalServer,
   normalizeKundeEpost,
   mergeHenvKommentarer,
   createInternKommentar,
@@ -1548,6 +1549,31 @@ async function reorderBiler(updates, ansvarligNavn) {
   }).filter(Boolean);
 }
 
+async function syncAllBilerSjekklisterFromMal(malPerStatus) {
+  const rows = await prepare('SELECT id, status, sjekkliste, sjekklister FROM biler').all();
+  const updateStmt = prepare(`
+    UPDATE biler SET sjekklister = @sjekklister, sjekkliste = @sjekkliste, updated_at = datetime('now')
+    WHERE id = @id
+  `);
+
+  await Promise.all(rows.map(function (row) {
+    const synced = syncBilSjekklisterFromMalServer(row, malPerStatus);
+    return updateStmt.run({
+      id: row.id,
+      sjekklister: jsonStringify(synced.sjekklister),
+      sjekkliste: jsonStringify(synced.sjekkliste)
+    });
+  }));
+
+  const [allRows, kundeMap] = await Promise.all([
+    prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all(),
+    getAllBilKundeIdsMap()
+  ]);
+  return allRows.map(function (row) {
+    return mapBil(row, kundeMap[row.id] || []);
+  });
+}
+
 initDb();
 
 module.exports = {
@@ -1618,6 +1644,7 @@ module.exports = {
   setBilKunder,
   nextBilSortOrder,
   reorderBiler,
+  syncAllBilerSjekklisterFromMal,
   ensureSjekklisterForStatus,
   parseBilSjekklisterObject,
   getAktivSjekklisteFromRow,

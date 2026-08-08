@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
-const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeMerkerList } = require('./db-shared');
+const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeMerkerList, syncBilSjekklisterFromMalServer } = require('./db-shared');
 const { MERKER } = require('./merker');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
@@ -1478,6 +1478,23 @@ function getRoleTemplates() {
   return ROLE_TEMPLATES;
 }
 
+function syncAllBilerSjekklisterFromMal(malPerStatus) {
+  const rows = db.prepare('SELECT id, status, sjekkliste, sjekklister FROM biler').all();
+  const updateStmt = db.prepare(`
+    UPDATE biler SET sjekklister = @sjekklister, sjekkliste = @sjekkliste, updated_at = datetime('now')
+    WHERE id = @id
+  `);
+  rows.forEach(function (row) {
+    const synced = syncBilSjekklisterFromMalServer(row, malPerStatus);
+    updateStmt.run({
+      id: row.id,
+      sjekklister: JSON.stringify(synced.sjekklister),
+      sjekkliste: JSON.stringify(synced.sjekkliste)
+    });
+  });
+  return db.prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all().map(mapBil);
+}
+
 initDb();
 
 module.exports = {
@@ -1495,6 +1512,7 @@ module.exports = {
   formatDate,
   getInnstillinger,
   saveInnstillinger,
+  syncAllBilerSjekklisterFromMal,
   getMailKontoer,
   getMailKontoById,
   getDefaultMailKonto,

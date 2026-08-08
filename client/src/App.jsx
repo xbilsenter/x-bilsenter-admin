@@ -16,7 +16,7 @@ import {
   DEFAULT_INNBYTTE_STATUS_FARGER, normalizeInnbytteStatusFarger,
   DEFAULT_BIL_STATUS_FARGER, DEFAULT_SJEKKLISTE_MAL, DEFAULT_BIL_SJEKKLISTER,
   getAktivSjekkliste, withSjekklisteUpdate, withStatusChange,
-  initBilSjekklister, normalizeBilSjekklister,
+  initBilSjekklister, normalizeBilSjekklister, syncBilSjekklisterFromMal,
   calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, normalizeSjekklisteMalItems,
   finalizeSjekklisteMalItems, trimSjekklisteMalTekst,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
@@ -895,6 +895,36 @@ export default function App() {
                 try {
                   const res = await patchInnstillinger(next);
                   if (res.settings) setInnstillinger(res.settings);
+                  if (res.biler?.length) {
+                    setBiler(res.biler.map(function (item) {
+                      return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
+                    }));
+                    setModal(function (prev) {
+                      if (prev?.t !== 'visBil' || !prev.d?.id) return prev;
+                      const updated = res.biler.find(function (b) {
+                        return normalizeBilId(b.id) === normalizeBilId(prev.d.id);
+                      });
+                      return updated
+                        ? { ...prev, d: { ...updated, id: normalizeBilId(updated.id) } }
+                        : prev;
+                    });
+                    refreshStats();
+                  } else if (next.bilSjekklister) {
+                    const mal = res.settings?.bilSjekklister || next.bilSjekklister;
+                    setBiler(function (prev) {
+                      return prev.map(function (b) {
+                        return { ...b, ...syncBilSjekklisterFromMal(b, mal) };
+                      });
+                    });
+                    setModal(function (prev) {
+                      if (prev?.t !== 'visBil' || !prev.d) return prev;
+                      return {
+                        ...prev,
+                        d: { ...prev.d, ...syncBilSjekklisterFromMal(prev.d, mal) }
+                      };
+                    });
+                    refreshStats();
+                  }
                   visTost('Innstillinger lagret ✓');
                 } catch {
                   visTost('Kunne ikke lagre innstillinger ✗');

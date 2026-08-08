@@ -354,6 +354,45 @@ function ensureSjekklisterForStatus(sjekklister, status, malPerStatus) {
   return per;
 }
 
+function syncSjekklisteFromMalServer(existingItems, mal) {
+  const existing = normalizeSjekklisteItems(existingItems);
+  const doneByText = {};
+  existing.forEach(function (item) {
+    const key = trimSjekklisteMalTekst(item.t).toLowerCase();
+    doneByText[key] = !!item.f;
+  });
+  return normalizeSjekklisteMalItems(mal).map(function (malItem) {
+    const t = trimSjekklisteMalTekst(malItem.t);
+    const key = t.toLowerCase();
+    const hadBefore = Object.prototype.hasOwnProperty.call(doneByText, key);
+    return {
+      t: t,
+      f: hadBefore ? doneByText[key] : !!malItem.forhandsvalgt,
+      obligatorisk: malItem.obligatorisk !== false
+    };
+  });
+}
+
+function syncBilSjekklisterFromMalServer(bilOrRow, malPerStatus) {
+  const status = bilOrRow.status || 'Innkjøpt';
+  const per = {};
+  const src = parseBilSjekklisterObject(bilOrRow);
+  Object.keys(src || {}).forEach(function (key) {
+    per[key] = src[key];
+  });
+  const mal = malPerStatus || {};
+  Object.keys(mal).forEach(function (st) {
+    per[st] = syncSjekklisteFromMalServer(per[st], mal[st] || []);
+  });
+  Object.keys(per).forEach(function (st) {
+    if (!Object.prototype.hasOwnProperty.call(mal, st)) delete per[st];
+  });
+  return {
+    sjekklister: per,
+    sjekkliste: normalizeSjekklisteItems(per[status] || [])
+  };
+}
+
 function normalizeKundeEpost(epost) {
   return String(epost || '').trim().toLowerCase();
 }
@@ -542,6 +581,8 @@ module.exports = {
   parseBilSjekklisterObject,
   getAktivSjekklisteFromRow,
   ensureSjekklisterForStatus,
+  syncSjekklisteFromMalServer,
+  syncBilSjekklisterFromMalServer,
   harApneObligatoriskeOppgaver,
   normalizeKundeEpost,
   canDeleteHenvKommentar,

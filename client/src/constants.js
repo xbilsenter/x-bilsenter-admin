@@ -211,6 +211,48 @@ export function initBilSjekklister(status, bilSjekklisterMal) {
   };
 }
 
+export function syncSjekklisteFromMal(existingItems, mal) {
+  const existing = normalizeSjekklisteItems(existingItems);
+  const doneByText = {};
+  existing.forEach(function (item) {
+    const key = trimSjekklisteMalTekst(item.t).toLowerCase();
+    doneByText[key] = !!item.f;
+  });
+  return normalizeSjekklisteMalItems(mal).map(function (malItem) {
+    const t = trimSjekklisteMalTekst(malItem.t);
+    const key = t.toLowerCase();
+    const hadBefore = Object.prototype.hasOwnProperty.call(doneByText, key);
+    return {
+      t: t,
+      f: hadBefore ? doneByText[key] : !!malItem.forhandsvalgt,
+      obligatorisk: malItem.obligatorisk !== false
+    };
+  });
+}
+
+export function syncBilSjekklisterFromMal(bil, malPerStatus) {
+  const status = bil.status || 'Innkjøpt';
+  const per = {};
+  const src = bil.sjekklister && typeof bil.sjekklister === 'object' && !Array.isArray(bil.sjekklister)
+    ? bil.sjekklister
+    : {};
+  Object.keys(src).forEach(function (key) { per[key] = src[key]; });
+  if (!Object.keys(per).length && Array.isArray(bil.sjekkliste) && bil.sjekkliste.length) {
+    per[status] = bil.sjekkliste;
+  }
+  const mal = malPerStatus || {};
+  Object.keys(mal).forEach(function (st) {
+    per[st] = syncSjekklisteFromMal(per[st], mal[st] || []);
+  });
+  Object.keys(per).forEach(function (st) {
+    if (!Object.prototype.hasOwnProperty.call(mal, st)) delete per[st];
+  });
+  return {
+    sjekklister: per,
+    sjekkliste: normalizeSjekklisteItems(per[status] || [])
+  };
+}
+
 export function statusColor(status, colors) {
   return (colors && colors[status]) || SFARGE[status] || '#6B7280';
 }

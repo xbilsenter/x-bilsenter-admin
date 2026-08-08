@@ -70,6 +70,7 @@ const {
   setBilKunder,
   nextBilSortOrder,
   reorderBiler,
+  syncAllBilerSjekklisterFromMal,
   ensureSjekklisterForStatus,
   parseBilSjekklisterObject,
   getAktivSjekklisteFromRow,
@@ -2581,7 +2582,11 @@ app.get('/api/innstillinger', requireAuth, requirePermission('innstillinger'), a
 app.patch('/api/innstillinger', requireAuth, requirePermission('innstillinger'), async function (req, res) {
   const body = req.body || {};
   const settings = await saveInnstillinger(body);
-  res.json({ ok: true, settings });
+  let biler = null;
+  if (body.bilSjekklister && typeof body.bilSjekklister === 'object') {
+    biler = await syncAllBilerSjekklisterFromMal(settings.bilSjekklister);
+  }
+  res.json({ ok: true, settings, biler });
 });
 
 // ─── Vegvesen ───
