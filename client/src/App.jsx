@@ -17,6 +17,7 @@ import {
   DEFAULT_BIL_STATUS_FARGER, DEFAULT_SJEKKLISTE_MAL, DEFAULT_BIL_SJEKKLISTER,
   getAktivSjekkliste, withSjekklisteUpdate, withStatusChange,
   initBilSjekklister, normalizeBilSjekklister,
+  calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, normalizeSjekklisteMalItems,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
   getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
   getSavedBilerSection, saveBilerSection,
@@ -463,7 +464,7 @@ export default function App() {
   const reservert = stats.reservert ?? biler.filter(b => isBilAktiv(b) && b.status === 'Reservert').length;
   const iDagKal = stats.iDagKal ?? kal.filter(k => k.dato === IDAG).length;
   const aapneOppgaver = stats.aapneOppgaver ?? biler.filter(isBilAktiv).reduce(
-    (s, b) => s + getAktivSjekkliste(b).filter(x => !x.f).length, 0
+    (s, b) => s + getAktivSjekkliste(b).filter(x => x.obligatorisk && !x.f).length, 0
   );
   const ulestEpost = stats.ulestEpost ?? mailStatus.ulest ?? epost.filter(e => e.retning === 'inn' && !e.lest).length;
 
@@ -1453,9 +1454,8 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
 
   const renderBilKanbanCard = (bil) => {
     const list = getAktivSjekkliste(bil);
-    const f = list.filter(s => s.f).length;
-    const t = list.length;
-    const pst = t ? Math.round(f / t * 100) : 0;
+    const prog = calcSjekklisteFremdrift(list);
+    const { f, t, pst } = prog;
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
     const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
     return (
@@ -1492,7 +1492,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
         </div>
         {t > 0 && (
           <>
-            <div className="prog-lbl" style={{ marginTop: 7 }}>{f}/{t} oppgaver · {pst}%</div>
+            <div className="prog-lbl" style={{ marginTop: 7 }}>{f}/{t} oblig. · {pst}%</div>
             <div className="prog-bar"><div className="prog-fill" style={{ width: pst + '%' }} /></div>
           </>
         )}
@@ -1502,9 +1502,8 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
 
   const renderBilPipelineRow = (bil, status) => {
     const list = getAktivSjekkliste(bil);
-    const f = list.filter(function (s) { return s.f; }).length;
-    const t = list.length;
-    const pst = t ? Math.round(f / t * 100) : 0;
+    const prog = calcSjekklisteFremdrift(list);
+    const { f, t, pst } = prog;
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
     const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
     return (
@@ -1545,7 +1544,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler 
           <div className="bil-pipeline-prog">
             {t > 0 ? (
               <>
-                <div className="prog-lbl">{f}/{t} · {pst}%</div>
+                <div className="prog-lbl">{f}/{t} oblig. · {pst}%</div>
                 <div className="prog-bar"><div className="prog-fill" style={{ width: pst + '%' }} /></div>
               </>
             ) : (
@@ -2056,7 +2055,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
 
   const leggTilOppg = () => {
     if (!nyOppg.trim()) return;
-    oppdater('sjekkliste', [...getAktivSjekkliste(bil), { t: nyOppg, f: false }]);
+    oppdater('sjekkliste', [...getAktivSjekkliste(bil), { t: nyOppg, f: false, obligatorisk: true }]);
     setNyOppg('');
   };
 
@@ -2094,8 +2093,8 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
   };
 
   const list = getAktivSjekkliste(bil);
-  const f = list.filter(s => s.f).length;
-  const t = list.length;
+  const prog = calcSjekklisteFremdrift(list);
+  const { f, t, pst } = prog;
 
   const flyttTilStatus = (nextStatus) => {
     if (!nextStatus || nextStatus === bil.status) return;
@@ -2266,10 +2265,10 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
             </div>
 
             <div>
-              <div className="modal-sec">Sjekkliste — {bil.status} ({f}/{t} fullført)</div>
+              <div className="modal-sec">Sjekkliste — {bil.status} ({f}/{t} obligatoriske fullført)</div>
               <div style={{ marginBottom: 10 }}>
                 <div className="prog-bar" style={{ height: 5 }}>
-                  <div className="prog-fill" style={{ width: (t ? f / t * 100 : 0) + '%', height: 5 }} />
+                  <div className="prog-fill" style={{ width: pst + '%', height: 5 }} />
                 </div>
               </div>
               {list.map((s, i) => (
@@ -2278,6 +2277,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                     {s.f && <span style={{ color: '#fff', fontSize: 10, fontWeight: 900 }}>✓</span>}
                   </div>
                   <span className={`chk-txt${s.f ? ' done' : ''}`}>{s.t}</span>
+                  {!s.obligatorisk && <span className="chip chip-gray" style={{ fontSize: 9, marginLeft: 6 }}>Frivillig</span>}
                 </div>
               ))}
               <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
@@ -6976,7 +6976,7 @@ function KalModal({ data, onClose, onSave, onDelete, biler, lists, kunder, title
 
 // ─── OPPGAVER ────────────────────────────────────────────────────────────────
 function OppgaverView({ biler, updateBil, visTost }) {
-  const aktive = biler.filter(b => isBilAktiv(b) && getAktivSjekkliste(b).some(s => !s.f));
+  const aktive = biler.filter(b => isBilAktiv(b) && harApneObligatoriskeOppgaver(getAktivSjekkliste(b)));
 
   const toggle = (bilId, idx) => {
     const bil = biler.find(b => b.id === bilId);
@@ -7001,9 +7001,8 @@ function OppgaverView({ biler, updateBil, visTost }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
         {aktive.map(bil => {
           const list = getAktivSjekkliste(bil);
-          const f = list.filter(s => s.f).length;
-          const t = list.length;
-          const pst = t ? Math.round(f / t * 100) : 0;
+          const prog = calcSjekklisteFremdrift(list);
+          const { f, t, pst } = prog;
           const hasFrist = bil.frist && bil.frist < IDAG;
           return (
             <div className="card" key={bil.id}>
@@ -7019,7 +7018,7 @@ function OppgaverView({ biler, updateBil, visTost }) {
               </div>
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <div className="prog-lbl">{f}/{t} fullført</div>
+                  <div className="prog-lbl">{f}/{t} oblig. fullført</div>
                   <div className="prog-lbl" style={{ fontWeight: 700, color: pst === 100 ? 'var(--acc)' : 'var(--t3)' }}>{pst}%</div>
                 </div>
                 <div className="prog-bar" style={{ height: 5, marginBottom: 10 }}>
@@ -7031,6 +7030,7 @@ function OppgaverView({ biler, updateBil, visTost }) {
                       {s.f && <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>✓</span>}
                     </div>
                     <span className={`chk-txt${s.f ? ' done' : ''}`}>{s.t}</span>
+                    {!s.obligatorisk && <span className="chip chip-gray" style={{ fontSize: 9, marginLeft: 6 }}>Frivillig</span>}
                   </div>
                 ))}
                 <div style={{ marginTop: 10, fontSize: 10, color: 'var(--t4)' }}>
@@ -8540,6 +8540,98 @@ function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder
   );
 }
 
+function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact }) {
+  const normalized = normalizeSjekklisteMalItems(items);
+  const [ny, setNy] = useState('');
+  const [nyObligatorisk, setNyObligatorisk] = useState(true);
+
+  const setItems = (next) => onChange(normalizeSjekklisteMalItems(next));
+
+  const endre = (idx, patch) => {
+    const next = normalized.map(function (item, i) {
+      return i === idx ? { ...item, ...patch } : item;
+    });
+    setItems(next);
+  };
+
+  const endreTekst = (idx, value) => {
+    if (normalized.some(function (item, i) {
+      return i !== idx && item.t.toLowerCase() === value.toLowerCase();
+    })) return;
+    endre(idx, { t: value });
+  };
+
+  const leggTil = () => {
+    const t = ny.trim();
+    if (!t || normalized.some(function (item) { return item.t.toLowerCase() === t.toLowerCase(); })) return;
+    setItems([...normalized, { t: t, obligatorisk: nyObligatorisk }]);
+    setNy('');
+  };
+
+  const fjern = (idx) => setItems(normalized.filter(function (_, i) { return i !== idx; }));
+
+  const flytt = (idx, dir) => {
+    const next = [...normalized];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setItems(next);
+  };
+
+  return (
+    <div className={compact ? '' : 'card settings-card'}>
+      {!compact && (
+        <div className="card-h"><span className="card-ht">Sjekkliste</span></div>
+      )}
+      <div style={{ padding: compact ? 0 : 16 }}>
+        <div className="settings-list">
+          {normalized.map(function (item, idx) {
+            return (
+              <div className="settings-item sjekkliste-mal-row" key={'sjekk-mal-' + idx}>
+                <input
+                  className="settings-item__input"
+                  value={item.t}
+                  onChange={(e) => endreTekst(idx, e.target.value)}
+                />
+                <select
+                  className="sjekkliste-mal-type"
+                  value={item.obligatorisk ? 'obligatorisk' : 'frivillig'}
+                  onChange={(e) => endre(idx, { obligatorisk: e.target.value === 'obligatorisk' })}
+                >
+                  <option value="obligatorisk">Obligatorisk</option>
+                  <option value="frivillig">Frivillig</option>
+                </select>
+                <div className="settings-item__actions">
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === normalized.length - 1}>↓</button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={!allowEmpty && normalized.length <= 1}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="settings-add sjekkliste-mal-add">
+          <input
+            value={ny}
+            onChange={e => setNy(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && leggTil()}
+            placeholder={placeholder || 'Legg til punkt...'}
+          />
+          <select
+            className="sjekkliste-mal-type"
+            value={nyObligatorisk ? 'obligatorisk' : 'frivillig'}
+            onChange={e => setNyObligatorisk(e.target.value === 'obligatorisk')}
+          >
+            <option value="obligatorisk">Obligatorisk</option>
+            <option value="frivillig">Frivillig</option>
+          </select>
+          <button type="button" className="btn btn-g btn-sm" onClick={leggTil}>+ Legg til</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
   const [openStatus, setOpenStatus] = useState(null);
 
@@ -8552,14 +8644,15 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
       <div className="card-h"><span className="card-ht">Sjekklister per pipeline-status</span></div>
       <div style={{ padding: 16 }}>
         <p className="settings-desc">
-          Definer egne gjøremål for hver stasjon i bil-pipeline. Når en bil flyttes til en ny status,
-          får den automatisk sjekklisten for den statusen (tidligere fremdrift bevares).
+          Definer egne gjøremål for hver stasjon i bil-pipeline. Marker punkter som obligatoriske eller frivillige —
+          fremdrift og oppgave-telling baseres kun på obligatoriske punkter.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {(statuser || []).map(function (status) {
-            const items = sjekklister?.[status] || [];
+            const items = normalizeSjekklisteMalItems(sjekklister?.[status] || []);
             const open = openStatus === status;
             const color = (farger && farger[status]) || '#6B7280';
+            const obligCount = items.filter(function (item) { return item.obligatorisk; }).length;
             return (
               <div key={status} style={{ border: '1px solid var(--b2)', borderRadius: 9, overflow: 'hidden' }}>
                 <button
@@ -8580,14 +8673,15 @@ function BilSjekklisterEditor({ statuser, farger, sjekklister, onChange }) {
                   <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
                     <strong style={{ fontSize: 13, color: 'var(--t1)' }}>{status}</strong>
-                    <span style={{ fontSize: 11, color: 'var(--t3)' }}>{items.length} punkt{items.length === 1 ? '' : 'er'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--t3)' }}>
+                      {items.length} punkt{items.length === 1 ? '' : 'er'} · {obligCount} oblig.
+                    </span>
                   </span>
                   <span style={{ color: 'var(--t3)', fontSize: 12 }}>{open ? '▲' : '▼'}</span>
                 </button>
                 {open && (
                   <div style={{ padding: 14, borderTop: '1px solid var(--b2)' }}>
-                    <ListEditor
-                      title=""
+                    <SjekklisteMalEditor
                       items={items}
                       onChange={v => setItems(status, v)}
                       placeholder="F.eks. Vasket innvendig"

@@ -230,17 +230,67 @@ function normalizeInnbytteStatusFarger(statuser, farger) {
   }, {});
 }
 
+function normalizeSjekklisteMalItem(item) {
+  if (typeof item === 'string') {
+    const t = item.trim();
+    return t ? { t: t, obligatorisk: true } : null;
+  }
+  if (item && typeof item === 'object') {
+    const t = String(item.t || item.text || '').trim();
+    if (!t) return null;
+    return { t: t, obligatorisk: item.obligatorisk !== false };
+  }
+  return null;
+}
+
+function normalizeSjekklisteMalItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .map(normalizeSjekklisteMalItem)
+    .filter(Boolean);
+}
+
+function normalizeSjekklisteItem(item) {
+  if (typeof item === 'string') {
+    const t = item.trim();
+    return t ? { t: t, f: false, obligatorisk: true } : null;
+  }
+  if (item && typeof item === 'object') {
+    const t = String(item.t || '').trim();
+    if (!t) return null;
+    return {
+      t: t,
+      f: !!item.f,
+      obligatorisk: item.obligatorisk !== false
+    };
+  }
+  return null;
+}
+
+function normalizeSjekklisteItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .map(normalizeSjekklisteItem)
+    .filter(Boolean);
+}
+
+function harApneObligatoriskeOppgaver(list) {
+  return normalizeSjekklisteItems(list).some(function (s) {
+    return s.obligatorisk && !s.f;
+  });
+}
+
 function normalizeBilSjekklister(statuser, sjekklister, legacyMal) {
   const src = sjekklister && typeof sjekklister === 'object' && !Array.isArray(sjekklister)
     ? sjekklister
     : {};
-  const fallback = Array.isArray(legacyMal) ? legacyMal : DEFAULT_SJEKKLISTE_MAL;
+  const fallback = normalizeSjekklisteMalItems(legacyMal).length
+    ? normalizeSjekklisteMalItems(legacyMal)
+    : normalizeSjekklisteMalItems(DEFAULT_SJEKKLISTE_MAL);
   return (Array.isArray(statuser) ? statuser : []).reduce(function (acc, status) {
     const items = src[status];
     if (Array.isArray(items)) {
-      acc[status] = items.map(function (item) { return String(item || '').trim(); }).filter(Boolean);
+      acc[status] = normalizeSjekklisteMalItems(items);
     } else if (Array.isArray(DEFAULT_BIL_SJEKKLISTER[status])) {
-      acc[status] = DEFAULT_BIL_SJEKKLISTER[status].slice();
+      acc[status] = normalizeSjekklisteMalItems(DEFAULT_BIL_SJEKKLISTER[status]);
     } else {
       acc[status] = fallback.slice();
     }
@@ -249,9 +299,9 @@ function normalizeBilSjekklister(statuser, sjekklister, legacyMal) {
 }
 
 function sjekklisteFraMalServer(mal) {
-  return (Array.isArray(mal) ? mal : DEFAULT_SJEKKLISTE_MAL).map(function (t) {
-    return { t: String(t || '').trim(), f: false };
-  }).filter(function (item) { return item.t; });
+  return normalizeSjekklisteMalItems(mal).map(function (item) {
+    return { t: item.t, f: false, obligatorisk: item.obligatorisk };
+  });
 }
 
 function parseBilSjekklisterObject(row) {
@@ -269,8 +319,8 @@ function parseBilSjekklisterObject(row) {
 function getAktivSjekklisteFromRow(row, sjekklister) {
   const per = sjekklister || parseBilSjekklisterObject(row);
   const list = per[row.status];
-  if (Array.isArray(list)) return list;
-  return parseJson(row.sjekkliste, []);
+  if (Array.isArray(list)) return normalizeSjekklisteItems(list);
+  return normalizeSjekklisteItems(parseJson(row.sjekkliste, []));
 }
 
 function ensureSjekklisterForStatus(sjekklister, status, malPerStatus) {
@@ -472,6 +522,7 @@ module.exports = {
   parseBilSjekklisterObject,
   getAktivSjekklisteFromRow,
   ensureSjekklisterForStatus,
+  harApneObligatoriskeOppgaver,
   normalizeKundeEpost,
   canDeleteHenvKommentar,
   normalizeHenvKommentarer,

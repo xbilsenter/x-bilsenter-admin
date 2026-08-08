@@ -73,6 +73,7 @@ const {
   ensureSjekklisterForStatus,
   parseBilSjekklisterObject,
   getAktivSjekklisteFromRow,
+  harApneObligatoriskeOppgaver,
   sjekklisteFraMalServer,
   parseJson,
   normalizeBilTilstandsrapport,
@@ -659,7 +660,7 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
   biler.forEach(function (b) {
     try {
       const list = getAktivSjekklisteFromRow(b, parseBilSjekklisterObject(b));
-      aapneOppgaver += list.filter(function (x) { return !x.f; }).length;
+      aapneOppgaver += list.filter(function (x) { return x.obligatorisk && !x.f; }).length;
     } catch (_e) { /* ignore */ }
   });
 

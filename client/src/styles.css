@@ -413,6 +413,10 @@ select option{background:var(--s1);}
 .settings-item__actions{display:flex;gap:4px;flex-shrink:0;}
 .settings-add{display:flex;gap:8px;align-items:center;}
 .settings-add input{flex:1;}
+.sjekkliste-mal-row{align-items:center;}
+.sjekkliste-mal-type{min-width:118px;font-size:11px;font-weight:600;}
+.sjekkliste-mal-add{align-items:center;flex-wrap:wrap;}
+.sjekkliste-mal-add input{min-width:180px;}
 @media(max-width:900px){.settings-grid,.settings-stack-row{grid-template-columns:1fr;}}
 
 .bil-links-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
