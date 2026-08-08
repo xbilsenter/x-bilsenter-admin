@@ -401,15 +401,18 @@ function jsonStringify(value) {
 const DEFAULT_BIL_TILSTANDSRAPPORT = {
   medfolger: false,
   nybilgaranti: false,
-  status: 'ikke_utfort'
+  status: null
 };
 
 function normalizeBilTilstandsrapport(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
+  let status = null;
+  if (o.status === 'utfort') status = 'utfort';
+  else if (o.status === 'ikke_utfort') status = 'ikke_utfort';
   return {
     medfolger: !!o.medfolger,
     nybilgaranti: !!o.nybilgaranti,
-    status: o.status === 'utfort' ? 'utfort' : 'ikke_utfort'
+    status: status
   };
 }
 

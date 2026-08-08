@@ -1844,28 +1844,6 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
   return (
     <div className="tilstandsrapport-seksjon">
       <div className="modal-sec">Tilstandsrapport</div>
-      <div className={`tilstandsrapport-status${tr.status === 'utfort' ? ' is-utfort' : ''}`}>
-        <label className="tilstandsrapport-check">
-          <input
-            type="checkbox"
-            checked={tr.status === 'utfort'}
-            onChange={function (e) {
-              if (e.target.checked) patch({ status: 'utfort' });
-            }}
-          />
-          Utført
-        </label>
-        <label className="tilstandsrapport-check">
-          <input
-            type="checkbox"
-            checked={tr.status === 'ikke_utfort'}
-            onChange={function (e) {
-              if (e.target.checked) patch({ status: 'ikke_utfort' });
-            }}
-          />
-          Ikke utført
-        </label>
-      </div>
       <div className="tilstandsrapport-grid">
         <label className="tilstandsrapport-check">
           <input
@@ -1882,6 +1860,26 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
             onChange={function (e) { patch({ medfolger: e.target.checked }); }}
           />
           Medfølger
+        </label>
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.status === 'utfort'}
+            onChange={function (e) {
+              patch({ status: e.target.checked ? 'utfort' : null });
+            }}
+          />
+          Utført
+        </label>
+        <label className="tilstandsrapport-check">
+          <input
+            type="checkbox"
+            checked={tr.status === 'ikke_utfort'}
+            onChange={function (e) {
+              patch({ status: e.target.checked ? 'ikke_utfort' : null });
+            }}
+          />
+          Ikke utført
         </label>
       </div>
     </div>
@@ -2039,12 +2037,17 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                   Neste EU-kontroll: {formatEuKontrollVisning(bil.euKontroll)}
                 </span>
               )}
-              {normalizeBilTilstandsrapport(bil.tilstandsrapport).status !== 'utfort' && (
-                <span className="chip chip-red">Tilstandsrapport: Ikke utført</span>
-              )}
-              {normalizeBilTilstandsrapport(bil.tilstandsrapport).status === 'utfort' && (
-                <span className="chip chip-green">Tilstandsrapport: Utført</span>
-              )}
+              {(() => {
+                const tr = normalizeBilTilstandsrapport(bil.tilstandsrapport);
+                return (
+                  <>
+                    {tr.nybilgaranti && <span className="chip chip-green">Nybilgaranti</span>}
+                    {tr.medfolger && <span className="chip chip-green">Medfølger</span>}
+                    {tr.status === 'utfort' && <span className="chip chip-green">Tilstandsrapport: Utført</span>}
+                    {tr.status === 'ikke_utfort' && <span className="chip chip-red">Tilstandsrapport: Ikke utført</span>}
+                  </>
+                );
+              })()}
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
             </div>
           </div>
