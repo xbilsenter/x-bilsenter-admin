@@ -217,7 +217,7 @@ async function ensureDefaultAdminUser() {
       username,
       name: 'Administrator',
       email: '',
-      role: 'Admin',
+      role: 'Daglig leder',
       permissions: ALL_PERMISSION_IDS,
       aktiv: true,
       isAdmin: true
@@ -1090,7 +1090,7 @@ async function createUser(data, passwordHash) {
       ? data.permissions
       : resolveRoleTemplate(role)
   );
-  const isAdmin = resolveRoleKey(role) === 'Admin' ? true : !!data.isAdmin;
+  const isAdmin = resolveRoleKey(role) === 'Daglig leder' ? true : !!data.isAdmin;
 
   const info = await prepare(`
     INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin)
@@ -1138,7 +1138,7 @@ async function updateUser(id, data, passwordHash) {
   }
 
   let isAdminValue = data.isAdmin == null ? null : (data.isAdmin ? 1 : 0);
-  if (data.role != null && resolveRoleKey(String(data.role).trim()) === 'Admin') {
+  if (data.role != null && resolveRoleKey(String(data.role).trim()) === 'Daglig leder') {
     isAdminValue = 1;
   }
 

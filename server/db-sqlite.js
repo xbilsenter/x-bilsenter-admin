@@ -1194,7 +1194,7 @@ const PERMISSION_DEFS = [
 const ALL_PERMISSION_IDS = PERMISSION_DEFS.map(function (p) { return p.id; });
 
 const ROLE_TEMPLATES = {
-  Admin: ALL_PERMISSION_IDS,
+  'Daglig leder': ALL_PERMISSION_IDS,
   Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
   Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
   Klargjører: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
@@ -1203,7 +1203,7 @@ const ROLE_TEMPLATES = {
 };
 
 const LEGACY_ROLE_ALIASES = {
-  'Daglig leder': 'Admin',
+  Admin: 'Daglig leder',
   Regnskap: 'Innkjøpssjef'
 };
 
@@ -1251,7 +1251,7 @@ function seedDefaultAdminUser() {
     password_hash: bcrypt.hashSync(password, 10),
     name: 'Administrator',
     email: '',
-    role: 'Admin',
+    role: 'Daglig leder',
     permissions: JSON.stringify(ALL_PERMISSION_IDS)
   });
 }
@@ -1318,7 +1318,7 @@ function createUser(data, passwordHash) {
       ? data.permissions
       : resolveRoleTemplate(role)
   );
-  const isAdmin = resolveRoleKey(role) === 'Admin' ? true : !!data.isAdmin;
+  const isAdmin = resolveRoleKey(role) === 'Daglig leder' ? true : !!data.isAdmin;
 
   const info = db.prepare(`
     INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin)
@@ -1366,7 +1366,7 @@ function updateUser(id, data, passwordHash) {
   }
 
   let isAdminValue = data.isAdmin == null ? null : (data.isAdmin ? 1 : 0);
-  if (data.role != null && resolveRoleKey(String(data.role).trim()) === 'Admin') {
+  if (data.role != null && resolveRoleKey(String(data.role).trim()) === 'Daglig leder') {
     isAdminValue = 1;
   }
 

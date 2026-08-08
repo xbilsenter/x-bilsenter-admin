@@ -281,8 +281,8 @@ export function saveBilerSection(section) {
 }
 
 export function displayRole(role) {
-  if (!role) return 'Administrator';
-  const legacy = { 'Daglig leder': 'Admin', Regnskap: 'Innkjøpssjef' };
+  if (!role) return 'Daglig leder';
+  const legacy = { Admin: 'Daglig leder', Regnskap: 'Innkjøpssjef' };
   return legacy[role] || role;
 }
 

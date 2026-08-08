@@ -143,7 +143,7 @@ const PERMISSION_DEFS = [
 const ALL_PERMISSION_IDS = PERMISSION_DEFS.map(function (p) { return p.id; });
 
 const ROLE_TEMPLATES = {
-  Admin: ALL_PERMISSION_IDS,
+  'Daglig leder': ALL_PERMISSION_IDS,
   Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
   Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
   Klargjører: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
@@ -152,7 +152,7 @@ const ROLE_TEMPLATES = {
 };
 
 const LEGACY_ROLE_ALIASES = {
-  'Daglig leder': 'Admin',
+  Admin: 'Daglig leder',
   Regnskap: 'Innkjøpssjef'
 };
 

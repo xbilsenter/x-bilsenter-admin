@@ -7571,7 +7571,7 @@ function BrukereSection({ currentUser, visTost }) {
         ...prev,
         role,
         permissions: [...perms],
-        isAdmin: role === 'Admin'
+        isAdmin: role === 'Daglig leder'
       };
     });
   };
