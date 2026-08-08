@@ -2133,25 +2133,9 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               </div>
 
               <div className="modal-sec">Utvidet informasjon</div>
-              <div className="form-row gap">
-                <div>
-                  <div className="fl">FINN-kode / annonse-ID</div>
-                  <input value={bil.finnKode || ''} onChange={e => oppdater('finnKode', e.target.value)} placeholder="F.eks. 123456789" />
-                </div>
-                <div>
-                  <div className="fl">Chassisnummer (VIN)</div>
-                  <input value={bil.chassisnr || ''} onChange={e => oppdater('chassisnr', e.target.value.toUpperCase())} />
-                </div>
-              </div>
-              <div className="form-row gap">
-                <div>
-                  <div className="fl">Drivstoff</div>
-                  <input value={bil.drivstoff || ''} onChange={e => oppdater('drivstoff', e.target.value)} />
-                </div>
-                <div>
-                  <div className="fl">Girkasse</div>
-                  <input value={bil.girkasse || ''} onChange={e => oppdater('girkasse', e.target.value)} />
-                </div>
+              <div className="gap">
+                <div className="fl">FINN-kode / annonse-ID</div>
+                <input value={bil.finnKode || ''} onChange={e => oppdater('finnKode', e.target.value)} placeholder="F.eks. 123456789" />
               </div>
               <div className="gap">
                 <div className="fl">Utstyr / ekstra info</div>
@@ -2472,23 +2456,8 @@ function resolveMerkeFromLists(merke, merker) {
   return partial || merker[0] || 'Annet';
 }
 
-function buildAutosysNotater(vehicle) {
-  const v = vehicle || {};
-  return [
-    'Hentet fra Autosys.',
-    v.drivstoff ? `Drivstoff: ${v.drivstoff}.` : '',
-    v.euroKlasse ? `Euro: ${v.euroKlasse}.` : '',
-    v.hjuldrift ? `Aksler med drift: ${v.hjuldrift}.` : '',
-    v.effektHk ? `Effekt: ${v.effektHk} hk.` : ''
-  ].filter(Boolean).join(' ');
-}
-
 function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
   const v = vehicle || {};
-  const autosysNotater = buildAutosysNotater(v);
-  const notater = String(prev.notater || '').trim()
-    ? prev.notater
-    : autosysNotater;
   return {
     reg: v.regNr || prev.reg,
     merke: resolveMerkeFromLists(v.merke, lists.merker),
@@ -2496,7 +2465,7 @@ function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
     aar: Number(v.arsmodell) || prev.aar,
     farge: v.farge || prev.farge,
     euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || prev.euKontroll,
-    notater,
+    notater: prev.notater || '',
     svvData: rawData || v
   };
 }
@@ -7118,17 +7087,7 @@ function BilAutosysTab({ bil, oppdater, visTost, lists }) {
       const euIso = normalizeEuKontrollDato(parsed.nesteEuKontroll);
       if (euIso) oppdater('euKontroll', euIso, 'Frist neste EU-kontroll oppdatert ✓');
       const autosysFields = applyAutosysToBilForm(parsed, data.raw || parsed, lists, bil);
-      const patch = {};
-      ['drivstoff', 'girkasse', 'farge', 'chassisnr'].forEach(function (key) {
-        if (autosysFields[key] && !bil[key]) patch[key] = autosysFields[key];
-      });
-      if (autosysFields.chassisnr && !bil.chassisnr) patch.chassisnr = parsed.understell || autosysFields.chassisnr;
-      if (parsed.understell && !bil.chassisnr) patch.chassisnr = parsed.understell;
-      if (Object.keys(patch).length) {
-        Object.entries(patch).forEach(function (entry) {
-          oppdater(entry[0], entry[1]);
-        });
-      }
+      if (autosysFields.farge && !bil.farge) oppdater('farge', autosysFields.farge);
       if (visTost) visTost('Autosys-data hentet ✓');
     } catch (err) {
       setFeil(err.message || 'Oppslag feilet.');
@@ -7377,13 +7336,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
       status: startStatus,
       ansvarlig: lists.ansatte[0] || '',
       frist: '',
-      notater: [
-        'Importert fra Statens vegvesen.',
-        v.drivstoff ? `Drivstoff: ${v.drivstoff}.` : '',
-        v.euroKlasse ? `Euro: ${v.euroKlasse}.` : '',
-        v.hjuldrift ? `Aksler med drift: ${v.hjuldrift}.` : '',
-        v.effektHk ? `Effekt: ${v.effektHk} hk.` : ''
-      ].filter(Boolean).join(' '),
+      notater: '',
       euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || '',
       tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT },
       ...initBilSjekklister(startStatus, lists.bilSjekklister),
