@@ -21,7 +21,8 @@ import {
   getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
   getSavedBilerSection, saveBilerSection,
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
-  ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi
+  ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
+  normalizeEuKontrollDato, formatEuKontrollVisning
 } from './constants.js';
 import {
   getToken, logout,
@@ -30,7 +31,7 @@ import {
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
-  getBiler, postBil, patchBil, reorderBiler as reorderBilerApi, uploadBilDokumenter,
+  getBiler, postBil, patchBil, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
   getKalender, postKalender, patchKalender, deleteKalender,
   getInnkjopskalkyle,
   lookupKjoretoy, getInnstillinger, getLister, patchInnstillinger,
@@ -348,6 +349,17 @@ export default function App() {
       logout();
       setUser(null);
     }
+
+    syncBilerEuKontroll({ onlyMissing: true }).then(function (res) {
+      if (!res?.items?.length) return;
+      setBiler(res.items.map(function (item) {
+        return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
+      }));
+      if (res.updated > 0) {
+        setToast(`EU-kontroll frist hentet for ${res.updated} bil${res.updated === 1 ? '' : 'er'} ✓`);
+        setTimeout(function () { setToast(null); }, 2800);
+      }
+    }).catch(function () { /* stille bakgrunnssync */ });
   }, []);
 
   useEffect(() => {
@@ -1967,7 +1979,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Badge s={bil.status} />
               {bil.archived && <span className="chip chip-gray">Arkivert</span>}
-              {bil.euKontroll && <span className="chip chip-orange">EU-kontroll: {bil.euKontroll}</span>}
+              {bil.euKontroll && <span className="chip chip-orange">Neste EU-kontroll: {formatEuKontrollVisning(bil.euKontroll)}</span>}
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
             </div>
           </div>
@@ -2024,8 +2036,8 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               </div>
               <div className="form-row gap">
                 <div>
-                  <div className="fl">EU-kontroll dato</div>
-                  <input type="date" value={bil.euKontroll || ''} onChange={e => oppdater('euKontroll', e.target.value)} />
+                  <div className="fl">Frist neste EU-kontroll</div>
+                  <input type="date" value={normalizeEuKontrollDato(bil.euKontroll)} onChange={e => oppdater('euKontroll', e.target.value)} />
                 </div>
                 <div>
                   <div className="fl">Forsikringsselskap</div>
@@ -2417,7 +2429,7 @@ function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
     modell: v.modell || prev.modell,
     aar: Number(v.arsmodell) || prev.aar,
     farge: v.farge || prev.farge,
-    euKontroll: v.nesteEuKontroll || prev.euKontroll,
+    euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || prev.euKontroll,
     notater,
     svvData: rawData || v
   };
@@ -2522,7 +2534,7 @@ function NyBilModal({ onClose, onSave, lists, visTost }) {
           <div><div className="fl">Salgspris (kr)</div><input type="number" value={f.salg} onChange={e => s('salg', +e.target.value)} /></div>
         </div>
         <div className="form-row gap">
-          <div><div className="fl">EU-kontroll dato</div><input type="date" value={f.euKontroll} onChange={e => s('euKontroll', e.target.value)} /></div>
+          <div><div className="fl">Frist neste EU-kontroll</div><input type="date" value={normalizeEuKontrollDato(f.euKontroll)} onChange={e => s('euKontroll', e.target.value)} /></div>
           <div><div className="fl">Forsikringsselskap</div><input value={f.forsikring} onChange={e => s('forsikring', e.target.value)} /></div>
         </div>
         <div className="gap"><div className="fl">Ansvarlig</div><select value={f.ansvarlig} onChange={e => s('ansvarlig', e.target.value)}>{lists.ansatte.map(a => <option key={a}>{a}</option>)}</select></div>
@@ -7032,9 +7044,11 @@ function BilAutosysTab({ bil, oppdater, visTost, lists }) {
       if (!parsed) throw new Error('Fant ingen kjøretøydata.');
       const svvPayload = { vehicle: parsed, raw: data.raw || null, fetchedAt: new Date().toISOString() };
       oppdater('svvData', svvPayload, 'Autosys-data oppdatert ✓');
+      const euIso = normalizeEuKontrollDato(parsed.nesteEuKontroll);
+      if (euIso) oppdater('euKontroll', euIso, 'Frist neste EU-kontroll oppdatert ✓');
       const autosysFields = applyAutosysToBilForm(parsed, data.raw || parsed, lists, bil);
       const patch = {};
-      ['drivstoff', 'girkasse', 'farge', 'euKontroll', 'chassisnr'].forEach(function (key) {
+      ['drivstoff', 'girkasse', 'farge', 'chassisnr'].forEach(function (key) {
         if (autosysFields[key] && !bil[key]) patch[key] = autosysFields[key];
       });
       if (autosysFields.chassisnr && !bil.chassisnr) patch.chassisnr = parsed.understell || autosysFields.chassisnr;
@@ -7299,7 +7313,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
         v.hjuldrift ? `Aksler med drift: ${v.hjuldrift}.` : '',
         v.effektHk ? `Effekt: ${v.effektHk} hk.` : ''
       ].filter(Boolean).join(' '),
-      euKontroll: v.nesteEuKontroll || '',
+      euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || '',
       forsikring: '',
       ...initBilSjekklister(startStatus, lists.bilSjekklister),
       logg: [{

@@ -147,6 +147,30 @@ function formatNorwegianDate(value) {
   });
 }
 
+function toIsoDateFromNorwegian(value) {
+  if (!value) return '';
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const nb = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (nb) return `${nb[3]}-${nb[2]}-${nb[1]}`;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' });
+  }
+  return '';
+}
+
+function nesteEuKontrollIso(parsed) {
+  return toIsoDateFromNorwegian(parsed?.nesteEuKontroll);
+}
+
+function resolveVehicleFromStoredSvvData(svvData) {
+  if (!svvData || typeof svvData !== 'object') return null;
+  if (svvData.regNr || (svvData.merke && svvData.modell)) return svvData;
+  if (svvData.vehicle && typeof svvData.vehicle === 'object') return svvData.vehicle;
+  return null;
+}
+
 function getVehicleEntry(raw) {
   return raw?.kjoretoydataListe?.[0] || raw;
 }
@@ -646,5 +670,8 @@ module.exports = {
   normalizeRegNr,
   parseVehicle,
   buildDisplaySections,
-  sectionsFromParsed
+  sectionsFromParsed,
+  toIsoDateFromNorwegian,
+  nesteEuKontrollIso,
+  resolveVehicleFromStoredSvvData
 };

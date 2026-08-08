@@ -213,6 +213,13 @@ export function reorderBiler(updates) {
   });
 }
 
+export function syncBilerEuKontroll(options = {}) {
+  return request('/biler/sync-eu-kontroll', {
+    method: 'POST',
+    body: JSON.stringify(options)
+  });
+}
+
 export async function uploadBilDokumenter(id, files) {
   const token = localStorage.getItem(TOKEN_KEY);
   const form = new FormData();

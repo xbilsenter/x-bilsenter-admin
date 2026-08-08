@@ -355,6 +355,26 @@ export function normalizeBilOkonomi(raw) {
   };
 }
 
+export function normalizeEuKontrollDato(value) {
+  if (!value) return '';
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const nb = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (nb) return `${nb[3]}-${nb[2]}-${nb[1]}`;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' });
+  }
+  return '';
+}
+
+export function formatEuKontrollVisning(value) {
+  const iso = normalizeEuKontrollDato(value);
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return String(value || '');
+  const parts = iso.split('-');
+  return `${parts[2]}.${parts[1]}.${parts[0]}`;
+}
+
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
   const inn = Number(innkjop) || 0;

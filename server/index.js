@@ -77,7 +77,12 @@ const {
   parseJson
 } = require('./db');
 
-const { lookupVehicleFull } = require('./vegvesen');
+const {
+  lookupVehicleFull,
+  nesteEuKontrollIso,
+  resolveVehicleFromStoredSvvData,
+  toIsoDateFromNorwegian
+} = require('./vegvesen');
 const { isConfigured: isOmregConfigured, lookupOmregistreringsavgift } = require('./skatteetaten-omreg');
 const { lookupFinnAnnonse, resolveFinnMarkedsSok } = require('./finn');
 const { getMailStatus, syncInbox, sendMail, testMailKonto, startBackgroundMailSync } = require('./mail');
@@ -2118,6 +2123,97 @@ app.post('/api/biler/:id/dokumenter', requireAuth, function (req, res, next) {
     console.error('POST /api/biler/:id/dokumenter feilet:', err.message);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke laste opp filer.' });
   }
+});
+
+function bilNeedsEuKontrollSync(row, iso, force) {
+  if (!iso) return false;
+  if (force) return toIsoDateFromNorwegian(row.eu_kontroll) !== iso;
+  if (!row.eu_kontroll) return true;
+  return !toIsoDateFromNorwegian(row.eu_kontroll);
+}
+
+app.post('/api/biler/sync-eu-kontroll', requireAuth, async function (req, res) {
+  const force = !!req.body?.force;
+  const onlyMissing = req.body?.onlyMissing !== false && !force;
+  const apiKey = process.env.VEGVESEN_API_KEY || '';
+
+  const rows = await prepare(`
+    SELECT id, reg, eu_kontroll, svv_data
+    FROM biler
+    WHERE reg IS NOT NULL AND TRIM(reg) != ''
+    ORDER BY id ASC
+  `).all();
+
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+  const errors = [];
+
+  for (const row of rows) {
+    const reg = String(row.reg || '').trim().toUpperCase().replace(/\s/g, '');
+    if (reg.length < 5) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      let iso = nesteEuKontrollIso(resolveVehicleFromStoredSvvData(parseJson(row.svv_data, null)));
+
+      if (!iso) {
+        const result = await lookupVehicleFull(reg, apiKey);
+        iso = nesteEuKontrollIso(result.parsed);
+        await new Promise(function (resolve) { setTimeout(resolve, 120); });
+      }
+
+      if (!iso) {
+        skipped++;
+        continue;
+      }
+
+      if (onlyMissing && row.eu_kontroll) {
+        const currentIso = toIsoDateFromNorwegian(row.eu_kontroll);
+        if (currentIso && /^\d{4}-\d{2}-\d{2}$/.test(currentIso)) {
+          skipped++;
+          continue;
+        }
+      }
+
+      if (!bilNeedsEuKontrollSync(row, iso, force)) {
+        skipped++;
+        continue;
+      }
+
+      await prepare(`
+        UPDATE biler SET
+          eu_kontroll = @eu_kontroll,
+          updated_at = datetime('now')
+        WHERE id = @id
+      `).run({
+        id: row.id,
+        eu_kontroll: iso
+      });
+      updated++;
+    } catch (err) {
+      failed++;
+      if (errors.length < 8) {
+        errors.push({ reg: row.reg, error: err.message || 'Oppslag feilet.' });
+      }
+    }
+  }
+
+  const [freshRows, kundeMap] = await Promise.all([
+    prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all(),
+    getAllBilKundeIdsMap()
+  ]);
+
+  res.json({
+    ok: true,
+    updated: updated,
+    skipped: skipped,
+    failed: failed,
+    errors: errors,
+    items: freshRows.map(function (item) { return mapBil(item, kundeMap[item.id] || []); })
+  });
 });
 
 // ─── Kalender ───
