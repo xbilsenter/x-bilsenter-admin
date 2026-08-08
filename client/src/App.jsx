@@ -25,6 +25,7 @@ import {
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
   ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
+  getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
@@ -2141,6 +2142,29 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
   const [nyOppg, setNyOppg] = useState('');
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(null);
+  const autosysHentRef = useRef(null);
+
+  useEffect(function () {
+    const reg = String(data.reg || '').trim().toUpperCase().replace(/\s/g, '');
+    if (reg.length < 5) return;
+    if (getRegistreringsstatusFromSvvData(data.svvData)) return;
+    if (autosysHentRef.current === data.id) return;
+    autosysHentRef.current = data.id;
+
+    let cancelled = false;
+    lookupKjoretoy(reg).then(function (res) {
+      if (cancelled || !res?.vehicle) return;
+      const parsed = res.vehicle;
+      const svvPayload = { vehicle: parsed, raw: res.raw || null, fetchedAt: new Date().toISOString() };
+      setBil(function (prev) { return { ...prev, svvData: svvPayload }; });
+      const patch = { svvData: svvPayload };
+      const euIso = normalizeEuKontrollDato(parsed.nesteEuKontroll);
+      if (euIso) patch.euKontroll = euIso;
+      updateBil(data.id, patch);
+    }).catch(function () { /* stille bakgrunnshenting */ });
+
+    return function () { cancelled = true; };
+  }, [data.id, data.reg, data.svvData, updateBil]);
 
   const docCount = (bil.dokumenter || []).length;
   const bilTabs = [
@@ -2286,6 +2310,11 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
                 );
               })()}
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
+              {(() => {
+                const regChip = registreringsstatusChip(getRegistreringsstatusFromSvvData(bil.svvData));
+                if (!regChip) return null;
+                return <span className={`chip ${regChip.className}`}>{regChip.label}</span>;
+              })()}
               {(() => {
                 if (!erArsprovekjennemerkeIbruk(bil.arsprovekjennemerke)) return null;
                 const ap = normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke);
@@ -7286,17 +7315,10 @@ function NoPlate({ regNr }) {
   );
 }
 
-function resolveVehicleFromSvvData(svvData) {
-  if (!svvData || typeof svvData !== 'object') return null;
-  if (svvData.regNr || (svvData.merke && svvData.modell)) return svvData;
-  if (svvData.vehicle && typeof svvData.vehicle === 'object') return svvData.vehicle;
-  return null;
-}
-
 function BilAutosysTab({ bil, oppdater, visTost, lists }) {
   const [laster, setLaster] = useState(false);
   const [feil, setFeil] = useState('');
-  const vehicle = resolveVehicleFromSvvData(bil.svvData);
+  const vehicle = getVehicleFromSvvData(bil.svvData);
   const sections = vehicle ? buildSvvSectionsFromVehicle(vehicle) : [];
 
   const hentOgLagre = useCallback(async function () {
@@ -7325,7 +7347,7 @@ function BilAutosysTab({ bil, oppdater, visTost, lists }) {
     }
   }, [bil, lists, oppdater, visTost]);
 
-  const displayVehicle = vehicle || resolveVehicleFromSvvData(bil.svvData?.vehicle);
+  const displayVehicle = vehicle || getVehicleFromSvvData(bil.svvData?.vehicle);
 
   return (
     <div className="bil-modal__autosys">
@@ -7370,11 +7392,11 @@ function BilAutosysTab({ bil, oppdater, visTost, lists }) {
               </div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {displayVehicle.registreringsstatus ? (
-                <span className={`chip ${displayVehicle.registreringsstatus === 'Registrert' ? 'chip-green' : 'chip-orange'}`}>
-                  {displayVehicle.registreringsstatus}
-                </span>
-              ) : null}
+              {(() => {
+                const regChip = registreringsstatusChip(displayVehicle.registreringsstatus);
+                if (!regChip) return null;
+                return <span className={`chip ${regChip.className}`}>{regChip.label}</span>;
+              })()}
               {displayVehicle.farge ? (
                 <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(displayVehicle.farge), border: '1px solid var(--b2)' }} />

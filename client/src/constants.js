@@ -503,6 +503,39 @@ export function euKontrollChipClass(value) {
   return 'chip-orange';
 }
 
+/** Parsed kjøretøy fra lagret Autosys/Vegvesen-payload. */
+export function getVehicleFromSvvData(svvData) {
+  if (!svvData || typeof svvData !== 'object') return null;
+  if (svvData.regNr || (svvData.merke && svvData.modell)) return svvData;
+  if (svvData.vehicle && typeof svvData.vehicle === 'object') return svvData.vehicle;
+  return null;
+}
+
+export function getRegistreringsstatusFromSvvData(svvData) {
+  const vehicle = getVehicleFromSvvData(svvData);
+  if (!vehicle) return '';
+  return String(vehicle.registreringsstatus || '').trim();
+}
+
+/** true = påregistrert, false = avregistrert, null = ukjent. */
+export function erBilParegistrert(status) {
+  const s = String(status || '').trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes('avregistr') || s.includes('uregistr')) return false;
+  if (s.includes('registrert')) return true;
+  return null;
+}
+
+/** Chip for header: grønn påregistrert, grå avregistrert. */
+export function registreringsstatusChip(status) {
+  const raw = String(status || '').trim();
+  if (!raw) return null;
+  const pareg = erBilParegistrert(raw);
+  if (pareg === true) return { label: 'Påregistrert', className: 'chip-green' };
+  if (pareg === false) return { label: 'Avregistrert', className: 'chip-gray' };
+  return { label: raw, className: 'chip-gray' };
+}
+
 export const DEFAULT_BIL_ARSPROVEKJENNEMERKE = {
   skiltnummer: '',
   fraDato: '',
