@@ -25,7 +25,7 @@ import {
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
   ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
-  getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip,
+  getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
@@ -146,12 +146,13 @@ export function nok(v) {
 }
 
 function svvFarge(c) {
+  const navn = formatSvvFargeNavn(c);
   const m = {
     HVIT: '#f9fafb', SORT: '#111827', SØLV: '#9ca3af', GRÅ: '#6b7280',
     BLÅ: '#1d4ed8', RØD: '#dc2626', GRØNN: '#16a34a', BRUN: '#78350f',
     GULL: '#b45309', ORANSJE: '#ea580c', FIOLETT: '#7c3aed', BEIGE: '#d4c5a9'
   };
-  return m[c?.toUpperCase()] || '#6b7280';
+  return m[navn?.toUpperCase()] || '#6b7280';
 }
 
 function fmtKm(km) {
@@ -1564,28 +1565,32 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
 
   const renderBilActionBtns = (bil, opts) => {
     const showArchive = opts?.showArchive !== false;
+    if (!showArchive || bil.archived) return null;
     return (
       <div className="bil-card-actions" onClick={function (e) { e.stopPropagation(); }}>
-        {kanSletteBil && (
-          <button
-            type="button"
-            className="bil-delete-btn"
-            title="Slett bil permanent"
-            onClick={function () { slettBil(bil); }}
-          >
-            🗑
-          </button>
-        )}
-        {showArchive && !bil.archived && (
-          <button
-            type="button"
-            className="bil-archive-btn"
-            title="Arkiver bil"
-            onClick={function () { archiveBil(bil); }}
-          >
-            📦
-          </button>
-        )}
+        <button
+          type="button"
+          className="bil-archive-btn"
+          title="Arkiver bil"
+          onClick={function () { archiveBil(bil); }}
+        >
+          📦
+        </button>
+      </div>
+    );
+  };
+
+  const renderBilSlettBtn = (bil) => {
+    if (!kanSletteBil) return null;
+    return (
+      <div className="bil-card-footer" onClick={function (e) { e.stopPropagation(); }}>
+        <button
+          type="button"
+          className="btn btn-red btn-xs"
+          onClick={function () { slettBil(bil); }}
+        >
+          Slett
+        </button>
       </div>
     );
   };
@@ -1627,6 +1632,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             <div className="prog-bar"><div className="prog-fill" style={{ width: pst + '%' }} /></div>
           </>
         )}
+        {renderBilSlettBtn(bil)}
       </div>
     );
   };
@@ -1653,6 +1659,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
         onDrop={(e) => handleListeDrop(e, status, bil.id)}
         onClick={() => openBil(bil)}
       >
+        <div className="bil-pipeline-row-inner">
         <span className="bil-pipeline-grip" aria-hidden="true">⋮⋮</span>
         <div className="bil-pipeline-main">
           <div className="bil-pipeline-ident">
@@ -1681,6 +1688,8 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             {linkKal === 0 && linkHenv === 0 && <span style={{ fontSize: 11, color: 'var(--t4)' }}>—</span>}
           </div>
         </div>
+        </div>
+        {renderBilSlettBtn(bil)}
       </div>
     );
   };
@@ -2353,6 +2362,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
 
         <ModalTabs tabs={bilTabs} active={activeTab} onChange={setActiveTab} />
 
+        <div className="bil-modal__body">
         {activeTab === 'informasjon' && (
           <div className="bil-modal__grid">
             <div>
@@ -2557,6 +2567,7 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
             </div>
           </div>
         )}
+        </div>
 
         <div className="modal-footer">
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
@@ -2721,7 +2732,7 @@ function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
     merke: resolveMerkeFromLists(v.merke, lists.merker),
     modell: v.modell || prev.modell,
     aar: Number(v.arsmodell) || prev.aar,
-    farge: v.farge || prev.farge,
+    farge: formatSvvFargeNavn(v.farge) || prev.farge,
     euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || prev.euKontroll,
     notater: prev.notater || '',
     svvData: rawData || v
@@ -7284,7 +7295,9 @@ function buildSvvSectionsFromVehicle(vehicle) {
         const fmt = def[2];
         const raw = vehicle[key];
         if (raw === null || raw === undefined || raw === '') return null;
-        return { label: label, value: fmt ? fmt(raw) : String(raw) };
+        const value = key === 'farge' ? formatSvvFargeNavn(raw) : (fmt ? fmt(raw) : String(raw));
+        if (!value) return null;
+        return { label: label, value: value };
       })
       .filter(Boolean);
     return { title: title, fields: fields };
@@ -7348,83 +7361,87 @@ function BilAutosysTab({ bil, oppdater, visTost, lists }) {
   }, [bil, lists, oppdater, visTost]);
 
   const displayVehicle = vehicle || getVehicleFromSvvData(bil.svvData?.vehicle);
+  const fargeNavn = displayVehicle ? formatSvvFargeNavn(displayVehicle.farge) : '';
 
   return (
     <div className="bil-modal__autosys">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div>
+      <div className="bil-modal__autosys-content">
+        <div style={{ marginBottom: 16 }}>
           <div className="modal-sec" style={{ marginBottom: 4 }}>Autosys · Statens vegvesen</div>
           <div style={{ fontSize: 11, color: 'var(--t4)' }}>
             Teknisk kjøretøydata lagret på {bil.reg || '—'}
           </div>
         </div>
+
+        {laster ? (
+          <div className="fv" style={{ fontSize: 12, color: 'var(--t3)', padding: '24px 0' }}>Henter data fra Autosys…</div>
+        ) : null}
+
+        {!laster && feil ? (
+          <div style={{ color: 'var(--red)', fontSize: 12, background: 'var(--redl)', padding: '10px 14px', borderRadius: 7, marginBottom: 12 }}>
+            {feil}
+          </div>
+        ) : null}
+
+        {!laster && !displayVehicle && !feil ? (
+          <div style={{ fontSize: 12, color: 'var(--t4)', padding: '20px 0' }}>
+            Ingen Autosys-data er lagret for denne bilen ennå. Klikk «Hent fra Autosys» nederst for å hente og lagre data.
+          </div>
+        ) : null}
+
+        {!laster && displayVehicle ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+              <NoPlate regNr={displayVehicle.regNr || bil.reg} />
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>
+                  {displayVehicle.merke} {displayVehicle.modell}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
+                  {[displayVehicle.arsmodell, displayVehicle.kjoretoyGruppe || displayVehicle.kjoretoyType].filter(Boolean).join(' · ') || 'Kjøretøy funnet'}
+                </div>
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {(() => {
+                  const regChip = registreringsstatusChip(displayVehicle.registreringsstatus);
+                  if (!regChip) return null;
+                  return <span className={`chip ${regChip.className}`}>{regChip.label}</span>;
+                })()}
+                {fargeNavn ? (
+                  <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(fargeNavn), border: '1px solid var(--b2)' }} />
+                    {fargeNavn}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            {sections.map(function (section) {
+              return (
+                <div key={section.title} style={{ marginBottom: 20 }}>
+                  <div className="modal-sec">{section.title}</div>
+                  <div className="svv-grid">
+                    {section.fields.map(function (field) {
+                      return (
+                        <div className="svv-field" key={section.title + field.label}>
+                          <div className="fl">{field.label}</div>
+                          <div className="fv">{field.value}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        ) : null}
+      </div>
+
+      <div className="bil-modal__autosys-footer">
         <button type="button" className="btn btn-g btn-sm" onClick={hentOgLagre} disabled={laster}>
           {laster ? 'Henter…' : displayVehicle ? 'Oppdater oppslag' : 'Hent fra Autosys'}
         </button>
       </div>
-
-      {laster ? (
-        <div className="fv" style={{ fontSize: 12, color: 'var(--t3)', padding: '24px 0' }}>Henter data fra Autosys…</div>
-      ) : null}
-
-      {!laster && feil ? (
-        <div style={{ color: 'var(--red)', fontSize: 12, background: 'var(--redl)', padding: '10px 14px', borderRadius: 7, marginBottom: 12 }}>
-          {feil}
-        </div>
-      ) : null}
-
-      {!laster && !displayVehicle && !feil ? (
-        <div style={{ fontSize: 12, color: 'var(--t4)', padding: '20px 0' }}>
-          Ingen Autosys-data er lagret for denne bilen ennå. Klikk «Hent fra Autosys» for å hente og lagre data.
-        </div>
-      ) : null}
-
-      {!laster && displayVehicle ? (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-            <NoPlate regNr={displayVehicle.regNr || bil.reg} />
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>
-                {displayVehicle.merke} {displayVehicle.modell}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
-                {[displayVehicle.arsmodell, displayVehicle.kjoretoyGruppe || displayVehicle.kjoretoyType].filter(Boolean).join(' · ') || 'Kjøretøy funnet'}
-              </div>
-            </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {(() => {
-                const regChip = registreringsstatusChip(displayVehicle.registreringsstatus);
-                if (!regChip) return null;
-                return <span className={`chip ${regChip.className}`}>{regChip.label}</span>;
-              })()}
-              {displayVehicle.farge ? (
-                <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(displayVehicle.farge), border: '1px solid var(--b2)' }} />
-                  {displayVehicle.farge}
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          {sections.map(function (section) {
-            return (
-              <div key={section.title} style={{ marginBottom: 20 }}>
-                <div className="modal-sec">{section.title}</div>
-                <div className="svv-grid">
-                  {section.fields.map(function (field) {
-                    return (
-                      <div className="svv-field" key={section.title + field.label}>
-                        <div className="fl">{field.label}</div>
-                        <div className="fv">{field.value}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </>
-      ) : null}
     </div>
   );
 }
@@ -7510,7 +7527,7 @@ function KjoretoyAutosysPanel({ regnr, active }) {
               {resultat.farge ? (
                 <span className="chip chip-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: svvFarge(resultat.farge), border: '1px solid var(--b2)' }} />
-                  {resultat.farge}
+                  {formatSvvFargeNavn(resultat.farge)}
                 </span>
               ) : null}
             </div>

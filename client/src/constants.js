@@ -536,6 +536,16 @@ export function registreringsstatusChip(status) {
   return { label: raw, className: 'chip-gray' };
 }
 
+/** Enkel fargebetegnelse fra Vegvesen (f.eks. «Grå», ikke «Grå herunder …»). */
+export function formatSvvFargeNavn(farge) {
+  let s = String(farge || '').trim();
+  if (!s) return '';
+  s = s.replace(/\s+herunder\b.*/i, '').trim();
+  s = s.replace(/\s*\([^)]*\)/g, ' ').trim();
+  const first = s.split(/[,;/]/)[0].trim();
+  return first || s;
+}
+
 export const DEFAULT_BIL_ARSPROVEKJENNEMERKE = {
   skiltnummer: '',
   fraDato: '',
