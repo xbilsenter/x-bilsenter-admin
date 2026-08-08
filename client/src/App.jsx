@@ -26,7 +26,7 @@ import {
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
-  PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt
+  PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk
 } from './constants.js';
 import {
   getToken, logout,
@@ -2149,13 +2149,10 @@ function BilModal({ data, onClose, updateBil, visTost, lists, kal, henv, setModa
               })()}
               {bil.svvData && <span className="chip chip-green">✓ Vegvesen-verifisert</span>}
               {(() => {
+                if (!erArsprovekjennemerkeIbruk(bil.arsprovekjennemerke)) return null;
                 const ap = normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke);
-                if (ap.status === 'ingen' && !ap.skiltnummer) return null;
-                const chipClass = ap.status === 'aktiv' ? 'chip-green' : (ap.status === 'utlopt' ? 'chip-red' : 'chip-orange');
-                const label = ap.skiltnummer
-                  ? `Årsprøve: ${ap.skiltnummer} · ${arsprovekjennemerkeStatusLabel(ap.status)}`
-                  : `Årsprøve: ${arsprovekjennemerkeStatusLabel(ap.status)}`;
-                return <span className={`chip ${chipClass}`}>{label}</span>;
+                const label = ap.skiltnummer ? `Årsprøve: ${ap.skiltnummer}` : 'Årsprøve: Aktiv';
+                return <span className="chip chip-orange">{label}</span>;
               })()}
             </div>
           </div>

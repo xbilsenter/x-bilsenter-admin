@@ -481,6 +481,17 @@ export function arsprovekjennemerkeStatusLabel(status) {
   return item ? item.label : 'Ingen';
 }
 
+/** Vis chip øverst i bilmodal kun når årsprøvekjennemerke faktisk er i bruk */
+export function erArsprovekjennemerkeIbruk(raw) {
+  const ap = normalizeBilArsprovekjennemerke(raw);
+  if (ap.status !== 'aktiv') return false;
+  if (ap.tilDato) {
+    const tilMs = new Date(`${ap.tilDato}T23:59:59`).getTime();
+    if (!Number.isNaN(tilMs) && tilMs < Date.now()) return false;
+  }
+  return true;
+}
+
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
   const inn = Number(innkjop) || 0;
