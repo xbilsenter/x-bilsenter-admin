@@ -569,6 +569,11 @@ export function normalizeBilTilstandsrapport(raw) {
   };
 }
 
+export function bilManglerTilstandsrapport(bil) {
+  if (!bil || bil.archived || bil.status === 'Solgt') return false;
+  return normalizeBilTilstandsrapport(bil.tilstandsrapport).status === 'ikke_utfort';
+}
+
 export function normalizeEuKontrollDato(value) {
   if (!value) return '';
   const s = String(value).trim();

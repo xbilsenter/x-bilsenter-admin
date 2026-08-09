@@ -28,7 +28,7 @@ import {
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
   buildMerkeOptions, resolveMerkeFromLists, formatBilFarge,
-  DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport,
+  DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
   PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk
@@ -800,10 +800,11 @@ export default function App() {
               biler={biler} henv={henv} kal={kal}
               paaLager={paaLager} reservert={reservert}
               nyeHenv={nyeHenv} nyeInnbytte={nyeInnbytte}
-              iDagKal={iDagKal} setTab={setTab}
+              iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               currentUser={user}
               vedlikeholdModus={innstillinger.vedlikeholdModus}
               henvStatusFarger={innstillinger.henvStatusFarger}
+              bilStatusFarger={innstillinger.bilStatusFarger}
             />
           )}
           {tab === 'biler' && (
@@ -1291,8 +1292,11 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
   );
 }
 
-function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, currentUser, vedlikeholdModus, henvStatusFarger }) {
+function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger }) {
+  const [visTrListe, setVisTrListe] = useState(false);
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
+  const trMangler = biler.filter(bilManglerTilstandsrapport);
+  const trAntall = trMangler.length;
 
   return (
     <>
@@ -1315,9 +1319,31 @@ function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte
           { ico: '🔴', lbl: 'Nye henvendelser', val: nyeHenv, sub: 'Krever svar', red: true },
           { ico: '⇄', lbl: 'Innbytte (nye)', val: nyeInnbytte, sub: 'Venter på tilbud', orange: true },
           { ico: '✅', lbl: 'Reserverte biler', val: reservert, sub: 'Klar for utlevering', green: true },
-          { ico: '📅', lbl: 'Avtaler i dag', val: iDagKal, sub: 'Se kalender' }
+          { ico: '📅', lbl: 'Avtaler i dag', val: iDagKal, sub: 'Se kalender' },
+          {
+            ico: '📋',
+            lbl: 'Tilstandsrapport',
+            val: trAntall,
+            sub: trAntall ? (visTrListe ? 'Skjul liste' : 'Klikk for liste') : 'Ingen mangler',
+            red: trAntall > 0,
+            clickable: trAntall > 0,
+            active: visTrListe,
+            onClick: function () { setVisTrListe(function (v) { return !v; }); }
+          }
         ].map(s => (
-          <div className="stat" key={s.lbl}>
+          <div
+            className={`stat${s.clickable ? ' stat--clickable' : ''}${s.active ? ' stat--active' : ''}`}
+            key={s.lbl}
+            role={s.clickable ? 'button' : undefined}
+            tabIndex={s.clickable ? 0 : undefined}
+            onClick={s.onClick}
+            onKeyDown={s.clickable ? function (e) {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                s.onClick();
+              }
+            } : undefined}
+          >
             <div className="stat-ico">{s.ico}</div>
             <div className="stat-lbl">{s.lbl}</div>
             <div
@@ -1330,6 +1356,39 @@ function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte
           </div>
         ))}
       </div>
+
+      {visTrListe && trAntall > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-h">
+            <span className="card-ht">Biler uten tilstandsrapport ({trAntall})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>
+              Gå til biler →
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th><th>Tilstandsrapport</th></tr>
+            </thead>
+            <tbody>
+              {trMangler.map(function (bil) {
+                return (
+                  <tr
+                    key={bil.id}
+                    className="dashboard-bil-row"
+                    onClick={function () { setModal({ t: 'visBil', d: bil }); }}
+                  >
+                    <td><strong>{bil.reg}</strong></td>
+                    <td>{bil.merke} {bil.modell} · {bil.aar || '—'}</td>
+                    <td><Badge s={bil.status} colors={bilStatusFarger} /></td>
+                    <td>{bil.ansvarlig || '—'}</td>
+                    <td><span className="chip chip-red">Ikke utført</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 16 }}>
         <div className="card">
