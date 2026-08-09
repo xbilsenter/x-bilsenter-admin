@@ -707,7 +707,9 @@ export const DEFAULT_BIL_TILSTANDSRAPPORT = {
   stylingDelerNodvendig: false,
   stylingDelerBestilt: false,
   reparasjonsdelerNodvendig: false,
-  reparasjonsdelerBestilt: false
+  reparasjonsdelerBestilt: false,
+  felglakkeringNodvendig: false,
+  felglakkeringUtfort: false
 };
 
 export function normalizeBilTilstandsrapport(raw) {
@@ -722,8 +724,22 @@ export function normalizeBilTilstandsrapport(raw) {
     stylingDelerNodvendig: !!o.stylingDelerNodvendig,
     stylingDelerBestilt: !!o.stylingDelerBestilt,
     reparasjonsdelerNodvendig: !!(o.reparasjonsdelerNodvendig || o.reparasjonsdelerMaBestilles),
-    reparasjonsdelerBestilt: !!o.reparasjonsdelerBestilt
+    reparasjonsdelerBestilt: !!o.reparasjonsdelerBestilt,
+    felglakkeringNodvendig: !!o.felglakkeringNodvendig,
+    felglakkeringUtfort: !!o.felglakkeringUtfort
   };
+}
+
+export function tilstandsrapportDelerChips(raw) {
+  const tr = normalizeBilTilstandsrapport(raw);
+  const chips = [];
+  if (tr.stylingDelerNodvendig) chips.push({ label: 'Styling deler nødvendig', tone: 'red' });
+  if (tr.stylingDelerBestilt) chips.push({ label: 'Styling deler bestilt', tone: 'green' });
+  if (tr.reparasjonsdelerNodvendig) chips.push({ label: 'Reparasjonsdeler nødvendig', tone: 'red' });
+  if (tr.reparasjonsdelerBestilt) chips.push({ label: 'Reparasjonsdeler bestilt', tone: 'green' });
+  if (tr.felglakkeringNodvendig) chips.push({ label: 'Felglakkering nødvendig', tone: 'red' });
+  if (tr.felglakkeringUtfort) chips.push({ label: 'Felglakkering utført', tone: 'green' });
+  return chips;
 }
 
 export function bilManglerTilstandsrapport(bil) {

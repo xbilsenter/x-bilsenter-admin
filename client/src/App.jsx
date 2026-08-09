@@ -40,6 +40,7 @@ import {
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
   buildMerkeOptions, resolveMerkeFromLists, formatBilFarge,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
+  tilstandsrapportDelerChips,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
   PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk,
@@ -2418,6 +2419,22 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
             />
             Reparasjonsdeler bestilt
           </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.felglakkeringNodvendig}
+              onChange={function (e) { patch({ felglakkeringNodvendig: e.target.checked }); }}
+            />
+            Felglakkering nødvendig
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.felglakkeringUtfort}
+              onChange={function (e) { patch({ felglakkeringUtfort: e.target.checked }); }}
+            />
+            Felglakkering utført
+          </label>
         </div>
       </div>
     </div>
@@ -2762,6 +2779,13 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                     {tr.medfolger && <span className="chip chip-green">Tilstandsrapport: Medfølger</span>}
                     {tr.status === 'utfort' && <span className="chip chip-green">Tilstandsrapport: Utført</span>}
                     {tr.status === 'ikke_utfort' && <span className="chip chip-red">Tilstandsrapport: Ikke utført</span>}
+                    {tilstandsrapportDelerChips(tr).map(function (chip) {
+                      return (
+                        <span key={chip.label} className={`chip chip-${chip.tone}`}>
+                          {chip.label}
+                        </span>
+                      );
+                    })}
                   </>
                 );
               })()}
