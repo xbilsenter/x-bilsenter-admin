@@ -2098,17 +2098,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
               : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
-        {currentUser?.isAdmin && (
-          <button
-            type="button"
-            className="btn btn-g btn-sm"
-            onClick={function () { setVisSlettelog(function (v) { return !v; }); }}
-          >
-            {visSlettelog ? 'Skjul slettelog' : 'Slettelog'}
-          </button>
-        )}
       </div>
-      {currentUser?.isAdmin && visSlettelog && <BilSlettelogPanel />}
       <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
         <div className="fl">Søk i alle biler</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2148,6 +2138,15 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <button type="button" className="btn btn-p bil-add-btn" onClick={() => setModal({ t: 'nyBil' })}>+ Legg til bil</button>
         )}
         <div className="bil-toolbar">
+          {currentUser?.isAdmin && (
+            <button
+              type="button"
+              className="btn btn-g btn-sm bil-slettelog-toggle"
+              onClick={function () { setVisSlettelog(function (v) { return !v; }); }}
+            >
+              {visSlettelog ? 'Skjul slettelog' : 'Slettelog'}
+            </button>
+          )}
           <div className="view-toggle" role="group" aria-label="Område">
             <button
               type="button"
@@ -2213,6 +2212,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           )}
         </div>
       </div>
+      {currentUser?.isAdmin && visSlettelog && <BilSlettelogPanel />}
       <div className="biler-content">
       {searchActive ? (
         searchHits.length === 0 ? (
