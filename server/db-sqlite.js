@@ -914,6 +914,27 @@ function listNyeInnkommendeEpost(limit) {
   `).all({ since });
 }
 
+function listUlestEpost(limit) {
+  const max = Math.max(1, Math.min(Number(limit) || 50, 100));
+  const threadKey2 = epostThreadKeySql('e2');
+  return db.prepare(`
+    SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost,
+      m.navn AS mappe_navn, m.mappe_type AS mappe_type,
+      (SELECT COUNT(*) FROM epost_vedlegg v WHERE v.epost_id = e.id) AS vedlegg_count
+    FROM eposter e
+    INNER JOIN mail_kontoer k ON k.id = e.konto_id
+    LEFT JOIN mail_mapper m ON m.id = e.mappe_id
+    WHERE e.slettet = 0 AND e.retning = 'inn' AND e.lest = 0
+      AND e.id IN (
+        SELECT MAX(e2.id) FROM eposter e2
+        WHERE e2.slettet = 0 AND e2.retning = 'inn' AND e2.lest = 0
+        GROUP BY ${threadKey2}
+      )
+    ORDER BY e.mottatt_dato DESC, e.id DESC
+    LIMIT ${max}
+  `).all();
+}
+
 function deleteMailKonto(id) {
   const row = db.prepare('SELECT id FROM mail_kontoer WHERE id = ?').get(id);
   if (!row) return false;
@@ -1563,6 +1584,7 @@ module.exports = {
   countUlestEpost,
   countNyeInnkommendeEpost,
   listNyeInnkommendeEpost,
+  listUlestEpost,
   getEpostUtkastList,
   getEpostUtkastById,
   countEpostUtkast,

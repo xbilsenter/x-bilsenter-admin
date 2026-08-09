@@ -485,8 +485,8 @@ export default function App() {
   const ulestEpost = Number(stats.ulestEpost ?? mailStatus.ulest ?? epost.filter(e => e.retning === 'inn' && !e.lest).length) || 0;
   const harInnboks = canAccess(user, 'innboks');
   const nyeInnkommendeEpost = Number(stats.nyeInnkommendeEpost ?? 0) || 0;
-  const nyeInnkommendeEpostListe = harInnboks ? (stats.nyeInnkommendeEpostListe || []) : [];
-  const nyeHenvendelserTotal = nyeHenv + nyeSelgBil + (harInnboks ? nyeInnkommendeEpost : 0);
+  const ulestEpostListe = harInnboks ? (stats.ulestEpostListe || []) : [];
+  const nyeHenvendelserTotal = nyeHenv + nyeSelgBil + (harInnboks ? ulestEpost : 0);
 
   const lists = innstillinger;
 
@@ -816,7 +816,7 @@ export default function App() {
               paaLager={paaLager} reservert={reservert}
               nyeInnbytte={nyeInnbytte}
               nyeHenvendelserTotal={nyeHenvendelserTotal}
-              ulestEpostListe={nyeInnkommendeEpostListe}
+              ulestEpostListe={ulestEpostListe}
               harInnboks={harInnboks}
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               setInnboksOpenEpost={setInnboksOpenEpost}

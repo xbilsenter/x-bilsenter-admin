@@ -40,6 +40,7 @@ const {
   countUlestEpost,
   countNyeInnkommendeEpost,
   listNyeInnkommendeEpost,
+  listUlestEpost,
   getEpostUtkastList,
   getEpostUtkastById,
   countEpostUtkast,
@@ -676,6 +677,7 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
     ulestEpost,
     nyeInnkommendeEpost,
     nyeInnkommendeEpostRows,
+    ulestEpostRows,
     totaltKunderRow
   ] = await Promise.all([
     prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
@@ -688,10 +690,12 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
     countUlestEpost(),
     countNyeInnkommendeEpost(),
     listNyeInnkommendeEpost(50),
+    listUlestEpost(50),
     prepare('SELECT COUNT(*) AS c FROM kunder').get()
   ]);
 
   const nyeInnkommendeEpostListe = await mapEpostRowsWithVedlegg(nyeInnkommendeEpostRows || []);
+  const ulestEpostListe = await mapEpostRowsWithVedlegg(ulestEpostRows || []);
 
   let aapneOppgaver = 0;
   biler.forEach(function (b) {
@@ -714,6 +718,7 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
       ulestEpost: Number(ulestEpost) || 0,
       nyeInnkommendeEpost: Number(nyeInnkommendeEpost) || 0,
       nyeInnkommendeEpostListe,
+      ulestEpostListe,
       totaltKunder: Number(totaltKunderRow.c) || 0
     }
   });
