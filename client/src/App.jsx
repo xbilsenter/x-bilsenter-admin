@@ -17,6 +17,7 @@ import {
   DEFAULT_BIL_STATUS_FARGER, DEFAULT_SJEKKLISTE_MAL, DEFAULT_BIL_SJEKKLISTER,
   getAktivSjekkliste, withSjekklisteUpdate, withStatusChange,
   initBilSjekklister, normalizeBilSjekklister, syncBilSjekklisterFromMal,
+  mergeOrphanSjekklisteItemsIntoMal,
   calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, getSisteKryssedeSjekklisteItem, normalizeSjekklisteMalItems,
   finalizeSjekklisteMalItems, trimSjekklisteMalTekst,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
@@ -913,6 +914,7 @@ export default function App() {
           {tab === 'innstillinger' && (
             <InnstillingerView
               settings={innstillinger}
+              biler={biler}
               currentUser={user}
               onSave={async (next) => {
                 try {
@@ -9424,12 +9426,22 @@ function KontoPassordSection({ currentUser, visTost }) {
   );
 }
 
-function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange, onVedlikeholdChange, onStatusChange, visTost }) {
+function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppsettChange, onVedlikeholdChange, onStatusChange, visTost }) {
   const [draft, setDraft] = useState(settings);
 
   useEffect(function () {
-    setDraft(settings);
-  }, [settings]);
+    setDraft(function () {
+      if (!biler?.length) return settings;
+      return {
+        ...settings,
+        bilSjekklister: mergeOrphanSjekklisteItemsIntoMal(
+          settings.bilSjekklister,
+          biler,
+          settings.bilStatuser
+        )
+      };
+    });
+  }, [settings, biler]);
 
   const setList = (key, value) => setDraft(prev => ({ ...prev, [key]: value }));
   const showBrukere = canAccess(currentUser, 'brukere');

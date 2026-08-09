@@ -1909,6 +1909,20 @@ app.post('/api/selg-bil/:id/send-tilbud', requireAuth, async function (req, res)
 });
 
 // ─── Biler ───
+async function mapBilForApi(row, kundeIds) {
+  const settings = await getInnstillinger();
+  const mal = settings.bilSjekklister || {};
+  return mapBil(row, kundeIds || [], mal);
+}
+
+async function mapBilerForApi(rows, kundeMap) {
+  const settings = await getInnstillinger();
+  const mal = settings.bilSjekklister || {};
+  return rows.map(function (row) {
+    return mapBil(row, (kundeMap && kundeMap[row.id]) || [], mal);
+  });
+}
+
 app.get('/api/biler', requireAuth, async function (_req, res) {
   const [rows, kundeMap] = await Promise.all([
     prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all(),
@@ -1916,7 +1930,7 @@ app.get('/api/biler', requireAuth, async function (_req, res) {
   ]);
   res.json({
     ok: true,
-    items: rows.map(function (row) { return mapBil(row, kundeMap[row.id] || []); })
+    items: await mapBilerForApi(rows, kundeMap)
   });
 });
 
@@ -2007,7 +2021,7 @@ app.post('/api/biler', requireAuth, async function (req, res) {
     if (!row) {
       return res.status(500).json({ ok: false, error: 'Bilen ble opprettet, men kunne ikke hentes.' });
     }
-    res.status(201).json({ ok: true, item: mapBil(row) });
+    res.status(201).json({ ok: true, item: await mapBilForApi(row) });
   } catch (err) {
     console.error('POST /api/biler feilet:', err.message);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke legge til bil.' });
@@ -2137,7 +2151,7 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
     archivedAt: b.archived === true ? new Date().toISOString() : (b.archived === false ? null : null)
   });
 
-  res.json({ ok: true, item: mapBil(await prepare('SELECT * FROM biler WHERE id = ?').get(id)) });
+  res.json({ ok: true, item: await mapBilForApi(await prepare('SELECT * FROM biler WHERE id = ?').get(id)) });
 });
 
 app.get('/api/biler/slettelog', requireAuth, async function (req, res) {
@@ -2255,7 +2269,7 @@ app.post('/api/biler/:id/dokumenter', requireAuth, function (req, res, next) {
       prepare('SELECT * FROM biler WHERE id = ?').get(id),
       getAllBilKundeIdsMap()
     ]);
-    res.json({ ok: true, item: mapBil(updatedRow, kundeMap[id] || []) });
+    res.json({ ok: true, item: await mapBilForApi(updatedRow, kundeMap[id] || []) });
   } catch (err) {
     console.error('POST /api/biler/:id/dokumenter feilet:', err.message);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke laste opp filer.' });
@@ -2349,7 +2363,7 @@ app.post('/api/biler/sync-eu-kontroll', requireAuth, async function (req, res) {
     skipped: skipped,
     failed: failed,
     errors: errors,
-    items: freshRows.map(function (item) { return mapBil(item, kundeMap[item.id] || []); })
+    items: await mapBilerForApi(freshRows, kundeMap)
   });
 });
 
@@ -2775,8 +2789,15 @@ function startLocalServer() {
     startBackgroundMailSync();
   });
 
-  dbReady.then(function () {
+  dbReady.then(async function () {
     console.log('[db] Database-init fullført.');
+    try {
+      const settings = await getInnstillinger();
+      await syncAllBilerSjekklisterFromMal(settings.bilSjekklister || {});
+      console.log('[db] Sjekklister synkronisert mot innstillinger.');
+    } catch (err) {
+      console.warn('[db] Sjekkliste-sync ved oppstart feilet:', err.message);
+    }
   }).catch(function () {
     /* allerede logget */
   });

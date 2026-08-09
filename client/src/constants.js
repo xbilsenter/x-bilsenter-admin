@@ -239,6 +239,38 @@ export function syncSjekklisteFromMal(existingItems, mal) {
   });
 }
 
+export function mergeOrphanSjekklisteItemsIntoMal(bilSjekklister, biler, statuser) {
+  const mal = { ...(bilSjekklister || {}) };
+  (Array.isArray(statuser) ? statuser : []).forEach(function (status) {
+    const malItems = finalizeSjekklisteMalItems(mal[status] || []);
+    const malTexts = {};
+    malItems.forEach(function (item) {
+      malTexts[trimSjekklisteMalTekst(item.t).toLowerCase()] = true;
+    });
+    const orphans = [];
+    (Array.isArray(biler) ? biler : []).forEach(function (bil) {
+      const per = bil.sjekklister;
+      if (!per || typeof per !== 'object' || Array.isArray(per)) return;
+      const list = per[status];
+      if (!Array.isArray(list)) return;
+      normalizeSjekklisteItems(list).forEach(function (item) {
+        const key = trimSjekklisteMalTekst(item.t).toLowerCase();
+        if (!key || malTexts[key]) return;
+        malTexts[key] = true;
+        orphans.push({
+          t: item.t,
+          obligatorisk: item.obligatorisk !== false,
+          forhandsvalgt: false
+        });
+      });
+    });
+    mal[status] = orphans.length
+      ? finalizeSjekklisteMalItems([...malItems, ...orphans])
+      : malItems;
+  });
+  return mal;
+}
+
 export function syncBilSjekklisterFromMal(bil, malPerStatus) {
   const status = bil.status || 'Innkjøpt';
   const per = {};

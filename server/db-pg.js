@@ -1010,10 +1010,17 @@ function mapSelgBil(row) {
   };
 }
 
-function mapBil(row, kundeIds) {
+function mapBil(row, kundeIds, malPerStatus) {
   const ids = Array.isArray(kundeIds) ? kundeIds : [];
-  const sjekklister = parseBilSjekklisterObject(row);
-  const sjekkliste = getAktivSjekklisteFromRow(row, sjekklister);
+  let sjekklister = parseBilSjekklisterObject(row);
+  let sjekkliste;
+  if (malPerStatus && typeof malPerStatus === 'object') {
+    const synced = syncBilSjekklisterFromMalServer(row, malPerStatus);
+    sjekklister = synced.sjekklister;
+    sjekkliste = synced.sjekkliste;
+  } else {
+    sjekkliste = getAktivSjekklisteFromRow(row, sjekklister);
+  }
   return {
     id: Number(row.id),
     reg: row.reg,
@@ -1647,7 +1654,7 @@ async function syncAllBilerSjekklisterFromMal(malPerStatus) {
     getAllBilKundeIdsMap()
   ]);
   return allRows.map(function (row) {
-    return mapBil(row, kundeMap[row.id] || []);
+    return mapBil(row, kundeMap[row.id] || [], malPerStatus);
   });
 }
 

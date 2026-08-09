@@ -1178,7 +1178,14 @@ function mapSelgBil(row) {
   };
 }
 
-function mapBil(row) {
+function mapBil(row, kundeIds, malPerStatus) {
+  let sjekklister = parseJson(row.sjekklister, {});
+  let sjekkliste = parseJson(row.sjekkliste, []);
+  if (malPerStatus && typeof malPerStatus === 'object') {
+    const synced = syncBilSjekklisterFromMalServer(row, malPerStatus);
+    sjekklister = synced.sjekklister;
+    sjekkliste = synced.sjekkliste;
+  }
   return {
     id: row.id,
     reg: row.reg,
@@ -1207,8 +1214,8 @@ function mapBil(row) {
     okonomi: parseJson(row.okonomi, {}),
     tilstandsrapport: normalizeBilTilstandsrapport(parseJson(row.tilstandsrapport, null)),
     arsprovekjennemerke: normalizeBilArsprovekjennemerke(parseJson(row.arsprovekjennemerke, null)),
-    sjekkliste: parseJson(row.sjekkliste, []),
-    sjekklister: parseJson(row.sjekklister, {}),
+    sjekkliste: sjekkliste,
+    sjekklister: sjekklister,
     logg: parseJson(row.logg, []),
     svvData: normalizeSvvDataFarge(parseJson(row.svv_data, null)),
     archived: !!row.archived,
