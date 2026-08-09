@@ -9590,12 +9590,10 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
         { id: 'moduler', label: 'Moduler' },
         { id: 'epost', label: 'E-post' }
       );
-    } else if (showVedlikehold) {
-      tabs.push({ id: 'vedlikehold', label: 'Vedlikehold' });
     }
     if (showBrukere) tabs.push({ id: 'brukere', label: 'Brukere' });
     return tabs;
-  }, [showInnstillinger, showVedlikehold, showBrukere]);
+  }, [showInnstillinger, showBrukere]);
 
   useEffect(function () {
     if (!settingsTabs.some(function (tab) { return tab.id === section; })) {
@@ -9604,14 +9602,15 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
   }, [settingsTabs, section]);
 
   const sectionSubtitles = {
-    konto: 'Endre passord for din bruker',
+    konto: showVedlikehold
+      ? 'Passord og nettside vedlikehold'
+      : 'Endre passord for din bruker',
     lister: 'Ansvarlige, bilmerker og kalendertyper',
     biler: 'Pipeline-statuser og sjekklister per stasjon',
     statuser: 'Statuser og farger for kontaktskjema og innbytte',
-    moduler: 'Menyoppsett og vedlikeholdsmodus for nettsiden',
+    moduler: 'Menyoppsett og moduler i CRM',
     epost: 'Mailkontoer og e-postmaler',
-    brukere: 'Brukere, roller og tilganger',
-    vedlikehold: 'Vedlikeholdsmodus for nettsiden'
+    brukere: 'Brukere, roller og tilganger'
   };
 
   const lagreModulOppsett = async (modulOppsett) => {
@@ -9674,7 +9673,17 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
       </div>
 
       {section === 'konto' && (
-        <KontoPassordSection currentUser={currentUser} visTost={visTost} />
+        <div className="settings-stack">
+          <KontoPassordSection currentUser={currentUser} visTost={visTost} />
+          {showVedlikehold && (
+            <VedlikeholdSection
+              vedlikeholdModus={draft.vedlikeholdModus}
+              readOnly={!canToggleVedlikehold(currentUser)}
+              onSave={lagreVedlikehold}
+              visTost={visTost}
+            />
+          )}
+        </div>
       )}
 
       {section === 'lister' && showInnstillinger && (
@@ -9763,24 +9772,12 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
       )}
 
       {section === 'moduler' && showInnstillinger && (
-        <div className="settings-stack">
-          <div className="settings-stack-row">
-            <ModulOppsettSection
-              modulOppsett={draft.modulOppsett}
-              onChange={onModulOppsettChange}
-              onSave={lagreModulOppsett}
-              visTost={visTost}
-            />
-            {showVedlikehold && (
-              <VedlikeholdSection
-                vedlikeholdModus={draft.vedlikeholdModus}
-                readOnly={!canToggleVedlikehold(currentUser)}
-                onSave={lagreVedlikehold}
-                visTost={visTost}
-              />
-            )}
-          </div>
-        </div>
+        <ModulOppsettSection
+          modulOppsett={draft.modulOppsett}
+          onChange={onModulOppsettChange}
+          onSave={lagreModulOppsett}
+          visTost={visTost}
+        />
       )}
 
       {section === 'epost' && showInnstillinger && (
@@ -9792,15 +9789,6 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
 
       {section === 'brukere' && showBrukere && (
         <BrukereSection currentUser={currentUser} visTost={visTost} />
-      )}
-
-      {section === 'vedlikehold' && showVedlikehold && !showInnstillinger && (
-        <VedlikeholdSection
-          vedlikeholdModus={draft.vedlikeholdModus}
-          readOnly={!canToggleVedlikehold(currentUser)}
-          onSave={lagreVedlikehold}
-          visTost={visTost}
-        />
       )}
     </>
   );
