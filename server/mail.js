@@ -113,35 +113,47 @@ function getFromAddress(konto) {
 }
 
 async function storeOutboundMail(record, attachmentRecords) {
-  const sentMappe = await getSentMappeForKonto(record.konto_id);
-  const info = await prepare(`
-    INSERT OR IGNORE INTO eposter (
-      konto_id, mappe_id, message_id, thread_id, in_reply_to, retning,
-      fra_navn, fra_epost, til_epost, emne, innhold, innhold_html,
-      lest, henvendelse_id, mottatt_dato
-    ) VALUES (
-      @konto_id, @mappe_id, @message_id, @thread_id, @in_reply_to, 'ut',
-      @fra_navn, @fra_epost, @til_epost, @emne, @innhold, @innhold_html,
-      @lest, @henvendelse_id, @mottatt_dato
-    )
-  `).run({ ...record, mappe_id: sentMappe?.id || null, lest: 1 });
+  try {
+    const sentMappe = await getSentMappeForKonto(record.konto_id);
+    const payload = { ...record, mappe_id: sentMappe?.id || null, lest: 1 };
+    let rowId = null;
 
-  let rowId = info.lastInsertRowid;
-  if (!rowId) {
-    const existing = await prepare(`
-      SELECT id FROM eposter WHERE konto_id = ? AND message_id = ?
-    `).get(record.konto_id, record.message_id);
-    rowId = existing?.id || null;
-  }
-  if (!rowId) {
-    throw new Error('Kunne ikke lagre sendt e-post i innboksen.');
-  }
+    try {
+      const info = await prepare(`
+        INSERT INTO eposter (
+          konto_id, mappe_id, message_id, thread_id, in_reply_to, retning,
+          fra_navn, fra_epost, til_epost, emne, innhold, innhold_html,
+          lest, henvendelse_id, mottatt_dato
+        ) VALUES (
+          @konto_id, @mappe_id, @message_id, @thread_id, @in_reply_to, 'ut',
+          @fra_navn, @fra_epost, @til_epost, @emne, @innhold, @innhold_html,
+          @lest, @henvendelse_id, @mottatt_dato
+        )
+      `).run(payload);
+      rowId = info.lastInsertRowid || null;
+    } catch (err) {
+      const duplicate = /unique|duplicate|23505/i.test(String(err?.code || '') + String(err?.message || ''));
+      if (!duplicate) throw err;
+      const existing = await prepare(`
+        SELECT id FROM eposter WHERE konto_id = ? AND message_id = ?
+      `).get(record.konto_id, record.message_id);
+      rowId = existing?.id || null;
+    }
 
-  for (const att of attachmentRecords || []) {
-    await saveEpostVedlegg(rowId, att);
-  }
+    if (!rowId) {
+      console.warn('[mail/storeOutbound] Klarte ikke finne lagret utgående e-post:', record.message_id);
+      return null;
+    }
 
-  return rowId;
+    for (const att of attachmentRecords || []) {
+      await saveEpostVedlegg(rowId, att);
+    }
+
+    return rowId;
+  } catch (err) {
+    console.error('[mail/storeOutbound]', err.message);
+    return null;
+  }
 }
 
 async function syncInbox(kontoId) {
@@ -272,7 +284,7 @@ async function sendMail(options) {
     konto_id: konto.id,
     message_id: messageId,
     thread_id: replyId || messageId,
-    in_reply_to: replyId,
+    in_reply_to: replyId || '',
     fra_navn: konto.fromName || 'X Bilsenter AS',
     fra_epost: konto.epost || konto.smtpUser || '',
     til_epost: to,
@@ -282,6 +294,10 @@ async function sendMail(options) {
     henvendelse_id: henvendelseId || null,
     mottatt_dato: new Date().toISOString()
   }, storedAttachments);
+
+  if (!rowId) {
+    console.warn('[mail/send] E-post sendt, men ble ikke lagret i innboks:', messageId);
+  }
 
   return { messageId, rowId, kontoId: konto.id };
 }

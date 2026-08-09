@@ -774,7 +774,7 @@ export default function App() {
       }
       visTost(body?.type === 'visning' ? 'Invitasjon til befaring sendt ✓' : 'Oppkjøpstilbud sendt ✓');
       refreshStats();
-      await reloadInnboks();
+      reloadInnboks().catch(function () { /* innboks-oppdatering er best-effort */ });
       return res.item;
     } catch (err) {
       visTost(err.message || 'Kunne ikke sende e-post ✗');
@@ -830,7 +830,7 @@ export default function App() {
       if (res.item) setHenv(prev => prev.map(h => h.id === id ? res.item : h));
       visTost('Svar sendt ✓');
       refreshStats();
-      await reloadInnboks();
+      reloadInnboks().catch(function () { /* innboks-oppdatering er best-effort */ });
       return res.item;
     } catch (err) {
       visTost(err.message || 'Kunne ikke sende svar ✗');
@@ -849,7 +849,7 @@ export default function App() {
       }
       visTost(body?.type === 'visning' ? 'Invitasjon til visning sendt ✓' : 'Tilbud sendt på e-post ✓');
       refreshStats();
-      await reloadInnboks();
+      reloadInnboks().catch(function () { /* innboks-oppdatering er best-effort */ });
       return res.item;
     } catch (err) {
       visTost(err.message || 'Kunne ikke sende e-post ✗');

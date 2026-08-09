@@ -1436,7 +1436,9 @@ async function handleSendEpost(req, res) {
       }
     }
 
-    const item = (await mapEpostRowsWithVedlegg([await getEpostRowById(sent.rowId)]))[0];
+    const item = sent.rowId
+      ? (await mapEpostRowsWithVedlegg([await getEpostRowById(sent.rowId)]))[0]
+      : null;
     if (b.draftId) await deleteEpostUtkast(Number(b.draftId));
     res.status(201).json({ ok: true, item, replyToItem, henvendelseItem });
   } catch (err) {
@@ -1768,6 +1770,7 @@ app.post('/api/innbytte/:id/send-tilbud', requireAuth, async function (req, res)
 
     res.json({ ok: true, item: mapInnbytte(await prepare('SELECT * FROM innbytte WHERE id = ?').get(id)) });
   } catch (err) {
+    console.error('[innbytte/send-tilbud]', err);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
   }
 });
@@ -1904,6 +1907,7 @@ app.post('/api/selg-bil/:id/send-tilbud', requireAuth, async function (req, res)
 
     res.json({ ok: true, item: mapSelgBil(await prepare('SELECT * FROM selg_bil WHERE id = ?').get(id)) });
   } catch (err) {
+    console.error('[selg-bil/send-tilbud]', err);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
   }
 });
