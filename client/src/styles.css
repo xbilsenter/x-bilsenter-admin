@@ -370,6 +370,15 @@ select option{background:var(--s1);}
 .maint-switch__label{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--t4);}
 .maint-switch__label.is-on{color:var(--orange);}
 .maint-switch__label.is-readonly{font-size:10px;line-height:1.35;text-transform:none;letter-spacing:0;color:var(--t3);max-width:140px;text-align:right;}
+.konto-passord{margin-bottom:16px;}
+.konto-passord__body{padding:12px 14px 14px;}
+.konto-passord__meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;margin-bottom:14px;}
+.konto-passord__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.konto-passord__foot{margin-top:14px;display:flex;justify-content:flex-end;}
+@media (max-width:900px){
+  .konto-passord__grid{grid-template-columns:1fr;}
+  .konto-passord__meta{grid-template-columns:1fr;}
+}
 .maint-message{margin-top:16px;padding-top:16px;border-top:1px solid var(--b1);}
 .maint-message__foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;}
 .maint-message__hint{font-size:11px;color:var(--t4);line-height:1.45;}

@@ -467,6 +467,33 @@ app.get('/api/auth/me', requireAuth, async function (req, res) {
   res.json({ ok: true, user: formatUserResponse(user) });
 });
 
+app.patch('/api/me/password', requireAuth, async function (req, res) {
+  const currentPassword = String(req.body?.currentPassword || '');
+  const newPassword = String(req.body?.newPassword || '');
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ ok: false, error: 'Nytt passord må være minst 6 tegn.' });
+  }
+
+  const user = await getUserById(req.user.sub, true);
+  if (!user || !user.aktiv) {
+    return res.status(401).json({ ok: false, error: 'Ugyldig sesjon.' });
+  }
+
+  const ok = await bcrypt.compare(currentPassword, user.passwordHash || '');
+  if (!ok) {
+    return res.status(401).json({ ok: false, error: 'Nåværende passord er feil.' });
+  }
+
+  try {
+    const hash = await bcrypt.hash(newPassword, 10);
+    await updateUser(Number(user.id), {}, hash);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'Kunne ikke endre passord.' });
+  }
+});
+
 // ─── Brukere ───
 app.get('/api/brukere/meta', requireAuth, requirePermission('brukere'), function (_req, res) {
   res.json({

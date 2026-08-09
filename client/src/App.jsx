@@ -36,7 +36,7 @@ import {
 } from './constants.js';
 import {
   getToken, logout,
-  getMe,
+  getMe, changeMyPassword,
   getDashboard, getNettsideDrift, getSitePreviewUrl, getVedlikehold, getHenvendelser, patchHenvendelse, deleteHenvendelse,
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
@@ -811,16 +811,6 @@ export default function App() {
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               currentUser={user}
               vedlikeholdModus={innstillinger.vedlikeholdModus}
-              onVedlikeholdSave={async (vedlikeholdModus) => {
-                const res = await patchInnstillinger({ vedlikeholdModus });
-                if (res.settings?.vedlikeholdModus) {
-                  setInnstillinger(function (prev) {
-                    return { ...prev, vedlikeholdModus: res.settings.vedlikeholdModus };
-                  });
-                }
-                return res;
-              }}
-              visTost={visTost}
               henvStatusFarger={innstillinger.henvStatusFarger}
               bilStatusFarger={innstillinger.bilStatusFarger}
               innbytteStatusFarger={innstillinger.innbytteStatusFarger}
@@ -1161,7 +1151,7 @@ async function openNettside(url, { preview = false } = {}) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus, onVedlikeholdClick }) {
+function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
   const [drift, setDrift] = useState(null);
   const [laster, setLaster] = useState(true);
   const [feil, setFeil] = useState('');
@@ -1277,13 +1267,7 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus, onVedlikeho
           <button
             type="button"
             className="btn btn-g btn-sm"
-            onClick={function () {
-              if (canAccess(currentUser, 'innstillinger')) {
-                setTab('innstillinger');
-              } else if (onVedlikeholdClick) {
-                onVedlikeholdClick();
-              }
-            }}
+            onClick={function () { setTab('innstillinger'); }}
           >
             Vedlikehold
           </button>
@@ -1293,11 +1277,8 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus, onVedlikeho
   );
 }
 
-function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, onVedlikeholdSave, visTost, henvStatusFarger, bilStatusFarger, innbytteStatusFarger }) {
+function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger }) {
   const [aktivDrilldown, setAktivDrilldown] = useState(null);
-  const vedlikeholdRef = useRef(null);
-  const visVedlikeholdPanel = canViewVedlikehold(currentUser) && !canAccess(currentUser, 'innstillinger');
-  const kanEndreVedlikehold = canToggleVedlikehold(currentUser);
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
   const lagerBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status !== 'Solgt'; });
   const nyeHenvListe = henv.filter(function (h) { return h.status === 'Ny'; });
@@ -1532,21 +1513,7 @@ function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, n
         setTab={setTab}
         currentUser={currentUser}
         vedlikeholdModus={vedlikeholdModus}
-        onVedlikeholdClick={function () {
-          vedlikeholdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }}
       />
-
-      {visVedlikeholdPanel && (
-        <div id="vedlikehold-panel" ref={vedlikeholdRef} style={{ marginBottom: 16 }}>
-          <VedlikeholdSection
-            vedlikeholdModus={vedlikeholdModus}
-            readOnly={!kanEndreVedlikehold}
-            onSave={onVedlikeholdSave}
-            visTost={visTost}
-          />
-        </div>
-      )}
 
       <div className="stats">
         {statCards.map(function (s) {
@@ -9366,6 +9333,96 @@ function ListEditor({ title, desc, items, onChange, placeholder, allowEmpty, com
   );
 }
 
+function KontoPassordSection({ currentUser, visTost }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const lagre = async function () {
+    if (!currentPassword) {
+      visTost('Skriv inn nåværende passord ✗');
+      return;
+    }
+    if (newPassword.length < 6) {
+      visTost('Nytt passord må være minst 6 tegn ✗');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      visTost('Nytt passord stemmer ikke overens ✗');
+      return;
+    }
+    setSaving(true);
+    try {
+      await changeMyPassword({ currentPassword, newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      visTost('Passord oppdatert ✓');
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke endre passord ✗');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card section-wrap konto-passord">
+      <div className="card-h">
+        <div>
+          <span className="card-ht">Min konto</span>
+          <div className="settings-desc" style={{ marginBottom: 0, marginTop: 4 }}>
+            Endre passordet for {currentUser?.name || currentUser?.username || 'din konto'}.
+          </div>
+        </div>
+      </div>
+      <div className="konto-passord__body">
+        <div className="konto-passord__meta">
+          <div><span className="fl">Brukernavn</span><div className="fv">{currentUser?.username || '—'}</div></div>
+          <div><span className="fl">Rolle</span><div className="fv">{displayRole(currentUser?.role)}</div></div>
+        </div>
+        <div className="konto-passord__grid">
+          <div>
+            <div className="fl">Nåværende passord</div>
+            <input
+              type="password"
+              value={currentPassword}
+              autoComplete="current-password"
+              disabled={saving}
+              onChange={function (e) { setCurrentPassword(e.target.value); }}
+            />
+          </div>
+          <div>
+            <div className="fl">Nytt passord</div>
+            <input
+              type="password"
+              value={newPassword}
+              autoComplete="new-password"
+              disabled={saving}
+              onChange={function (e) { setNewPassword(e.target.value); }}
+            />
+          </div>
+          <div>
+            <div className="fl">Bekreft nytt passord</div>
+            <input
+              type="password"
+              value={confirmPassword}
+              autoComplete="new-password"
+              disabled={saving}
+              onChange={function (e) { setConfirmPassword(e.target.value); }}
+            />
+          </div>
+        </div>
+        <div className="konto-passord__foot">
+          <button type="button" className="btn btn-p btn-sm" disabled={saving} onClick={lagre}>
+            {saving ? 'Lagrer…' : 'Lagre nytt passord'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange, onVedlikeholdChange, onStatusChange, visTost }) {
   const [draft, setDraft] = useState(settings);
 
@@ -9376,6 +9433,7 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
   const setList = (key, value) => setDraft(prev => ({ ...prev, [key]: value }));
   const showBrukere = canAccess(currentUser, 'brukere');
   const showInnstillinger = canAccess(currentUser, 'innstillinger');
+  const showVedlikehold = canViewVedlikehold(currentUser);
 
   const lagreModulOppsett = async (modulOppsett) => {
     const res = await patchInnstillinger({ modulOppsett });
@@ -9401,7 +9459,11 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
       <div className="ph">
         <div>
           <div className="ph-title">Innstillinger</div>
-          <div className="ph-sub">Vedlikehold, brukere, moduler, mailkontoer, bil-pipeline, sjekklister og statuser</div>
+          <div className="ph-sub">
+            {showInnstillinger
+              ? 'Konto, vedlikehold, brukere, moduler, mailkontoer, bil-pipeline, sjekklister og statuser'
+              : 'Endre passord og se nettside vedlikehold'}
+          </div>
         </div>
         {showInnstillinger && (
           <button type="button" className="btn btn-p" onClick={() => onSave({
@@ -9414,6 +9476,19 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           })}>Lagre lister</button>
         )}
       </div>
+
+      <KontoPassordSection currentUser={currentUser} visTost={visTost} />
+
+      {showVedlikehold && !showInnstillinger && (
+        <div style={{ marginBottom: 16 }}>
+          <VedlikeholdSection
+            vedlikeholdModus={draft.vedlikeholdModus}
+            readOnly={!canToggleVedlikehold(currentUser)}
+            onSave={lagreVedlikehold}
+            visTost={visTost}
+          />
+        </div>
+      )}
 
       {showInnstillinger && (
         <>

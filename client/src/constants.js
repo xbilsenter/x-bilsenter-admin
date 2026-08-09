@@ -993,6 +993,7 @@ export function buildModulTabs(oppsett, badges, user) {
       badge: badges[mod.id] || 0
     };
   }).filter(function (t) {
+    if (t.id === 'innstillinger') return !!user;
     return canAccess(user, TAB_PERMISSIONS[t.id]);
   });
 }

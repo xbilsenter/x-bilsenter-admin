@@ -508,6 +508,13 @@ export function getMe() {
   return request('/auth/me');
 }
 
+export function changeMyPassword(body) {
+  return request('/me/password', {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  });
+}
+
 export function getBrukereMeta() {
   return request('/brukere/meta');
 }
