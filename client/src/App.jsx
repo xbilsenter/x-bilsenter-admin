@@ -70,6 +70,21 @@ function formatDatoLang() {
   });
 }
 
+function useIsMobile(breakpoint) {
+  const bp = breakpoint || 900;
+  const [mobile, setMobile] = useState(function () {
+    return typeof window !== 'undefined' && window.innerWidth <= bp;
+  });
+  useEffect(function () {
+    const mq = window.matchMedia('(max-width: ' + bp + 'px)');
+    const fn = function () { setMobile(mq.matches); };
+    fn();
+    mq.addEventListener('change', fn);
+    return function () { mq.removeEventListener('change', fn); };
+  }, [bp]);
+  return mobile;
+}
+
 function toIsoDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -1504,12 +1519,12 @@ function Dashboard({
 
     if (aktivDrilldown === 'lager') {
       return (
-        <div className="card dashboard-drill-panel">
+        <div className="card table-cards dashboard-drill-panel">
           <div className="card-h">
             <span className="card-ht">Biler på lager ({lagerBiler.length})</span>
             <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
           </div>
-          <table>
+          <table className="table-cards">
             <thead><tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th></tr></thead>
             <tbody>{renderBilDrilldownRows(lagerBiler, 'Ingen biler på lager.')}</tbody>
           </table>
@@ -1519,12 +1534,12 @@ function Dashboard({
 
     if (aktivDrilldown === 'innbytte') {
       return (
-        <div className="card dashboard-drill-panel">
+        <div className="card table-cards dashboard-drill-panel">
           <div className="card-h">
             <span className="card-ht">Innbytteforespørsler ({nyeInnbytteListe.length})</span>
             <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innbytte'); }}>Gå til innbytte →</button>
           </div>
-          <table>
+          <table className="table-cards">
             <thead><tr><th>Kunde</th><th>Innbyttebil</th><th>Ønsket bil</th><th>Status</th><th>Dato</th></tr></thead>
             <tbody>
               {nyeInnbytteListe.length === 0 ? (
@@ -1551,12 +1566,12 @@ function Dashboard({
 
     if (aktivDrilldown === 'reservert') {
       return (
-        <div className="card dashboard-drill-panel">
+        <div className="card table-cards dashboard-drill-panel">
           <div className="card-h">
             <span className="card-ht">Reserverte biler ({reserverteBiler.length})</span>
             <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
           </div>
-          <table>
+          <table className="table-cards">
             <thead><tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th></tr></thead>
             <tbody>{renderBilDrilldownRows(reserverteBiler, 'Ingen reserverte biler.')}</tbody>
           </table>
@@ -1566,12 +1581,12 @@ function Dashboard({
 
     if (aktivDrilldown === 'kal') {
       return (
-        <div className="card dashboard-drill-panel">
+        <div className="card table-cards dashboard-drill-panel">
           <div className="card-h">
             <span className="card-ht">Avtaler i dag ({iDagEvt.length})</span>
             <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('kalender'); }}>Gå til kalender →</button>
           </div>
-          <table>
+          <table className="table-cards">
             <thead><tr><th>Tid</th><th>Tittel</th><th>Type</th><th>Ansvarlig</th><th>Bil</th></tr></thead>
             <tbody>
               {iDagEvt.length === 0 ? (
@@ -1595,12 +1610,12 @@ function Dashboard({
 
     if (aktivDrilldown === 'tilstandsrapport') {
       return (
-        <div className="card dashboard-drill-panel">
+        <div className="card table-cards dashboard-drill-panel">
           <div className="card-h">
             <span className="card-ht">Biler uten tilstandsrapport ({trAntall})</span>
             <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
           </div>
-          <table>
+          <table className="table-cards">
             <thead>
               <tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th><th>Tilstandsrapport</th></tr>
             </thead>
@@ -1679,11 +1694,11 @@ function Dashboard({
 
       {renderDrilldownPanel()}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div className="card">
+      <div className="dash-grid">
+        <div className="card table-cards">
           <div className="card-h">
             <span className="card-ht">Nye henvendelser ({nyeHenvendelserListe.length})</span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="card-h-actions">
               {harInnboks && (
                 <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innboks'); }}>Innboks →</button>
               )}
@@ -1691,7 +1706,7 @@ function Dashboard({
               <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('selgbil'); }}>Selg bil →</button>
             </div>
           </div>
-          <table>
+          <table className="table-cards">
             <thead><tr><th>Fra</th><th>Emne / detalj</th><th>Type</th><th>Dato</th><th>Status</th></tr></thead>
             <tbody>
               {renderNyeHenvendelserRows(nyeHenvendelserListe.slice(0, 8), 'Ingen nye henvendelser å behandle.')}
@@ -4249,6 +4264,8 @@ function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
 }
 
 function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visTost, refreshStats, setTab, lists, initialOpenEpost, onInitialOpenEpostConsumed }) {
+  const isMobile = useIsMobile();
+  const [mobileFolders, setMobileFolders] = useState(false);
   const [filter, setFilter] = useState('Meldinger');
   const [statusFilter, setStatusFilter] = useState('Alle');
   const [kontoFilter, setKontoFilter] = useState('alle');
@@ -4389,8 +4406,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const selectMappe = useCallback(function (mappeId) {
     setValgt(null);
     setValgtMappeId(mappeId);
+    if (isMobile) setMobileFolders(false);
     reloadInnboks(mappeId, aktivKontoId);
-  }, [aktivKontoId, reloadInnboks]);
+  }, [aktivKontoId, reloadInnboks, isMobile]);
 
   useEffect(function () {
     if (!aktivKontoId) {
@@ -4506,6 +4524,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
 
   const openMail = async (mail) => {
     setValgt(mail);
+    if (isMobile) setMobileFolders(false);
     if (mail.retning === 'inn' && !mail.lest) {
       try {
         const res = await patchEpost(mail.id, { lest: true });
@@ -4731,6 +4750,17 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
       ? `${kontoer.filter(k => k.aktiv).length} aktive kontoer`
       : 'Ingen mailkontoer');
 
+  const inboxDetailOpen = filter === 'Utkast' ? !!valgtUtkast : !!valgt;
+  const inboxShellClass = 'inbox-shell'
+    + (isMobile && inboxDetailOpen ? ' inbox-shell--detail' : '')
+    + (isMobile && !inboxDetailOpen ? ' inbox-shell--list' : '')
+    + (isMobile && mobileFolders ? ' inbox-shell--folders' : '');
+
+  const inboxBack = function () {
+    if (filter === 'Utkast') setValgtUtkast(null);
+    else setValgt(null);
+  };
+
   return (
     <>
       <div className="ph">
@@ -4741,7 +4771,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
             {mailStatus.lastSync ? ` · Sist synk: ${mailStatus.lastSync.replace('T', ' ').slice(0, 16)}` : ''}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="ph-actions">
           <button
             type="button"
             className="btn btn-p"
@@ -4819,7 +4849,19 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         </div>
       )}
 
-      <div className="inbox-shell">
+      {isMobile && (
+        <div className="inbox-mobile-bar">
+          {inboxDetailOpen ? (
+            <button type="button" className="btn btn-g btn-sm inbox-mobile-back" onClick={inboxBack}>← Tilbake til liste</button>
+          ) : filter !== 'Utkast' && (
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setMobileFolders(function (v) { return !v; }); }}>
+              {mobileFolders ? '✕ Lukk mapper' : '📁 Mapper'}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className={inboxShellClass}>
         {filter !== 'Utkast' && (
           <aside className="inbox-folders">
             <div className="inbox-folders-hd">
@@ -5285,16 +5327,15 @@ function KunderView({ kunder, setModal, visTost }) {
           + Ny kunde
         </button>
       </div>
-      <div style={{ marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ marginBottom: 14 }} className="search-row">
         <input
-          style={{ maxWidth: 320 }}
           placeholder="Søk navn, e-post eller telefon..."
           value={q}
           onChange={function (e) { setQ(e.target.value); }}
         />
         {laster && <span style={{ fontSize: 11, color: 'var(--t4)' }}>Søker…</span>}
       </div>
-      <div className="card">
+      <div className="card table-cards">
         <table>
           <thead>
             <tr>
@@ -5677,8 +5718,8 @@ function HenvendelserView({ henv, setModal, updateHenv, deleteHenv, lists }) {
           );
         })}
       </div>
-      <div className="card">
-        <table>
+      <div className="card table-cards">
+        <table className="table-cards">
           <thead><tr><th>Fra</th><th>Emne</th><th>Bil</th><th>Kilde</th><th>Dato</th><th>Status</th><th>Ansvarlig</th><th></th></tr></thead>
           <tbody>
             {vis.map(h => (
@@ -6084,14 +6125,14 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
       </div>
       {innbytte.map(inn => (
         <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, innbytteColors)}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div className="inb-card__head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{inn.navn}</div>
               <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>
                 {inn.merke} {inn.modell} {inn.aar} · {fmtKm(inn.km)} km · {inn.reg}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="inb-card__actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Badge s={inn.status} colors={innbytteColors} />
               <button
                 type="button"
@@ -6195,14 +6236,14 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
       </div>
       {selgBil.map(inn => (
         <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, statusColors)}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div className="inb-card__head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{inn.navn}</div>
               <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>
                 {inn.merke} {inn.modell} {inn.aar} · {fmtKm(inn.km)} km · {inn.reg}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="inb-card__actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Badge s={inn.status} colors={statusColors} />
               <button
                 type="button"
@@ -7355,6 +7396,7 @@ function KalenderView({ kal, setModal, biler, lists, updateKal, deleteKal }) {
         </div>
       </div>
 
+      <div className="kal-month-wrap">
       <div className="kal-grid kal-grid--month" style={{ marginBottom: 20 }}>
         {DAGER.map(function (d) {
           return <div key={d} className="kal-dag-hd">{d}</div>;
@@ -7380,12 +7422,13 @@ function KalenderView({ kal, setModal, biler, lists, updateKal, deleteKal }) {
           );
         })}
       </div>
+      </div>
 
-      <div className="card">
+      <div className="card table-cards">
         <div className="card-h">
           <span className="card-ht">Alle avtaler i {monthLabel(viewYear, viewMonth)}</span>
         </div>
-        <table>
+        <table className="table-cards">
           <thead><tr><th>Tittel</th><th>Type</th><th>Dato</th><th>Tid</th><th>Ansvarlig</th><th>Bil</th><th>Notat</th></tr></thead>
           <tbody>
             {monthKal.length === 0 && (
@@ -7555,7 +7598,7 @@ function OppgaverView({ biler, updateBil, visTost }) {
       {aktive.length === 0 && (
         <div style={{ textAlign: 'center', color: 'var(--t4)', padding: 40, fontSize: 13 }}>Alle oppgaver er fullført.</div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
+      <div className="oppgaver-grid">
         {aktive.map(bil => {
           const list = getAktivSjekkliste(bil);
           const prog = calcSjekklisteFremdrift(list);
@@ -8028,8 +8071,8 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-h"><span className="card-ht">Slå opp kjøretøy</span></div>
         <div style={{ padding: 16 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div style={{ flex: 1 }}>
+          <div className="lookup-row">
+            <div className="lookup-row__field">
               <div className="fl">Registreringsnummer</div>
               <input
                 value={reg}
@@ -8086,7 +8129,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
             {sections.map(section => (
               <div key={section.title} style={{ marginBottom: 24 }}>
                 <div className="modal-sec">{section.title}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+                <div className="svv-fields-grid">
                   {section.fields.map(field => (
                     <div className="svv-field" key={section.title + field.label}>
                       <div className="fl">{field.label}</div>
