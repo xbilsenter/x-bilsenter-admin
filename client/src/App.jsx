@@ -1734,14 +1734,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     setDropTarget(null);
   }, []);
 
-  const archiveBil = (bil) => {
-    if (!window.confirm(`Arkivere ${bil.reg}? Bilen fjernes fra lageroversikten, men kan gjenopprettes fra arkiv.`)) return;
-    updateBil(bil.id, {
-      archived: true,
-      logg: [...(bil.logg || []), bilLoggEntry('Arkivert fra lager')]
-    }, 'Arkivert ✓');
-  };
-
   const restoreBil = (bil) => {
     updateBil(bil.id, {
       archived: false,
@@ -1810,23 +1802,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     setModal({ t: 'visBil', d: bil });
   };
 
-  const renderBilActionBtns = (bil, opts) => {
-    const showArchive = opts?.showArchive !== false;
-    if (!showArchive || bil.archived) return null;
-    return (
-      <div className="bil-card-actions" onClick={function (e) { e.stopPropagation(); }}>
-        <button
-          type="button"
-          className="bil-archive-btn"
-          title="Arkiver bil"
-          onClick={function () { archiveBil(bil); }}
-        >
-          📦
-        </button>
-      </div>
-    );
-  };
-
   const renderBilKanbanCard = (bil) => {
     const list = getAktivSjekkliste(bil);
     const prog = calcSjekklisteFremdrift(list);
@@ -1843,10 +1818,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
         onDragEnd={handleDragEnd}
         onClick={() => openBil(bil)}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
-          <div className="bil-reg">{bil.reg}</div>
-          {renderBilActionBtns(bil)}
-        </div>
+        <div className="bil-reg">{bil.reg}</div>
         <div className="bil-name">{bil.merke} {bil.modell}</div>
         <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge)}</div>
         {sisteSjekk ? (
@@ -1860,9 +1832,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             {linkHenv > 0 && <span className="chip chip-gray">{linkHenv} henv.</span>}
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 7 }}>
-          <span className="bil-ans">{bil.ansvarlig}</span>
-        </div>
         {t > 0 && (
           <>
             <div className="prog-lbl" style={{ marginTop: 7 }}>{f}/{t} oblig. · {pst}%</div>
@@ -1899,14 +1868,10 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
         <span className="bil-pipeline-grip" aria-hidden="true">⋮⋮</span>
         <div className="bil-pipeline-main">
           <div className="bil-pipeline-ident">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div className="bil-reg">{bil.reg}</div>
-              {renderBilActionBtns(bil)}
-            </div>
+            <div className="bil-reg">{bil.reg}</div>
             <div className="bil-name">{bil.merke} {bil.modell}</div>
           </div>
           <div className="bil-pipeline-meta">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge) || '—'}</div>
-          <div className="bil-pipeline-ans">{bil.ansvarlig || '—'}</div>
           <div className="bil-pipeline-prog">
             {sisteSjekk ? (
               <div className="bil-pipeline-siste-sjekk" title="Siste fullførte sjekkliste-punkt">

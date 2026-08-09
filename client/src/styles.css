@@ -157,7 +157,7 @@ tr:hover td{background:var(--accl);}
 .bil-slettelog-table th,.bil-slettelog-table td{padding:8px 10px;border-bottom:1px solid var(--b1);text-align:left;vertical-align:top;}
 .bil-slettelog-table th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);}
 .bil-pipeline-grip{color:var(--t4);font-size:14px;line-height:1;flex-shrink:0;cursor:grab;}
-.bil-pipeline-main{flex:1;min-width:0;display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(120px,1fr) 90px 120px 90px;gap:10px;align-items:center;}
+.bil-pipeline-main{flex:1;min-width:0;display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(120px,1fr) 120px 90px;gap:10px;align-items:center;}
 .bil-pipeline-ident{min-width:0;}
 .bil-pipeline-meta{font-size:11px;color:var(--t3);}
 .bil-pipeline-pris{font-size:13px;font-weight:800;color:var(--gold);white-space:nowrap;}
