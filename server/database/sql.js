@@ -74,6 +74,7 @@ const BOOL_PARAM_NAMES = new Set([
 ]);
 
 function normalizeParamValue(name, value) {
+  if (value === undefined) return null;
   if (BOOL_PARAM_NAMES.has(name) && (value === 0 || value === 1 || value === '0' || value === '1')) {
     return !!Number(value);
   }
