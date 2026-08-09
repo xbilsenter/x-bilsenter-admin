@@ -797,7 +797,7 @@ export default function App() {
           </div>
           {tab === 'dashboard' && (
             <Dashboard
-              biler={biler} henv={henv} kal={kal}
+              biler={biler} henv={henv} innbytte={innbytte} kal={kal}
               paaLager={paaLager} reservert={reservert}
               nyeHenv={nyeHenv} nyeInnbytte={nyeInnbytte}
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
@@ -805,6 +805,7 @@ export default function App() {
               vedlikeholdModus={innstillinger.vedlikeholdModus}
               henvStatusFarger={innstillinger.henvStatusFarger}
               bilStatusFarger={innstillinger.bilStatusFarger}
+              innbytteStatusFarger={innstillinger.innbytteStatusFarger}
             />
           )}
           {tab === 'biler' && (
@@ -1292,11 +1293,228 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
   );
 }
 
-function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger }) {
-  const [visTrListe, setVisTrListe] = useState(false);
+function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger }) {
+  const [aktivDrilldown, setAktivDrilldown] = useState(null);
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
+  const lagerBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status !== 'Solgt'; });
+  const nyeHenvListe = henv.filter(function (h) { return h.status === 'Ny'; });
+  const nyeInnbytteListe = (innbytte || []).filter(function (i) { return i.status === 'Ny'; });
+  const reserverteBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status === 'Reservert'; });
   const trMangler = biler.filter(bilManglerTilstandsrapport);
   const trAntall = trMangler.length;
+  const innbytteColors = innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+
+  const toggleDrilldown = function (key) {
+    setAktivDrilldown(function (prev) { return prev === key ? null : key; });
+  };
+
+  const drillSub = function (key, count) {
+    return aktivDrilldown === key ? 'Skjul liste' : (count ? 'Klikk for liste' : 'Se detaljer');
+  };
+
+  const statCards = [
+    { key: 'lager', ico: '🚗', lbl: 'Biler på lager', val: paaLager, sub: drillSub('lager', paaLager) },
+    { key: 'henv', ico: '🔴', lbl: 'Nye henvendelser', val: nyeHenv, sub: drillSub('henv', nyeHenv), red: true },
+    { key: 'innbytte', ico: '⇄', lbl: 'Innbytte (nye)', val: nyeInnbytte, sub: drillSub('innbytte', nyeInnbytte), orange: true },
+    { key: 'reservert', ico: '✅', lbl: 'Reserverte biler', val: reservert, sub: drillSub('reservert', reservert), green: true },
+    { key: 'kal', ico: '📅', lbl: 'Avtaler i dag', val: iDagKal, sub: drillSub('kal', iDagKal) },
+    {
+      key: 'tilstandsrapport',
+      ico: '📋',
+      lbl: 'Tilstandsrapport',
+      val: trAntall,
+      sub: drillSub('tilstandsrapport', trAntall),
+      red: trAntall > 0
+    }
+  ];
+
+  const renderBilDrilldownRows = function (items, emptyText) {
+    if (!items.length) {
+      return (
+        <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>{emptyText}</td></tr>
+      );
+    }
+    return items.map(function (bil) {
+      return (
+        <tr
+          key={bil.id}
+          className="dashboard-drill-row"
+          onClick={function () { setModal({ t: 'visBil', d: bil }); }}
+        >
+          <td><strong>{bil.reg}</strong></td>
+          <td>{bil.merke} {bil.modell} · {bil.aar || '—'}</td>
+          <td><Badge s={bil.status} colors={bilStatusFarger} /></td>
+          <td>{bil.ansvarlig || '—'}</td>
+        </tr>
+      );
+    });
+  };
+
+  const renderDrilldownPanel = function () {
+    if (!aktivDrilldown) return null;
+
+    if (aktivDrilldown === 'lager') {
+      return (
+        <div className="card dashboard-drill-panel">
+          <div className="card-h">
+            <span className="card-ht">Biler på lager ({lagerBiler.length})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
+          </div>
+          <table>
+            <thead><tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th></tr></thead>
+            <tbody>{renderBilDrilldownRows(lagerBiler, 'Ingen biler på lager.')}</tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (aktivDrilldown === 'henv') {
+      return (
+        <div className="card dashboard-drill-panel">
+          <div className="card-h">
+            <span className="card-ht">Nye henvendelser ({nyeHenvListe.length})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('henvendelser'); }}>Gå til henvendelser →</button>
+          </div>
+          <table>
+            <thead><tr><th>Fra</th><th>Emne</th><th>Bil</th><th>Kilde</th><th>Status</th></tr></thead>
+            <tbody>
+              {nyeHenvListe.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen nye henvendelser.</td></tr>
+              ) : nyeHenvListe.map(function (h) {
+                return (
+                  <tr key={h.id} className="dashboard-drill-row" onClick={function () { setModal({ t: 'visHenv', d: h }); }}>
+                    <td>
+                      <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{h.navn}</div>
+                      <div style={{ fontSize: 10, color: 'var(--t4)' }}>{h.epost}</div>
+                    </td>
+                    <td style={{ maxWidth: 200 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{h.emne}</div>
+                    </td>
+                    <td><span className="tag">{h.bilRef || '—'}</span></td>
+                    <td><span className="tag">{h.kilde}</span></td>
+                    <td><Badge s={h.status} colors={henvStatusFarger} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (aktivDrilldown === 'innbytte') {
+      return (
+        <div className="card dashboard-drill-panel">
+          <div className="card-h">
+            <span className="card-ht">Nye innbytteforespørsler ({nyeInnbytteListe.length})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innbytte'); }}>Gå til innbytte →</button>
+          </div>
+          <table>
+            <thead><tr><th>Kunde</th><th>Innbyttebil</th><th>Ønsket bil</th><th>Status</th><th>Dato</th></tr></thead>
+            <tbody>
+              {nyeInnbytteListe.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen nye innbytteforespørsler.</td></tr>
+              ) : nyeInnbytteListe.map(function (inn) {
+                return (
+                  <tr key={inn.id} className="dashboard-drill-row" onClick={function () { setModal({ t: 'visInb', d: inn }); }}>
+                    <td>
+                      <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{inn.navn}</div>
+                      <div style={{ fontSize: 10, color: 'var(--t4)' }}>{inn.epost || inn.tlf || '—'}</div>
+                    </td>
+                    <td>{inn.merke} {inn.modell} {inn.aar || ''} · {inn.reg || '—'}</td>
+                    <td>{inn.onsketBil || '—'}</td>
+                    <td><Badge s={inn.status} colors={innbytteColors} /></td>
+                    <td>{inn.dato || '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (aktivDrilldown === 'reservert') {
+      return (
+        <div className="card dashboard-drill-panel">
+          <div className="card-h">
+            <span className="card-ht">Reserverte biler ({reserverteBiler.length})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
+          </div>
+          <table>
+            <thead><tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th></tr></thead>
+            <tbody>{renderBilDrilldownRows(reserverteBiler, 'Ingen reserverte biler.')}</tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (aktivDrilldown === 'kal') {
+      return (
+        <div className="card dashboard-drill-panel">
+          <div className="card-h">
+            <span className="card-ht">Avtaler i dag ({iDagEvt.length})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('kalender'); }}>Gå til kalender →</button>
+          </div>
+          <table>
+            <thead><tr><th>Tid</th><th>Tittel</th><th>Type</th><th>Ansvarlig</th><th>Bil</th></tr></thead>
+            <tbody>
+              {iDagEvt.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen avtaler i dag.</td></tr>
+              ) : iDagEvt.map(function (e) {
+                return (
+                  <tr key={e.id} className="dashboard-drill-row" onClick={function () { setModal({ t: 'visKal', d: e }); }}>
+                    <td>{formatKalTid(e)}</td>
+                    <td>{e.tittel}</td>
+                    <td><KBadge type={e.type} /></td>
+                    <td>{e.ansvarlig || '—'}</td>
+                    <td>{e.bilRef || '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (aktivDrilldown === 'tilstandsrapport') {
+      return (
+        <div className="card dashboard-drill-panel">
+          <div className="card-h">
+            <span className="card-ht">Biler uten tilstandsrapport ({trAntall})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th><th>Tilstandsrapport</th></tr>
+            </thead>
+            <tbody>
+              {trAntall === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Alle biler har tilstandsrapport utført eller medfølger.</td></tr>
+              ) : trMangler.map(function (bil) {
+                return (
+                  <tr
+                    key={bil.id}
+                    className="dashboard-drill-row"
+                    onClick={function () { setModal({ t: 'visBil', d: bil }); }}
+                  >
+                    <td><strong>{bil.reg}</strong></td>
+                    <td>{bil.merke} {bil.modell} · {bil.aar || '—'}</td>
+                    <td><Badge s={bil.status} colors={bilStatusFarger} /></td>
+                    <td>{bil.ansvarlig || '—'}</td>
+                    <td><span className="chip chip-red">Ikke utført</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <>
@@ -1314,81 +1532,37 @@ function Dashboard({ biler, henv, kal, paaLager, reservert, nyeHenv, nyeInnbytte
       />
 
       <div className="stats">
-        {[
-          { ico: '🚗', lbl: 'Biler på lager', val: paaLager },
-          { ico: '🔴', lbl: 'Nye henvendelser', val: nyeHenv, sub: 'Krever svar', red: true },
-          { ico: '⇄', lbl: 'Innbytte (nye)', val: nyeInnbytte, sub: 'Venter på tilbud', orange: true },
-          { ico: '✅', lbl: 'Reserverte biler', val: reservert, sub: 'Klar for utlevering', green: true },
-          { ico: '📅', lbl: 'Avtaler i dag', val: iDagKal, sub: 'Se kalender' },
-          {
-            ico: '📋',
-            lbl: 'Tilstandsrapport',
-            val: trAntall,
-            sub: trAntall ? (visTrListe ? 'Skjul liste' : 'Klikk for liste') : 'Ingen mangler',
-            red: trAntall > 0,
-            clickable: trAntall > 0,
-            active: visTrListe,
-            onClick: function () { setVisTrListe(function (v) { return !v; }); }
-          }
-        ].map(s => (
-          <div
-            className={`stat${s.clickable ? ' stat--clickable' : ''}${s.active ? ' stat--active' : ''}`}
-            key={s.lbl}
-            role={s.clickable ? 'button' : undefined}
-            tabIndex={s.clickable ? 0 : undefined}
-            onClick={s.onClick}
-            onKeyDown={s.clickable ? function (e) {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                s.onClick();
-              }
-            } : undefined}
-          >
-            <div className="stat-ico">{s.ico}</div>
-            <div className="stat-lbl">{s.lbl}</div>
+        {statCards.map(function (s) {
+          const active = aktivDrilldown === s.key;
+          return (
             <div
-              className="stat-val"
-              style={{ color: s.red ? 'var(--red)' : s.orange ? 'var(--orange)' : s.green ? 'var(--acc)' : 'var(--t1)' }}
+              className={`stat stat--clickable${active ? ' stat--active' : ''}`}
+              key={s.key}
+              role="button"
+              tabIndex={0}
+              onClick={function () { toggleDrilldown(s.key); }}
+              onKeyDown={function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  toggleDrilldown(s.key);
+                }
+              }}
             >
-              {s.val}
+              <div className="stat-ico">{s.ico}</div>
+              <div className="stat-lbl">{s.lbl}</div>
+              <div
+                className="stat-val"
+                style={{ color: s.red ? 'var(--red)' : s.orange ? 'var(--orange)' : s.green ? 'var(--acc)' : 'var(--t1)' }}
+              >
+                {s.val}
+              </div>
+              <div className="stat-sub">{s.sub}</div>
             </div>
-            <div className="stat-sub">{s.sub}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {visTrListe && trAntall > 0 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-h">
-            <span className="card-ht">Biler uten tilstandsrapport ({trAntall})</span>
-            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>
-              Gå til biler →
-            </button>
-          </div>
-          <table>
-            <thead>
-              <tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th><th>Tilstandsrapport</th></tr>
-            </thead>
-            <tbody>
-              {trMangler.map(function (bil) {
-                return (
-                  <tr
-                    key={bil.id}
-                    className="dashboard-bil-row"
-                    onClick={function () { setModal({ t: 'visBil', d: bil }); }}
-                  >
-                    <td><strong>{bil.reg}</strong></td>
-                    <td>{bil.merke} {bil.modell} · {bil.aar || '—'}</td>
-                    <td><Badge s={bil.status} colors={bilStatusFarger} /></td>
-                    <td>{bil.ansvarlig || '—'}</td>
-                    <td><span className="chip chip-red">Ikke utført</span></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {renderDrilldownPanel()}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 16 }}>
         <div className="card">

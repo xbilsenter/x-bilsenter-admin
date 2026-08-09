@@ -75,8 +75,9 @@ body{background:var(--bg);font-family:'Plus Jakarta Sans',sans-serif;color:var(-
 .stat--clickable:hover{border-color:var(--acc);}
 .stat--active{border-color:var(--acc);box-shadow:0 0 0 1px rgba(25,186,96,.2),var(--shadow-md);}
 .stat--active::before{background:var(--red);}
-.dashboard-bil-row{cursor:pointer;}
-.dashboard-bil-row:hover td{background:var(--s2);}
+.dashboard-drill-panel{margin-bottom:16px;}
+.dashboard-drill-row,.dashboard-bil-row{cursor:pointer;}
+.dashboard-drill-row:hover td,.dashboard-bil-row:hover td{background:var(--s2);}
 .stat::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--acc);border-radius:var(--radius) var(--radius) 0 0;}
 .stat-ico{font-size:20px;margin-bottom:6px;}
 .stat-lbl{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--t4);}
