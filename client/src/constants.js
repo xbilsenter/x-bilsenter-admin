@@ -703,7 +703,11 @@ export function normalizeBilOkonomi(raw) {
 export const DEFAULT_BIL_TILSTANDSRAPPORT = {
   medfolger: false,
   nybilgaranti: false,
-  status: 'ikke_utfort'
+  status: 'ikke_utfort',
+  stylingDelerNodvendig: false,
+  stylingDelerBestilt: false,
+  reparasjonsdelerMaBestilles: false,
+  reparasjonsdelerBestilt: false
 };
 
 export function normalizeBilTilstandsrapport(raw) {
@@ -714,7 +718,11 @@ export function normalizeBilTilstandsrapport(raw) {
   return {
     medfolger: !!o.medfolger,
     nybilgaranti: !!o.nybilgaranti,
-    status: status
+    status: status,
+    stylingDelerNodvendig: !!o.stylingDelerNodvendig,
+    stylingDelerBestilt: !!o.stylingDelerBestilt,
+    reparasjonsdelerMaBestilles: !!o.reparasjonsdelerMaBestilles,
+    reparasjonsdelerBestilt: !!o.reparasjonsdelerBestilt
   };
 }
 

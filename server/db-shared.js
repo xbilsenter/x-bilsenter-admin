@@ -521,7 +521,11 @@ function jsonStringify(value) {
 const DEFAULT_BIL_TILSTANDSRAPPORT = {
   medfolger: false,
   nybilgaranti: false,
-  status: 'ikke_utfort'
+  status: 'ikke_utfort',
+  stylingDelerNodvendig: false,
+  stylingDelerBestilt: false,
+  reparasjonsdelerMaBestilles: false,
+  reparasjonsdelerBestilt: false
 };
 
 function normalizeBilTilstandsrapport(raw) {
@@ -532,7 +536,11 @@ function normalizeBilTilstandsrapport(raw) {
   return {
     medfolger: !!o.medfolger,
     nybilgaranti: !!o.nybilgaranti,
-    status: status
+    status: status,
+    stylingDelerNodvendig: !!o.stylingDelerNodvendig,
+    stylingDelerBestilt: !!o.stylingDelerBestilt,
+    reparasjonsdelerMaBestilles: !!o.reparasjonsdelerMaBestilles,
+    reparasjonsdelerBestilt: !!o.reparasjonsdelerBestilt
   };
 }
 

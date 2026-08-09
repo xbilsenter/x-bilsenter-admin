@@ -2383,6 +2383,43 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
           Ikke utført
         </label>
       </div>
+      <div className="tilstandsrapport-subsec">
+        <div className="tilstandsrapport-subsec__title">Annet nødvendig</div>
+        <div className="tilstandsrapport-grid">
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.stylingDelerNodvendig}
+              onChange={function (e) { patch({ stylingDelerNodvendig: e.target.checked }); }}
+            />
+            Styling deler nødvendig
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.stylingDelerBestilt}
+              onChange={function (e) { patch({ stylingDelerBestilt: e.target.checked }); }}
+            />
+            Styling deler bestilt
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.reparasjonsdelerMaBestilles}
+              onChange={function (e) { patch({ reparasjonsdelerMaBestilles: e.target.checked }); }}
+            />
+            Reparasjonsdeler må bestilles
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.reparasjonsdelerBestilt}
+              onChange={function (e) { patch({ reparasjonsdelerBestilt: e.target.checked }); }}
+            />
+            Reparasjonsdeler bestilt
+          </label>
+        </div>
+      </div>
     </div>
   );
 }
