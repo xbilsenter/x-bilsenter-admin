@@ -1637,8 +1637,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             {linkHenv > 0 && <span className="chip chip-gray">{linkHenv} henv.</span>}
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }}>
-          <span className="bil-pris">{nok(bil.salg)}</span>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 7 }}>
           <span className="bil-ans">{bil.ansvarlig}</span>
         </div>
         {t > 0 && (
@@ -1683,7 +1682,6 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
             <div className="bil-name">{bil.merke} {bil.modell}</div>
           </div>
           <div className="bil-pipeline-meta">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge) || '—'}</div>
-          <div className="bil-pipeline-pris">{nok(bil.salg)}</div>
           <div className="bil-pipeline-ans">{bil.ansvarlig || '—'}</div>
           <div className="bil-pipeline-prog">
             {t > 0 ? (
