@@ -486,7 +486,7 @@ export default function App() {
   const harInnboks = canAccess(user, 'innboks');
   const nyeInnkommendeEpost = Number(stats.nyeInnkommendeEpost ?? 0) || 0;
   const nyeInnkommendeEpostListe = harInnboks ? (stats.nyeInnkommendeEpostListe || []) : [];
-  const nyeHenvendelserTotal = nyeHenv + nyeInnbytte + nyeSelgBil + (harInnboks ? nyeInnkommendeEpost : 0);
+  const nyeHenvendelserTotal = nyeHenv + nyeSelgBil + (harInnboks ? nyeInnkommendeEpost : 0);
 
   const lists = innstillinger;
 
@@ -814,6 +814,7 @@ export default function App() {
             <Dashboard
               biler={biler} henv={henv} innbytte={innbytte} selgBil={selgBil} kal={kal}
               paaLager={paaLager} reservert={reservert}
+              nyeInnbytte={nyeInnbytte}
               nyeHenvendelserTotal={nyeHenvendelserTotal}
               ulestEpostListe={nyeInnkommendeEpostListe}
               harInnboks={harInnboks}
@@ -1291,7 +1292,7 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
 
 function Dashboard({
   biler, henv, innbytte, selgBil, kal, paaLager, reservert,
-  nyeHenvendelserTotal, ulestEpostListe, harInnboks,
+  nyeInnbytte, nyeHenvendelserTotal, ulestEpostListe, harInnboks,
   iDagKal, setTab, setModal, setInnboksOpenEpost,
   currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger
 }) {
@@ -1299,13 +1300,14 @@ function Dashboard({
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
   const lagerBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status !== 'Solgt'; });
   const reserverteBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status === 'Reservert'; });
+  const nyeInnbytteListe = (innbytte || []).filter(function (i) { return i.status === 'Ny'; });
   const trMangler = biler.filter(bilManglerTilstandsrapport);
   const trAntall = trMangler.length;
   const innbytteColors = innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
 
   const nyeHenvendelserListe = buildNyeHenvendelserItems({
     henv: henv,
-    innbytte: innbytte,
+    innbytte: [],
     selgBil: selgBil,
     ulestEpost: ulestEpostListe,
     inkluderEpost: harInnboks
@@ -1371,7 +1373,7 @@ function Dashboard({
 
   const statCards = [
     { key: 'lager', ico: '🚗', lbl: 'Biler på lager', val: paaLager, sub: drillSub('lager', paaLager) },
-    { key: 'henv', ico: '🔴', lbl: 'Nye henvendelser', val: nyeHenvendelserTotal, sub: drillSub('henv', nyeHenvendelserTotal), red: true },
+    { key: 'innbytte', ico: '⇄', lbl: 'Innbytteforespørsler', val: nyeInnbytte, sub: drillSub('innbytte', nyeInnbytte), orange: true },
     { key: 'reservert', ico: '✅', lbl: 'Reserverte biler', val: reservert, sub: drillSub('reservert', reservert), green: true },
     { key: 'kal', ico: '📅', lbl: 'Avtaler i dag', val: iDagKal, sub: drillSub('kal', iDagKal) },
     {
@@ -1424,24 +1426,32 @@ function Dashboard({
       );
     }
 
-    if (aktivDrilldown === 'henv') {
+    if (aktivDrilldown === 'innbytte') {
       return (
         <div className="card dashboard-drill-panel">
           <div className="card-h">
-            <span className="card-ht">Nye henvendelser ({nyeHenvendelserListe.length})</span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {harInnboks && (
-                <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innboks'); }}>Innboks →</button>
-              )}
-              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('henvendelser'); }}>Henvendelser →</button>
-              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innbytte'); }}>Innbytte →</button>
-              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('selgbil'); }}>Selg bil →</button>
-            </div>
+            <span className="card-ht">Innbytteforespørsler ({nyeInnbytteListe.length})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innbytte'); }}>Gå til innbytte →</button>
           </div>
           <table>
-            <thead><tr><th>Fra</th><th>Emne / detalj</th><th>Type</th><th>Dato</th><th>Status</th></tr></thead>
+            <thead><tr><th>Kunde</th><th>Innbyttebil</th><th>Ønsket bil</th><th>Status</th><th>Dato</th></tr></thead>
             <tbody>
-              {renderNyeHenvendelserRows(nyeHenvendelserListe, 'Ingen nye henvendelser å behandle.')}
+              {nyeInnbytteListe.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen nye innbytteforespørsler.</td></tr>
+              ) : nyeInnbytteListe.map(function (inn) {
+                return (
+                  <tr key={inn.id} className="dashboard-drill-row" onClick={function () { setModal({ t: 'visInb', d: inn }); }}>
+                    <td>
+                      <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{inn.navn}</div>
+                      <div style={{ fontSize: 10, color: 'var(--t4)' }}>{inn.epost || inn.tlf || '—'}</div>
+                    </td>
+                    <td>{inn.merke} {inn.modell} {inn.aar || ''} · {inn.reg || '—'}</td>
+                    <td>{inn.onsketBil || '—'}</td>
+                    <td><Badge s={inn.status} colors={innbytteColors} /></td>
+                    <td>{inn.dato || '—'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1582,6 +1592,13 @@ function Dashboard({
         <div className="card">
           <div className="card-h">
             <span className="card-ht">Nye henvendelser ({nyeHenvendelserListe.length})</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {harInnboks && (
+                <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innboks'); }}>Innboks →</button>
+              )}
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('henvendelser'); }}>Henvendelser →</button>
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('selgbil'); }}>Selg bil →</button>
+            </div>
           </div>
           <table>
             <thead><tr><th>Fra</th><th>Emne / detalj</th><th>Type</th><th>Dato</th><th>Status</th></tr></thead>
