@@ -219,6 +219,7 @@ const dbReady = withInitTimeout(
     .then(function () { return ensureInnkjopskalkyleSchema(); })
     .then(function () { return ensureBilSchemaExtensions(); })
     .then(function () { return ensureBilSlettingerSchema(); })
+    .then(function () { return ensureInnstillingDefaults(); })
     .then(function () { return syncPostgresSequences(); })
     .then(function () { return ensureDefaultAdminUser(); }),
   Number(process.env.DB_INIT_TIMEOUT_MS || 15000)
@@ -622,6 +623,43 @@ async function setMailKontoLastSync(id, iso) {
     .run({ id, last_sync: iso });
 }
 
+async function ensureInnstillingDefaults() {
+  const defaults = {
+    ansatte: DEFAULT_INNSTILLINGER.ansatte,
+    merker: DEFAULT_INNSTILLINGER.merker,
+    bil_statuser: DEFAULT_INNSTILLINGER.bilStatuser,
+    bil_status_farger: DEFAULT_INNSTILLINGER.bilStatusFarger,
+    bil_sjekklister: normalizeBilSjekklister(
+      DEFAULT_INNSTILLINGER.bilStatuser,
+      DEFAULT_INNSTILLINGER.bilSjekklister,
+      DEFAULT_SJEKKLISTE_MAL
+    ),
+    sjekkliste_mal: DEFAULT_SJEKKLISTE_MAL,
+    henv_statuser: DEFAULT_INNSTILLINGER.henvStatuser,
+    henv_status_farger: DEFAULT_INNSTILLINGER.henvStatusFarger,
+    innbytte_statuser: DEFAULT_INNSTILLINGER.innbytteStatuser,
+    innbytte_status_farger: DEFAULT_INNSTILLINGER.innbytteStatusFarger,
+    kal_typer: DEFAULT_INNSTILLINGER.kalTyper,
+    modul_oppsett: DEFAULT_INNSTILLINGER.modulOppsett,
+    vedlikehold_modus: DEFAULT_VEDLIKEHOLD
+  };
+
+  const rows = await prepare('SELECT key FROM innstillinger').all();
+  const existing = new Set(rows.map(function (row) { return row.key; }));
+
+  await Promise.all(Object.entries(defaults).map(function ([key, value]) {
+    if (existing.has(key)) return Promise.resolve();
+    return upsertInnstilling(key, JSON.stringify(value));
+  }));
+}
+
+async function upsertInnstilling(key, valueJson) {
+  await prepare(`
+    INSERT OR REPLACE INTO innstillinger (key, value, updated_at)
+    VALUES (@key, @value, datetime('now'))
+  `).run({ key, value: valueJson });
+}
+
 async function getInnstillinger() {
   const rows = await prepare('SELECT key, value FROM innstillinger').all();
   const byKey = {};
@@ -689,45 +727,36 @@ async function saveInnstillinger(partial) {
       .map(function (item) { return String(item || '').trim(); })
       .filter(Boolean);
     if (!cleaned.length) continue;
-    await prepare(`
-      UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-    `).run({ key, value: JSON.stringify(cleaned) });
+    await upsertInnstilling(key, JSON.stringify(cleaned));
 
     if (prop === 'henvStatuser') {
-      await prepare(`
-        UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-      `).run({
-        key: 'henv_status_farger',
-        value: JSON.stringify(normalizeHenvStatusFarger(
+      await upsertInnstilling(
+        'henv_status_farger',
+        JSON.stringify(normalizeHenvStatusFarger(
           cleaned,
           partial.henvStatusFarger || current.henvStatusFarger
         ))
-      });
+      );
     }
 
     if (prop === 'bilStatuser') {
-      await prepare(`
-        UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-      `).run({
-        key: 'bil_status_farger',
-        value: JSON.stringify(normalizeBilStatusFarger(
+      await upsertInnstilling(
+        'bil_status_farger',
+        JSON.stringify(normalizeBilStatusFarger(
           cleaned,
           partial.bilStatusFarger || current.bilStatusFarger
         ))
-      });
+      );
     }
 
     if (prop === 'innbytteStatuser') {
-      await prepare(`
-        INSERT OR REPLACE INTO innstillinger (key, value, updated_at)
-        VALUES (@key, @value, datetime('now'))
-      `).run({
-        key: 'innbytte_status_farger',
-        value: JSON.stringify(normalizeInnbytteStatusFarger(
+      await upsertInnstilling(
+        'innbytte_status_farger',
+        JSON.stringify(normalizeInnbytteStatusFarger(
           cleaned,
           partial.innbytteStatusFarger || current.innbytteStatusFarger
         ))
-      });
+      );
     }
   }
 
@@ -735,53 +764,44 @@ async function saveInnstillinger(partial) {
     const statuser = Array.isArray(partial.henvStatuser)
       ? partial.henvStatuser
       : current.henvStatuser;
-    await prepare(`
-      UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-    `).run({
-      key: 'henv_status_farger',
-      value: JSON.stringify(normalizeHenvStatusFarger(statuser, partial.henvStatusFarger))
-    });
+    await upsertInnstilling(
+      'henv_status_farger',
+      JSON.stringify(normalizeHenvStatusFarger(statuser, partial.henvStatusFarger))
+    );
   }
 
   if (partial.bilStatusFarger && typeof partial.bilStatusFarger === 'object') {
     const statuser = Array.isArray(partial.bilStatuser)
       ? partial.bilStatuser
       : current.bilStatuser;
-    await prepare(`
-      UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-    `).run({
-      key: 'bil_status_farger',
-      value: JSON.stringify(normalizeBilStatusFarger(statuser, partial.bilStatusFarger))
-    });
+    await upsertInnstilling(
+      'bil_status_farger',
+      JSON.stringify(normalizeBilStatusFarger(statuser, partial.bilStatusFarger))
+    );
   }
 
   if (partial.innbytteStatusFarger && typeof partial.innbytteStatusFarger === 'object') {
     const statuser = Array.isArray(partial.innbytteStatuser)
       ? partial.innbytteStatuser
       : current.innbytteStatuser;
-    await prepare(`
-      INSERT OR REPLACE INTO innstillinger (key, value, updated_at)
-      VALUES (@key, @value, datetime('now'))
-    `).run({
-      key: 'innbytte_status_farger',
-      value: JSON.stringify(normalizeInnbytteStatusFarger(statuser, partial.innbytteStatusFarger))
-    });
+    await upsertInnstilling(
+      'innbytte_status_farger',
+      JSON.stringify(normalizeInnbytteStatusFarger(statuser, partial.innbytteStatusFarger))
+    );
   }
 
   if (partial.bilSjekklister && typeof partial.bilSjekklister === 'object') {
     const statuser = Array.isArray(partial.bilStatuser)
       ? partial.bilStatuser
       : current.bilStatuser;
-    await prepare(`
-      UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-    `).run({
-      key: 'bil_sjekklister',
-      value: JSON.stringify(normalizeBilSjekklister(
+    await upsertInnstilling(
+      'bil_sjekklister',
+      JSON.stringify(normalizeBilSjekklister(
         statuser,
         partial.bilSjekklister,
         partial.sjekklisteMal || current.sjekklisteMal
       ))
-    });
+    );
   }
 
   if (Array.isArray(partial.sjekklisteMal)) {
@@ -789,28 +809,22 @@ async function saveInnstillinger(partial) {
       .map(function (item) { return String(item || '').trim(); })
       .filter(Boolean);
     if (cleaned.length) {
-      await prepare(`
-        UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-      `).run({ key: 'sjekkliste_mal', value: JSON.stringify(cleaned) });
+      await upsertInnstilling('sjekkliste_mal', JSON.stringify(cleaned));
     }
   }
 
   if (Array.isArray(partial.modulOppsett)) {
-    await prepare(`
-      UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-    `).run({
-      key: 'modul_oppsett',
-      value: JSON.stringify(normalizeModulOppsett(partial.modulOppsett))
-    });
+    await upsertInnstilling(
+      'modul_oppsett',
+      JSON.stringify(normalizeModulOppsett(partial.modulOppsett))
+    );
   }
 
   if (partial.vedlikeholdModus && typeof partial.vedlikeholdModus === 'object') {
-    await prepare(`
-      UPDATE innstillinger SET value = @value, updated_at = datetime('now') WHERE key = @key
-    `).run({
-      key: 'vedlikehold_modus',
-      value: JSON.stringify(normalizeVedlikeholdModus(partial.vedlikeholdModus))
-    });
+    await upsertInnstilling(
+      'vedlikehold_modus',
+      JSON.stringify(normalizeVedlikeholdModus(partial.vedlikeholdModus))
+    );
   }
 
   return getInnstillinger();

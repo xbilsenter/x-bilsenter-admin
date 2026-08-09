@@ -414,6 +414,7 @@ export default function App() {
 
   useEffect(function () {
     if (!user || loading) return;
+    if (tab === 'innstillinger') return;
     const perm = TAB_PERMISSIONS[tab];
     if (perm && canAccess(user, perm)) return;
     const fallback = Object.keys(TAB_PERMISSIONS).find(function (id) {
@@ -936,8 +937,8 @@ export default function App() {
                     refreshStats();
                   }
                   visTost('Innstillinger lagret ✓');
-                } catch {
-                  visTost('Kunne ikke lagre innstillinger ✗');
+                } catch (err) {
+                  visTost(err.message || 'Kunne ikke lagre innstillinger ✗');
                 }
               }}
               onModulOppsettChange={(modulOppsett) => setInnstillinger(function (prev) {
