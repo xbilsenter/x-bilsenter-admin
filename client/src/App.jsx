@@ -2470,6 +2470,38 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
             />
             Felglakkering utført
           </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.lakkeringNodvendig}
+              onChange={function (e) { patch({ lakkeringNodvendig: e.target.checked }); }}
+            />
+            Lakkering nødvendig
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.lakkeringUtfort}
+              onChange={function (e) { patch({ lakkeringUtfort: e.target.checked }); }}
+            />
+            Lakkering utført
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.lakkstiftLakkboksNodvendig}
+              onChange={function (e) { patch({ lakkstiftLakkboksNodvendig: e.target.checked }); }}
+            />
+            Lakkstift/lakkboks nødvendig
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.lakkstiftLakkboksUtfort}
+              onChange={function (e) { patch({ lakkstiftLakkboksUtfort: e.target.checked }); }}
+            />
+            Lakkstift/lakkboks utført
+          </label>
         </div>
       </div>
     </div>

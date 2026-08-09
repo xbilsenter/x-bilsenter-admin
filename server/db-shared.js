@@ -527,7 +527,11 @@ const DEFAULT_BIL_TILSTANDSRAPPORT = {
   reparasjonsdelerNodvendig: false,
   reparasjonsdelerBestilt: false,
   felglakkeringNodvendig: false,
-  felglakkeringUtfort: false
+  felglakkeringUtfort: false,
+  lakkeringNodvendig: false,
+  lakkeringUtfort: false,
+  lakkstiftLakkboksNodvendig: false,
+  lakkstiftLakkboksUtfort: false
 };
 
 function normalizeBilTilstandsrapport(raw) {
@@ -544,7 +548,11 @@ function normalizeBilTilstandsrapport(raw) {
     reparasjonsdelerNodvendig: !!(o.reparasjonsdelerNodvendig || o.reparasjonsdelerMaBestilles),
     reparasjonsdelerBestilt: !!o.reparasjonsdelerBestilt,
     felglakkeringNodvendig: !!o.felglakkeringNodvendig,
-    felglakkeringUtfort: !!o.felglakkeringUtfort
+    felglakkeringUtfort: !!o.felglakkeringUtfort,
+    lakkeringNodvendig: !!o.lakkeringNodvendig,
+    lakkeringUtfort: !!o.lakkeringUtfort,
+    lakkstiftLakkboksNodvendig: !!o.lakkstiftLakkboksNodvendig,
+    lakkstiftLakkboksUtfort: !!o.lakkstiftLakkboksUtfort
   };
 }
 

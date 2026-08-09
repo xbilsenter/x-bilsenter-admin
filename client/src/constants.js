@@ -745,7 +745,11 @@ export const DEFAULT_BIL_TILSTANDSRAPPORT = {
   reparasjonsdelerNodvendig: false,
   reparasjonsdelerBestilt: false,
   felglakkeringNodvendig: false,
-  felglakkeringUtfort: false
+  felglakkeringUtfort: false,
+  lakkeringNodvendig: false,
+  lakkeringUtfort: false,
+  lakkstiftLakkboksNodvendig: false,
+  lakkstiftLakkboksUtfort: false
 };
 
 export function normalizeBilTilstandsrapport(raw) {
@@ -762,7 +766,11 @@ export function normalizeBilTilstandsrapport(raw) {
     reparasjonsdelerNodvendig: !!(o.reparasjonsdelerNodvendig || o.reparasjonsdelerMaBestilles),
     reparasjonsdelerBestilt: !!o.reparasjonsdelerBestilt,
     felglakkeringNodvendig: !!o.felglakkeringNodvendig,
-    felglakkeringUtfort: !!o.felglakkeringUtfort
+    felglakkeringUtfort: !!o.felglakkeringUtfort,
+    lakkeringNodvendig: !!o.lakkeringNodvendig,
+    lakkeringUtfort: !!o.lakkeringUtfort,
+    lakkstiftLakkboksNodvendig: !!o.lakkstiftLakkboksNodvendig,
+    lakkstiftLakkboksUtfort: !!o.lakkstiftLakkboksUtfort
   };
 }
 
@@ -775,6 +783,10 @@ export function tilstandsrapportDelerChips(raw) {
   if (tr.reparasjonsdelerBestilt) chips.push({ label: 'Reparasjonsdeler bestilt', tone: 'green' });
   if (tr.felglakkeringNodvendig) chips.push({ label: 'Felglakkering nødvendig', tone: 'red' });
   if (tr.felglakkeringUtfort) chips.push({ label: 'Felglakkering utført', tone: 'green' });
+  if (tr.lakkeringNodvendig) chips.push({ label: 'Lakkering nødvendig', tone: 'red' });
+  if (tr.lakkeringUtfort) chips.push({ label: 'Lakkering utført', tone: 'green' });
+  if (tr.lakkstiftLakkboksNodvendig) chips.push({ label: 'Lakkstift/lakkboks nødvendig', tone: 'red' });
+  if (tr.lakkstiftLakkboksUtfort) chips.push({ label: 'Lakkstift/lakkboks utført', tone: 'green' });
   return chips;
 }
 
@@ -784,6 +796,8 @@ export function tilstandsrapportNodvendigLabels(raw) {
   if (tr.stylingDelerNodvendig) labels.push('Styling deler nødvendig');
   if (tr.reparasjonsdelerNodvendig) labels.push('Reparasjonsdeler nødvendig');
   if (tr.felglakkeringNodvendig) labels.push('Felglakkering nødvendig');
+  if (tr.lakkeringNodvendig) labels.push('Lakkering nødvendig');
+  if (tr.lakkstiftLakkboksNodvendig) labels.push('Lakkstift/lakkboks nødvendig');
   return labels;
 }
 
