@@ -1,10 +1,13 @@
 'use strict';
 
+const INNBYTTE_INTRO_MAL =
+  'Viser til innbytteskjema hvor du ønsker å bytte inn din {{kundeBil}} med {{varBil}}.';
+
 const DEFAULT_TILBUD_EPOST_MALER = {
   innbytteTilbud: [
     'Hei {{navn}},',
     '',
-    '{{intro}}',
+    INNBYTTE_INTRO_MAL,
     '',
     'Vi er nærmere {{pris}} for din bil i innbytte.',
     '',
@@ -13,7 +16,7 @@ const DEFAULT_TILBUD_EPOST_MALER = {
   innbytteVisning: [
     'Hei {{navn}},',
     '',
-    '{{intro}}',
+    INNBYTTE_INTRO_MAL,
     '',
     'Vi er nok ikke så langt unna hverandre på innbytteverdi av din bil. Kom gjerne innom for å titte på vår bil – faller den i smak blir vi enige.',
     '',
@@ -52,13 +55,13 @@ const TILBUD_EPOST_MAL_DEFS = [
     key: 'innbytteTilbud',
     title: 'Innbytte – tilbud',
     desc: 'Brukes når du sender innbyttetilbud på e-post fra innbytte-modulen.',
-    placeholders: ['{{navn}}', '{{intro}}', '{{pris}}', '{{kundeBil}}', '{{varBil}}']
+    placeholders: ['{{navn}}', '{{pris}}', '{{kundeBil}}', '{{varBil}}']
   },
   {
     key: 'innbytteVisning',
     title: 'Innbytte – avtale visning',
     desc: 'Brukes når du inviterer kunden til visning av bil i innbytte-modulen.',
-    placeholders: ['{{navn}}', '{{intro}}', '{{kundeBil}}', '{{varBil}}']
+    placeholders: ['{{navn}}', '{{kundeBil}}', '{{varBil}}']
   },
   {
     key: 'selgBilTilbud',
@@ -74,12 +77,20 @@ const TILBUD_EPOST_MAL_DEFS = [
   }
 ];
 
+function expandInnbytteIntroPlaceholder(text) {
+  return String(text || '').replace(/\{\{intro\}\}/g, INNBYTTE_INTRO_MAL);
+}
+
 function normalizeTilbudEpostMaler(input) {
   const src = input && typeof input === 'object' ? input : {};
   const out = {};
   TILBUD_EPOST_MAL_KEYS.forEach(function (key) {
-    const val = String(src[key] != null ? src[key] : DEFAULT_TILBUD_EPOST_MALER[key] || '').trim();
-    out[key] = val || DEFAULT_TILBUD_EPOST_MALER[key];
+    let val = String(src[key] != null ? src[key] : DEFAULT_TILBUD_EPOST_MALER[key] || '').trim();
+    if (!val) val = DEFAULT_TILBUD_EPOST_MALER[key];
+    if (key === 'innbytteTilbud' || key === 'innbytteVisning') {
+      val = expandInnbytteIntroPlaceholder(val);
+    }
+    out[key] = val;
   });
   return out;
 }
