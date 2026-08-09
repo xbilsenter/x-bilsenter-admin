@@ -505,7 +505,7 @@ export function buildNyeHenvendelserItems(opts) {
     items.push({
       key: 'henv-' + h.id,
       type: 'henvendelse',
-      typeLabel: 'Henvendelse',
+      typeLabel: 'Kontaktskjema',
       dato: h.dato || '',
       navn: h.navn || '—',
       sub: h.epost || '',
@@ -1027,7 +1027,7 @@ export const DEFAULT_MODUL_OPPSATT = [
   { id: 'dashboard', label: 'Oversikt' },
   { id: 'biler', label: 'Biler' },
   { id: 'kunder', label: 'Kunder' },
-  { id: 'henvendelser', label: 'Henvendelser' },
+  { id: 'henvendelser', label: 'Kontaktskjema' },
   { id: 'innboks', label: 'Innboks' },
   { id: 'innbytte', label: 'Innbytte' },
   { id: 'selgbil', label: 'Selg bil' },
@@ -1062,6 +1062,12 @@ export function normalizeModulOppsett(list) {
   defaults.forEach(function (item) {
     if (!result.some(function (row) { return row.id === item.id; })) {
       result.push(byId[item.id] || { ...item });
+    }
+  });
+
+  result.forEach(function (item) {
+    if (item.id === 'henvendelser' && item.label === 'Henvendelser') {
+      item.label = 'Kontaktskjema';
     }
   });
 

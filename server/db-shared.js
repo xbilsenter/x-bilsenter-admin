@@ -99,7 +99,7 @@ const DEFAULT_INNSTILLINGER = {
     { id: 'dashboard', label: 'Oversikt' },
     { id: 'biler', label: 'Biler' },
     { id: 'kunder', label: 'Kunder' },
-    { id: 'henvendelser', label: 'Henvendelser' },
+    { id: 'henvendelser', label: 'Kontaktskjema' },
     { id: 'innboks', label: 'Innboks' },
     { id: 'innbytte', label: 'Innbytte' },
     { id: 'selgbil', label: 'Selg bil' },
@@ -126,7 +126,7 @@ const PERMISSION_DEFS = [
   { id: 'dashboard', label: 'Oversikt' },
   { id: 'biler', label: 'Biler' },
   { id: 'kunder', label: 'Kunder' },
-  { id: 'henvendelser', label: 'Henvendelser' },
+  { id: 'henvendelser', label: 'Kontaktskjema' },
   { id: 'innboks', label: 'Innboks' },
   { id: 'innbytte', label: 'Innbytte' },
   { id: 'selgbil', label: 'Selg bil' },
@@ -194,6 +194,12 @@ function normalizeModulOppsett(list) {
   defaults.forEach(function (item) {
     if (!result.some(function (row) { return row.id === item.id; })) {
       result.push(byId[item.id] || { ...item });
+    }
+  });
+
+  result.forEach(function (item) {
+    if (item.id === 'henvendelser' && item.label === 'Henvendelser') {
+      item.label = 'Kontaktskjema';
     }
   });
 

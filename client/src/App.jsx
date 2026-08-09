@@ -588,22 +588,22 @@ export default function App() {
       if (localMsg) visTost(localMsg);
       refreshStats();
     } catch (err) {
-      visTost(err.message || 'Kunne ikke lagre henvendelse ✗');
+      visTost(err.message || 'Kunne ikke lagre kontaktskjema ✗');
       loadData();
     }
   };
 
   const deleteHenv = async (id) => {
-    if (!window.confirm('Slette denne henvendelsen permanent?')) return false;
+    if (!window.confirm('Slette dette kontaktskjemaet permanent?')) return false;
     try {
       await deleteHenvendelse(id);
       setHenv(prev => prev.filter(h => h.id !== id));
       setModal(null);
-      visTost('Henvendelse slettet ✓');
+      visTost('Kontaktskjema slettet ✓');
       refreshStats();
       return true;
     } catch (err) {
-      visTost(err.message || 'Kunne ikke slette henvendelse ✗');
+      visTost(err.message || 'Kunne ikke slette kontaktskjema ✗');
       return false;
     }
   };
@@ -1596,7 +1596,7 @@ function Dashboard({
               {harInnboks && (
                 <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innboks'); }}>Innboks →</button>
               )}
-              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('henvendelser'); }}>Henvendelser →</button>
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('henvendelser'); }}>Kontaktskjema →</button>
               <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('selgbil'); }}>Selg bil →</button>
             </div>
           </div>
@@ -2757,9 +2757,9 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                   })}
                 </div>
                 <div>
-                  <div className="bil-links-hd">Henvendelser · {henvendelser.length}</div>
+                  <div className="bil-links-hd">Kontaktskjema · {henvendelser.length}</div>
                   {henvendelser.length === 0 ? (
-                    <div className="bil-links-empty">Ingen henvendelser knyttet til {bil.reg}</div>
+                    <div className="bil-links-empty">Ingen kontaktskjema knyttet til {bil.reg}</div>
                   ) : henvendelser.map(function (h) {
                     return (
                       <button
@@ -4121,7 +4121,7 @@ function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
           {canCreateHenv && (
             <>
               <Sep />
-              <MenuItem label="Opprett henvendelse" onClick={() => run('createHenv', mail)} />
+              <MenuItem label="Opprett kontaktskjema" onClick={() => run('createHenv', mail)} />
             </>
           )}
           <Sep />
@@ -4496,10 +4496,10 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         setValgt(function (prev) { return prev?.id === mail.id ? res.epost : prev; });
       }
       if (res.henvendelse) setHenv(prev => [res.henvendelse, ...prev]);
-      visTost('Henvendelse opprettet ✓');
+      visTost('Kontaktskjema opprettet ✓');
       refreshStats();
     } catch (err) {
-      visTost(err.message || 'Kunne ikke opprette henvendelse ✗');
+      visTost(err.message || 'Kunne ikke opprette kontaktskjema ✗');
     }
   };
 
@@ -4872,10 +4872,10 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {valgt.retning === 'inn' && !valgt.henvendelseId && (
-                    <button type="button" className="btn btn-g btn-sm" onClick={opprettHenv}>Opprett henvendelse</button>
+                    <button type="button" className="btn btn-g btn-sm" onClick={opprettHenv}>Opprett kontaktskjema</button>
                   )}
                   {valgt.henvendelseId && (
-                    <button type="button" className="btn btn-g btn-sm" onClick={() => setTab('henvendelser')}>Gå til henvendelser</button>
+                    <button type="button" className="btn btn-g btn-sm" onClick={() => setTab('henvendelser')}>Gå til kontaktskjema</button>
                   )}
                   {valgt.retning === 'inn' && (
                     <button
@@ -5340,7 +5340,7 @@ function KundeModal({ data, onClose, updateKunde, deleteKunde, setModal, visTost
           {['info', 'henvendelser', 'innbytte', 'eposter', 'kalender', 'biler'].map(function (id) {
             const labels = {
               info: 'Profil',
-              henvendelser: `Henvendelser (${(a.henvendelser || []).length})`,
+              henvendelser: `Kontaktskjema (${(a.henvendelser || []).length})`,
               innbytte: `Innbytte (${(a.innbytte || []).length})`,
               eposter: `E-post (${(a.eposter || []).length})`,
               kalender: `Kalender (${(a.kalender || []).length})`,
@@ -5538,7 +5538,7 @@ function HenvendelserView({ henv, setModal, updateHenv, deleteHenv, lists }) {
     <>
       <div className="ph">
         <div>
-          <div className="ph-title">Henvendelser</div>
+          <div className="ph-title">Kontaktskjema</div>
           <div className="ph-sub">{henv.filter(h => h.status === 'Ny').length} nye · {henv.length} totalt</div>
         </div>
       </div>
@@ -5710,7 +5710,7 @@ function HenvModal({ data, onClose, updateHenv, deleteHenv, onSendSvar, visTost,
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
-          <button type="button" className="btn btn-red" onClick={() => deleteHenv(h.id)}>Slett henvendelse</button>
+          <button type="button" className="btn btn-red" onClick={() => deleteHenv(h.id)}>Slett kontaktskjema</button>
           <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
         </div>
       </div>
@@ -9496,7 +9496,7 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           <div className="settings-grid">
         <ListEditor
           title="Ansvarlige"
-          desc="Vises i nedtrekkslister for biler, henvendelser, innbytte og kalender."
+          desc="Vises i nedtrekkslister for biler, kontaktskjema, innbytte og kalender."
           items={draft.ansatte}
           onChange={v => setList('ansatte', v)}
           placeholder="Navn på ansatt"
@@ -9531,8 +9531,8 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
           normalizeColors={normalizeBilStatusFarger}
         />
         <StatusListEditor
-          title="Henvendelsesstatuser og farger"
-          desc="Legg til statuser og velg farge for hver. Brukes i henvendelseslisten og filtre."
+          title="Kontaktskjemastatuser og farger"
+          desc="Legg til statuser og velg farge for hver. Brukes i kontaktskjema-listen og filtre."
           statuser={draft.henvStatuser}
           farger={draft.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER}
           onChange={(statuser, farger) => setDraft(prev => ({

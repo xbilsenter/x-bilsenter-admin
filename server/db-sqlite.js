@@ -966,7 +966,7 @@ const DEFAULT_INNSTILLINGER = {
   modulOppsett: [
     { id: 'dashboard', label: 'Oversikt' },
     { id: 'biler', label: 'Biler' },
-    { id: 'henvendelser', label: 'Henvendelser' },
+    { id: 'henvendelser', label: 'Kontaktskjema' },
     { id: 'innboks', label: 'Innboks' },
     { id: 'innbytte', label: 'Innbytte' },
     { id: 'selgbil', label: 'Selg bil' },
@@ -1297,7 +1297,7 @@ const PERMISSION_DEFS = [
   { id: 'dashboard', label: 'Oversikt' },
   { id: 'biler', label: 'Biler' },
   { id: 'kunder', label: 'Kunder' },
-  { id: 'henvendelser', label: 'Henvendelser' },
+  { id: 'henvendelser', label: 'Kontaktskjema' },
   { id: 'innboks', label: 'Innboks' },
   { id: 'innbytte', label: 'Innbytte' },
   { id: 'selgbil', label: 'Selg bil' },

@@ -1057,7 +1057,7 @@ app.delete('/api/henvendelser/:id', requireAuth, async function (req, res) {
   if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
 
   const row = await prepare('SELECT id FROM henvendelser WHERE id = ?').get(id);
-  if (!row) return res.status(404).json({ ok: false, error: 'Henvendelsen finnes ikke.' });
+  if (!row) return res.status(404).json({ ok: false, error: 'Kontaktskjemaet finnes ikke.' });
 
   try {
     await prepare('UPDATE eposter SET henvendelse_id = NULL WHERE henvendelse_id = ?').run(id);
@@ -1065,7 +1065,7 @@ app.delete('/api/henvendelser/:id', requireAuth, async function (req, res) {
     res.json({ ok: true });
   } catch (err) {
     console.error('[henvendelser/delete]', err.message);
-    res.status(500).json({ ok: false, error: 'Kunne ikke slette henvendelsen.' });
+    res.status(500).json({ ok: false, error: 'Kunne ikke slette kontaktskjemaet.' });
   }
 });
 
@@ -1076,12 +1076,12 @@ app.post('/api/henvendelser/:id/send-svar', requireAuth, async function (req, re
 
   const text = String((req.body || {}).svar || '').trim();
   if (!text) return res.status(400).json({ ok: false, error: 'Svar kan ikke være tomt.' });
-  if (!row.epost) return res.status(400).json({ ok: false, error: 'Henvendelsen har ingen e-postadresse.' });
+  if (!row.epost) return res.status(400).json({ ok: false, error: 'Kontaktskjemaet har ingen e-postadresse.' });
 
   try {
     const subject = String(row.emne || '').startsWith('Re:')
       ? row.emne
-      : `Re: ${row.emne || 'Henvendelse'}`;
+      : `Re: ${row.emne || 'Kontaktskjema'}`;
 
     await sendMail({
       to: row.epost,
