@@ -308,6 +308,49 @@ function parseIsoDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function yearFromDateValue(value) {
+  const d = parseIsoDate(value);
+  return d ? d.getFullYear() : null;
+}
+
+function parseArsmodellYear(value) {
+  if (value == null || value === '') return null;
+  const n = Number(String(value).trim());
+  if (!Number.isFinite(n) || n < 1900 || n > 2100) return null;
+  return n;
+}
+
+/** Modellår fra tekniske data; ellers år fra 1. gangs registrering (visningsår i bruktbil). */
+function resolveArsmodell({ generelt, ovrige, kg, forstegang, registrering, forstegangRegistrertRaw, vehicle }) {
+  const explicitRaw = generelt.arModell
+    || generelt.arsmodell
+    || generelt.aarsmodell
+    || lookupOvrigTekniskData(ovrige, 'modellår')
+    || lookupOvrigTekniskData(ovrige, 'årsmodell')
+    || lookupOvrigTekniskData(ovrige, 'modellaar');
+  const explicitYear = parseArsmodellYear(explicitRaw);
+
+  const regYear = yearFromDateValue(
+    vehicle.forstegangsregistrering?.registrertForstegangNorgeDato
+    || forstegang.registrertForstegangNorgeDato
+    || forstegangRegistrertRaw
+    || registrering.registrertForstegangNorge
+  );
+
+  const godkjenningsAr = parseArsmodellYear(kg.nasjonalGodkjenning?.nasjonaltGodkjenningsAr);
+
+  if (explicitYear != null) {
+    if (regYear != null && regYear > explicitYear && regYear - explicitYear <= 2) {
+      return String(regYear);
+    }
+    return String(explicitYear);
+  }
+
+  if (regYear != null) return String(regYear);
+  if (godkjenningsAr != null) return String(godkjenningsAr);
+  return null;
+}
+
 function parseBruktimport(vehicle, forstegang, registrering, generelt) {
   const godkjenning = vehicle.godkjenning || {};
   const undertype = codeValue(godkjenning.godkjenningsUndertype)
@@ -395,14 +438,15 @@ function parseVehicle(raw) {
     || vehicle.kjennemerke
     || null;
 
-  const arsmodell = generelt.arModell
-    || generelt.arsmodell
-    || generelt.aarsmodell
-    || lookupOvrigTekniskData(ovrige, 'modellår')
-    || lookupOvrigTekniskData(ovrige, 'årsmodell')
-    || lookupOvrigTekniskData(ovrige, 'modellaar')
-    || kg.nasjonalGodkjenning?.nasjonaltGodkjenningsAr
-    || null;
+  const arsmodell = resolveArsmodell({
+    generelt,
+    ovrige,
+    kg,
+    forstegang,
+    registrering,
+    forstegangRegistrertRaw,
+    vehicle
+  });
 
   return {
     regNr: regNr ? normalizeRegNr(regNr) : null,
