@@ -833,7 +833,9 @@ select option{background:var(--s1);}
   .bil-pipeline-main{grid-template-columns:1fr;}
 }
 
-.kalkyle-platforms{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+.kalkyle-platforms{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px;}
+.kalkyle-platform-group{display:flex;flex-wrap:wrap;gap:8px;}
+.kalkyle-platform-group--annet{padding-left:12px;border-left:1px solid var(--b1);}
 .kalkyle-platform{padding:8px 12px;border:1px solid var(--b1);border-radius:999px;background:var(--s1);font-size:11px;font-weight:700;color:var(--t2);cursor:pointer;font-family:inherit;}
 .kalkyle-platform.on,.kalkyle-platform:hover{background:var(--accl);border-color:rgba(25,186,96,.35);color:var(--acc2);}
 .kalkyle-layout{display:grid;grid-template-columns:280px 1fr;gap:14px;min-height:560px;}

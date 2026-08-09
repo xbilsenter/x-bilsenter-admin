@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { lookupKjoretoy, lookupOmregistreringsavgift, postInnkjopskalkyle, patchInnkjopskalkyle, deleteInnkjopskalkyle } from '../api.js';
-import { AUKSJON_PLATTFORMER, calcInnkjopspris, formatSvvFargeNavn } from '../constants.js';
+import { KALKYLE_AUKSJON_PLATTFORMER, KALKYLE_ANDRE_KILDER, KALKYLE_KILDER, calcInnkjopspris, formatSvvFargeNavn, isKalkyleAuksjon } from '../constants.js';
 import {
   buildKalkyleFinnSok,
   canKalkyleFinnMarkedsSok,
@@ -408,6 +408,8 @@ function KalkyleForm({ form, setForm, onSave, onDelete, onReset, saving, editMod
     }
   };
 
+  const erAuksjon = isKalkyleAuksjon(form.auksjon);
+
   return (
     <div className="kalkyle-sheet">
       <div className="kalkyle-sheet-hd">
@@ -433,26 +435,46 @@ function KalkyleForm({ form, setForm, onSave, onDelete, onReset, saving, editMod
       <div className="kalkyle-grid">
         <div className="kalkyle-col">
           <label className="kalkyle-field">
-            <span className="kalkyle-label">Auksjon</span>
-            <select value={form.auksjon} onChange={(e) => setForm(function (prev) { return { ...prev, auksjon: e.target.value }; })}>
-              <option value="">Velg plattform…</option>
-              {AUKSJON_PLATTFORMER.map(function (p) {
-                return <option key={p} value={p}>{p}</option>;
-              })}
+            <span className="kalkyle-label">Kilde</span>
+            <select value={form.auksjon} onChange={(e) => setForm(function (prev) {
+              const next = e.target.value;
+              const nextForm = { ...prev, auksjon: next };
+              if (!isKalkyleAuksjon(next)) {
+                nextForm.auksjonsslutt = '';
+                nextForm.partinummer = '';
+                nextForm.aukGebyr = '';
+              }
+              return nextForm;
+            })}>
+              <option value="">Velg kilde…</option>
+              <optgroup label="Auksjon">
+                {KALKYLE_AUKSJON_PLATTFORMER.map(function (p) {
+                  return <option key={p} value={p}>{p}</option>;
+                })}
+              </optgroup>
+              <optgroup label="Annet">
+                {KALKYLE_ANDRE_KILDER.map(function (p) {
+                  return <option key={p} value={p}>{p}</option>;
+                })}
+              </optgroup>
             </select>
           </label>
-          <label className="kalkyle-field">
-            <span className="kalkyle-label">Auksjonsslutt</span>
-            <input
-              type="datetime-local"
-              value={form.auksjonsslutt}
-              onChange={(e) => setForm(function (prev) { return { ...prev, auksjonsslutt: e.target.value }; })}
-            />
-          </label>
-          <label className="kalkyle-field">
-            <span className="kalkyle-label">Partinummer</span>
-            <input value={form.partinummer} onChange={(e) => setForm(function (p) { return { ...p, partinummer: e.target.value }; })} />
-          </label>
+          {erAuksjon && (
+            <>
+              <label className="kalkyle-field">
+                <span className="kalkyle-label">Auksjonsslutt</span>
+                <input
+                  type="datetime-local"
+                  value={form.auksjonsslutt}
+                  onChange={(e) => setForm(function (prev) { return { ...prev, auksjonsslutt: e.target.value }; })}
+                />
+              </label>
+              <label className="kalkyle-field">
+                <span className="kalkyle-label">Partinummer</span>
+                <input value={form.partinummer} onChange={(e) => setForm(function (p) { return { ...p, partinummer: e.target.value }; })} />
+              </label>
+            </>
+          )}
           <label className="kalkyle-field">
             <span className="kalkyle-label">Reg.nr.</span>
             <div className="kalkyle-reg-row">
@@ -502,7 +524,9 @@ function KalkyleForm({ form, setForm, onSave, onDelete, onReset, saving, editMod
 
           <KrField label="Utsalgspris" highlight value={form.utsalgspris} onChange={handleUtsalgsprisChange} />
           <KrField label="Påkost" value={form.pakost} onChange={(v) => setForm(function (p) { return { ...p, pakost: v }; })} />
-          <KrField label="Auk. gebyr" value={form.aukGebyr} onChange={(v) => setForm(function (p) { return { ...p, aukGebyr: v }; })} />
+          {erAuksjon && (
+            <KrField label="Auk. gebyr" value={form.aukGebyr} onChange={(v) => setForm(function (p) { return { ...p, aukGebyr: v }; })} />
+          )}
           <KrField label="Garantikost" value={form.garantikost} onChange={(v) => setForm(function (p) { return { ...p, garantikost: v }; })} />
           <KrField
             label="Omreg.avgift"
@@ -551,10 +575,10 @@ function KalkyleForm({ form, setForm, onSave, onDelete, onReset, saving, editMod
 }
 
 export default function InnkjopskalkyleView({ items, setItems, visTost, currentUser }) {
-  const [platform, setPlatform] = useState(AUKSJON_PLATTFORMER[0]);
+  const [platform, setPlatform] = useState(KALKYLE_KILDER[0]);
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(function () {
-    return { ...EMPTY_FORM, auksjon: AUKSJON_PLATTFORMER[0] };
+    return { ...EMPTY_FORM, auksjon: KALKYLE_KILDER[0] };
   });
   const [saving, setSaving] = useState(false);
 
@@ -583,13 +607,21 @@ export default function InnkjopskalkyleView({ items, setItems, visTost, currentU
   const handlePlatformChange = function (next) {
     setPlatform(next);
     if (!selectedId) {
-      setForm(function (prev) { return { ...prev, auksjon: next }; });
+      setForm(function (prev) {
+        const nextForm = { ...prev, auksjon: next };
+        if (!isKalkyleAuksjon(next)) {
+          nextForm.auksjonsslutt = '';
+          nextForm.partinummer = '';
+          nextForm.aukGebyr = '';
+        }
+        return nextForm;
+      });
     }
   };
 
   const saveItem = async function (payload) {
     if (!payload.auksjon) {
-      visTost('Velg auksjonsplattform ✗');
+      visTost('Velg kilde ✗');
       return;
     }
     setSaving(true);
@@ -648,19 +680,36 @@ export default function InnkjopskalkyleView({ items, setItems, visTost, currentU
       </div>
 
       <div className="kalkyle-platforms">
-        {AUKSJON_PLATTFORMER.map(function (p) {
-          const count = (items || []).filter(function (i) { return i.auksjon === p; }).length;
-          return (
-            <button
-              key={p}
-              type="button"
-              className={`kalkyle-platform${platform === p ? ' on' : ''}`}
-              onClick={() => handlePlatformChange(p)}
-            >
-              {p}{count > 0 ? ` (${count})` : ''}
-            </button>
-          );
-        })}
+        <div className="kalkyle-platform-group">
+          {KALKYLE_AUKSJON_PLATTFORMER.map(function (p) {
+            const count = (items || []).filter(function (i) { return i.auksjon === p; }).length;
+            return (
+              <button
+                key={p}
+                type="button"
+                className={`kalkyle-platform${platform === p ? ' on' : ''}`}
+                onClick={() => handlePlatformChange(p)}
+              >
+                {p}{count > 0 ? ` (${count})` : ''}
+              </button>
+            );
+          })}
+        </div>
+        <div className="kalkyle-platform-group kalkyle-platform-group--annet">
+          {KALKYLE_ANDRE_KILDER.map(function (p) {
+            const count = (items || []).filter(function (i) { return i.auksjon === p; }).length;
+            return (
+              <button
+                key={p}
+                type="button"
+                className={`kalkyle-platform${platform === p ? ' on' : ''}`}
+                onClick={() => handlePlatformChange(p)}
+              >
+                {p}{count > 0 ? ` (${count})` : ''}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="kalkyle-layout">

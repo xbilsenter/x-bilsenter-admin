@@ -652,7 +652,7 @@ export function canDeleteBil(user) {
   return resolveRoleKey(user.role) === 'Innkjøpssjef';
 }
 
-export const AUKSJON_PLATTFORMER = [
+export const KALKYLE_AUKSJON_PLATTFORMER = [
   'Rebil',
   'AYVENS',
   'BCA',
@@ -664,6 +664,23 @@ export const AUKSJON_PLATTFORMER = [
   'Auksjonen.no',
   'Stadssalg'
 ];
+
+export const KALKYLE_ANDRE_KILDER = [
+  'FINN.no',
+  'Privat/Annet'
+];
+
+export const KALKYLE_KILDER = [
+  ...KALKYLE_AUKSJON_PLATTFORMER,
+  ...KALKYLE_ANDRE_KILDER
+];
+
+/** @deprecated Bruk KALKYLE_AUKSJON_PLATTFORMER */
+export const AUKSJON_PLATTFORMER = KALKYLE_AUKSJON_PLATTFORMER;
+
+export function isKalkyleAuksjon(kilde) {
+  return KALKYLE_AUKSJON_PLATTFORMER.includes(String(kilde || '').trim());
+}
 
 export function calcInnkjopspris(input) {
   const utsalgspris = Number(input?.utsalgspris) || 0;
