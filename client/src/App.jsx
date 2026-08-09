@@ -2377,7 +2377,6 @@ async function hentAutosysPayload(reg, lists, prevBil) {
 function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, henv, setModal, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
-  const [nyOppg, setNyOppg] = useState('');
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(null);
 
@@ -2464,12 +2463,6 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     const list = getAktivSjekkliste(bil);
     const ny = list.map((s, idx) => idx === i ? { ...s, f: !s.f } : s);
     oppdater('sjekkliste', ny, 'Oppgave oppdatert ✓');
-  };
-
-  const leggTilOppg = () => {
-    if (!nyOppg.trim()) return;
-    oppdater('sjekkliste', [...getAktivSjekkliste(bil), { t: nyOppg, f: false, obligatorisk: true }]);
-    setNyOppg('');
   };
 
   const lastOppDokumenter = async (event) => {
@@ -2708,11 +2701,6 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                   {!s.obligatorisk && <span className="chip chip-gray" style={{ fontSize: 9, marginLeft: 6 }}>Frivillig</span>}
                 </div>
               ))}
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <input placeholder="Ny oppgave..." value={nyOppg} onChange={e => setNyOppg(e.target.value)} onKeyDown={e => e.key === 'Enter' && leggTilOppg()} />
-                <button type="button" className="btn btn-g btn-sm" onClick={leggTilOppg}>+</button>
-              </div>
-
               <div className="modal-sec" style={{ marginTop: 24 }}>Tilknyttet aktivitet</div>
               <div className="bil-links-stack">
                 <div>
