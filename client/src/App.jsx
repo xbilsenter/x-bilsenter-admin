@@ -170,6 +170,85 @@ function matchesBilRef(ref, reg) {
   return String(ref).trim().toUpperCase() === String(reg).trim().toUpperCase();
 }
 
+function matchesInnbytteTilBil(inn, bil) {
+  if (!inn || !bil?.reg) return false;
+  if (matchesBilRef(inn.onsketBil, bil.reg)) return true;
+  if (bil.finnKode && matchesBilRef(inn.onsketBil, bil.finnKode)) return true;
+  return false;
+}
+
+function matchesEpostTilBil(e, bil, henv) {
+  if (!e || !bil?.reg) return false;
+  if (e.henvendelseId) {
+    const h = (henv || []).find(function (x) { return x.id === e.henvendelseId; });
+    if (h && matchesBilRef(h.bilRef, bil.reg)) return true;
+  }
+  return false;
+}
+
+function countBilHenvendelser(bil, henv, innbytte, epost) {
+  let total = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
+  total += (innbytte || []).filter(function (i) { return matchesInnbytteTilBil(i, bil); }).length;
+  total += (epost || []).filter(function (e) { return matchesEpostTilBil(e, bil, henv); }).length;
+  return total;
+}
+
+function buildBilHenvendelseItems(bil, henv, innbytte, epost) {
+  const items = [];
+
+  (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).forEach(function (h) {
+    items.push({
+      key: 'henv-' + h.id,
+      type: 'kontaktskjema',
+      typeLabel: 'Kontaktskjema',
+      dato: h.dato || '',
+      title: h.emne || '—',
+      sub: [h.navn, h.epost].filter(Boolean).join(' · ') || '—',
+      meta: h.ansvarlig || 'Ikke tildelt',
+      badge: h.status,
+      badgeKind: 'henv',
+      data: h,
+      sortDato: h.dato || ''
+    });
+  });
+
+  (innbytte || []).filter(function (i) { return matchesInnbytteTilBil(i, bil); }).forEach(function (i) {
+    items.push({
+      key: 'inb-' + i.id,
+      type: 'innbytte',
+      typeLabel: 'Innbytte',
+      dato: i.dato || '',
+      title: [i.merke, i.modell, i.aar].filter(Boolean).join(' ') || 'Innbytte',
+      sub: i.reg ? `Innbyttebil: ${i.reg}` : (i.navn || '—'),
+      meta: i.ansvarlig || 'Ikke tildelt',
+      badge: i.status,
+      badgeKind: 'innbytte',
+      data: i,
+      sortDato: i.dato || ''
+    });
+  });
+
+  (epost || []).filter(function (e) { return matchesEpostTilBil(e, bil, henv); }).forEach(function (e) {
+    items.push({
+      key: 'epost-' + e.id,
+      type: 'epost',
+      typeLabel: 'E-post',
+      dato: e.dato || e.sortDato || '',
+      title: e.emne || '(Uten emne)',
+      sub: e.fraNavn || e.fraEpost || '—',
+      meta: e.retning === 'ut' ? 'Utgående' : 'Innkommende',
+      badge: e.lest ? 'Lest' : 'Ulest',
+      badgeKind: 'epost',
+      data: e,
+      sortDato: e.sortDato || e.dato || ''
+    });
+  });
+
+  return items.sort(function (a, b) {
+    return String(b.sortDato || '').localeCompare(String(a.sortDato || ''));
+  });
+}
+
 function bilStatusFarge(status, lists) {
   return (lists?.bilStatusFarger && lists.bilStatusFarger[status])
     || SFARGE[status]
@@ -835,6 +914,8 @@ export default function App() {
               lists={lists}
               kal={kal}
               henv={henv}
+              innbytte={innbytte}
+              epost={epost}
               updateBil={updateBil}
               reorderBiler={reorderBiler}
               kunder={kunder}
@@ -978,7 +1059,11 @@ export default function App() {
           lists={lists}
           kal={kal}
           henv={henv}
+          innbytte={innbytte}
+          epost={epost}
           setModal={setModal}
+          setTab={setTab}
+          setInnboksOpenEpost={setInnboksOpenEpost}
           kunder={kunder}
           biler={biler}
           currentUser={user}
@@ -1710,7 +1795,7 @@ function BilSlettelogPanel() {
   );
 }
 
-function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler, currentUser }) {
+function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser }) {
   const [mFilter, setMFilter] = useState('Alle');
   const [sFilter, setSFilter] = useState('Alle');
   const [search, setSearch] = useState('');
@@ -1840,7 +1925,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     const { f, t, pst } = prog;
     const sisteSjekk = getSisteKryssedeSjekklisteItem(list);
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
-    const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
+    const linkHenv = countBilHenvendelser(bil, henv, innbytte, epost);
     return (
       <div
         className={`bil-card${dragId === bil.id ? ' bil-card--dragging' : ''}`}
@@ -1880,7 +1965,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     const { f, t, pst } = prog;
     const sisteSjekk = getSisteKryssedeSjekklisteItem(list);
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
-    const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
+    const linkHenv = countBilHenvendelser(bil, henv, innbytte, epost);
     return (
       <div
         key={bil.id}
@@ -2406,7 +2491,7 @@ async function hentAutosysPayload(reg, lists, prevBil) {
   return buildAutosysLagring(parsed, data.raw || null, lists, prevBil);
 }
 
-function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, henv, setModal, kunder, biler, currentUser }) {
+function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
   const [activeTab, setActiveTab] = useState('informasjon');
   const [uploading, setUploading] = useState(false);
@@ -2453,9 +2538,23 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
   const avtaler = (kal || [])
     .filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); })
     .sort(function (a, b) { return a.dato.localeCompare(b.dato) || a.tid.localeCompare(b.tid); });
-  const henvendelser = (henv || [])
-    .filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); })
-    .sort(function (a, b) { return String(b.dato || '').localeCompare(String(a.dato || '')); });
+  const henvendelser = buildBilHenvendelseItems(bil, henv, innbytte, epost);
+
+  const openHenvendelseItem = function (item) {
+    if (item.type === 'kontaktskjema') setModal({ t: 'visHenv', d: item.data });
+    else if (item.type === 'innbytte') setModal({ t: 'visInb', d: item.data });
+    else if (item.type === 'epost') {
+      onClose();
+      setInnboksOpenEpost(item.data);
+      setTab('innboks');
+    }
+  };
+
+  const henvendelseTypeChip = function (kind) {
+    if (kind === 'epost') return 'chip chip-gray';
+    if (kind === 'innbytte') return 'chip chip-orange';
+    return 'chip chip-gray';
+  };
 
   const oppdater = (k, v, msg) => {
     if (k === 'status') {
@@ -2759,23 +2858,32 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                   })}
                 </div>
                 <div>
-                  <div className="bil-links-hd">Kontaktskjema · {henvendelser.length}</div>
+                  <div className="bil-links-hd">Henvendelser · {henvendelser.length}</div>
                   {henvendelser.length === 0 ? (
-                    <div className="bil-links-empty">Ingen kontaktskjema knyttet til {bil.reg}</div>
-                  ) : henvendelser.map(function (h) {
+                    <div className="bil-links-empty">Ingen henvendelser knyttet til {bil.reg}</div>
+                  ) : henvendelser.map(function (item) {
                     return (
                       <button
                         type="button"
-                        key={h.id}
+                        key={item.key}
                         className="bil-link-item"
-                        onClick={() => setModal({ t: 'visHenv', d: h })}
+                        onClick={function () { openHenvendelseItem(item); }}
                       >
                         <div className="bil-link-item__top">
-                          <Badge s={h.status} colors={lists.henvStatusFarger} />
-                          <span className="bil-link-item__meta">{h.dato}</span>
+                          <span className={henvendelseTypeChip(item.badgeKind)} style={{ fontSize: 9 }}>{item.typeLabel}</span>
+                          {item.badgeKind === 'henv' && (
+                            <Badge s={item.badge} colors={lists.henvStatusFarger} />
+                          )}
+                          {item.badgeKind === 'innbytte' && (
+                            <Badge s={item.badge} colors={lists.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER} />
+                          )}
+                          {item.badgeKind === 'epost' && (
+                            <span className={item.badge === 'Ulest' ? 'chip chip-red' : 'chip chip-gray'}>{item.badge}</span>
+                          )}
+                          <span className="bil-link-item__meta">{item.dato || '—'}</span>
                         </div>
-                        <div className="bil-link-item__title">{h.navn} · {h.emne}</div>
-                        <div className="bil-link-item__sub">{h.ansvarlig || 'Ikke tildelt'} · {h.epost}</div>
+                        <div className="bil-link-item__title">{item.title}</div>
+                        <div className="bil-link-item__sub">{item.sub}{item.meta ? ` · ${item.meta}` : ''}</div>
                       </button>
                     );
                   })}
