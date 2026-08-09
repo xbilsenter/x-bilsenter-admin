@@ -23,6 +23,7 @@ import {
   getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
   getSavedBilerSection, saveBilerSection,
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
+  buildNyeHenvendelserItems,
   ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
@@ -292,6 +293,7 @@ export default function App() {
   const [innstillinger, setInnstillinger] = useState(DEFAULT_INNSTILLINGER);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
+  const [innboksOpenEpost, setInnboksOpenEpost] = useState(null);
 
   const visTost = useCallback((m) => {
     setToast(m);
@@ -481,6 +483,9 @@ export default function App() {
     (s, b) => s + getAktivSjekkliste(b).filter(x => x.obligatorisk && !x.f).length, 0
   );
   const ulestEpost = stats.ulestEpost ?? mailStatus.ulest ?? epost.filter(e => e.retning === 'inn' && !e.lest).length;
+  const harInnboks = canAccess(user, 'innboks');
+  const ulestEpostListe = harInnboks ? (stats.ulestEpostListe || []) : [];
+  const nyeHenvendelserTotal = (nyeHenv + nyeInnbytte + nyeSelgBil + (harInnboks ? (Number(ulestEpost) || 0) : 0));
 
   const lists = innstillinger;
 
@@ -806,10 +811,13 @@ export default function App() {
           </div>
           {tab === 'dashboard' && (
             <Dashboard
-              biler={biler} henv={henv} innbytte={innbytte} kal={kal}
+              biler={biler} henv={henv} innbytte={innbytte} selgBil={selgBil} kal={kal}
               paaLager={paaLager} reservert={reservert}
-              nyeHenv={nyeHenv} nyeInnbytte={nyeInnbytte}
+              nyeHenvendelserTotal={nyeHenvendelserTotal}
+              ulestEpostListe={ulestEpostListe}
+              harInnboks={harInnboks}
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
+              setInnboksOpenEpost={setInnboksOpenEpost}
               currentUser={user}
               vedlikeholdModus={innstillinger.vedlikeholdModus}
               henvStatusFarger={innstillinger.henvStatusFarger}
@@ -858,6 +866,8 @@ export default function App() {
               refreshStats={refreshStats}
               setTab={setTab}
               lists={lists}
+              initialOpenEpost={innboksOpenEpost}
+              onInitialOpenEpostConsumed={function () { setInnboksOpenEpost(null); }}
             />
           )}
           {tab === 'innbytte' && (
@@ -1278,16 +1288,77 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
   );
 }
 
-function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger }) {
+function Dashboard({
+  biler, henv, innbytte, selgBil, kal, paaLager, reservert,
+  nyeHenvendelserTotal, ulestEpostListe, harInnboks,
+  iDagKal, setTab, setModal, setInnboksOpenEpost,
+  currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger
+}) {
   const [aktivDrilldown, setAktivDrilldown] = useState(null);
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
   const lagerBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status !== 'Solgt'; });
-  const nyeHenvListe = henv.filter(function (h) { return h.status === 'Ny'; });
-  const nyeInnbytteListe = (innbytte || []).filter(function (i) { return i.status === 'Ny'; });
   const reserverteBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status === 'Reservert'; });
   const trMangler = biler.filter(bilManglerTilstandsrapport);
   const trAntall = trMangler.length;
   const innbytteColors = innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+
+  const nyeHenvendelserListe = buildNyeHenvendelserItems({
+    henv: henv,
+    innbytte: innbytte,
+    selgBil: selgBil,
+    ulestEpost: ulestEpostListe,
+    inkluderEpost: harInnboks
+  });
+
+  const openNyeHenvendelse = function (item) {
+    if (item.type === 'henvendelse') setModal({ t: 'visHenv', d: item.data });
+    else if (item.type === 'innbytte') setModal({ t: 'visInb', d: item.data });
+    else if (item.type === 'selgbil') setModal({ t: 'visSelgBil', d: item.data });
+    else if (item.type === 'epost') {
+      setInnboksOpenEpost(item.data);
+      setTab('innboks');
+    }
+  };
+
+  const typeChipClass = function (type) {
+    if (type === 'epost') return 'chip chip-gray';
+    if (type === 'innbytte') return 'chip chip-orange';
+    if (type === 'selgbil') return 'chip chip-green';
+    return 'chip chip-gray';
+  };
+
+  const renderNyeHenvendelserRows = function (items, emptyText) {
+    if (!items.length) {
+      return (
+        <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>{emptyText}</td></tr>
+      );
+    }
+    return items.map(function (item) {
+      return (
+        <tr
+          key={item.key}
+          className="dashboard-drill-row"
+          onClick={function () { openNyeHenvendelse(item); }}
+        >
+          <td>
+            <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{item.navn}</div>
+            <div style={{ fontSize: 10, color: 'var(--t4)' }}>{item.sub || '—'}</div>
+          </td>
+          <td style={{ maxWidth: 220 }}>
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{item.emne}</div>
+            <div style={{ fontSize: 10, color: 'var(--t4)', marginTop: 2 }}>{item.detalj}</div>
+          </td>
+          <td><span className={typeChipClass(item.type)}>{item.typeLabel}</span></td>
+          <td>{item.dato || '—'}</td>
+          <td>
+            {item.type === 'epost'
+              ? <span className="chip chip-red">Ulest</span>
+              : <Badge s={item.status} colors={item.type === 'innbytte' || item.type === 'selgbil' ? innbytteColors : henvStatusFarger} />}
+          </td>
+        </tr>
+      );
+    });
+  };
 
   const toggleDrilldown = function (key) {
     setAktivDrilldown(function (prev) { return prev === key ? null : key; });
@@ -1299,8 +1370,7 @@ function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, n
 
   const statCards = [
     { key: 'lager', ico: '🚗', lbl: 'Biler på lager', val: paaLager, sub: drillSub('lager', paaLager) },
-    { key: 'henv', ico: '🔴', lbl: 'Nye henvendelser', val: nyeHenv, sub: drillSub('henv', nyeHenv), red: true },
-    { key: 'innbytte', ico: '⇄', lbl: 'Innbytte (nye)', val: nyeInnbytte, sub: drillSub('innbytte', nyeInnbytte), orange: true },
+    { key: 'henv', ico: '🔴', lbl: 'Nye henvendelser', val: nyeHenvendelserTotal, sub: drillSub('henv', nyeHenvendelserTotal), red: true },
     { key: 'reservert', ico: '✅', lbl: 'Reserverte biler', val: reservert, sub: drillSub('reservert', reservert), green: true },
     { key: 'kal', ico: '📅', lbl: 'Avtaler i dag', val: iDagKal, sub: drillSub('kal', iDagKal) },
     {
@@ -1357,62 +1427,20 @@ function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, n
       return (
         <div className="card dashboard-drill-panel">
           <div className="card-h">
-            <span className="card-ht">Nye henvendelser ({nyeHenvListe.length})</span>
-            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('henvendelser'); }}>Gå til henvendelser →</button>
+            <span className="card-ht">Nye henvendelser ({nyeHenvendelserListe.length})</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {harInnboks && (
+                <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innboks'); }}>Innboks →</button>
+              )}
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('henvendelser'); }}>Henvendelser →</button>
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innbytte'); }}>Innbytte →</button>
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('selgbil'); }}>Selg bil →</button>
+            </div>
           </div>
           <table>
-            <thead><tr><th>Fra</th><th>Emne</th><th>Bil</th><th>Kilde</th><th>Status</th></tr></thead>
+            <thead><tr><th>Fra</th><th>Emne / detalj</th><th>Type</th><th>Dato</th><th>Status</th></tr></thead>
             <tbody>
-              {nyeHenvListe.length === 0 ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen nye henvendelser.</td></tr>
-              ) : nyeHenvListe.map(function (h) {
-                return (
-                  <tr key={h.id} className="dashboard-drill-row" onClick={function () { setModal({ t: 'visHenv', d: h }); }}>
-                    <td>
-                      <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{h.navn}</div>
-                      <div style={{ fontSize: 10, color: 'var(--t4)' }}>{h.epost}</div>
-                    </td>
-                    <td style={{ maxWidth: 200 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{h.emne}</div>
-                    </td>
-                    <td><span className="tag">{h.bilRef || '—'}</span></td>
-                    <td><span className="tag">{h.kilde}</span></td>
-                    <td><Badge s={h.status} colors={henvStatusFarger} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-
-    if (aktivDrilldown === 'innbytte') {
-      return (
-        <div className="card dashboard-drill-panel">
-          <div className="card-h">
-            <span className="card-ht">Nye innbytteforespørsler ({nyeInnbytteListe.length})</span>
-            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innbytte'); }}>Gå til innbytte →</button>
-          </div>
-          <table>
-            <thead><tr><th>Kunde</th><th>Innbyttebil</th><th>Ønsket bil</th><th>Status</th><th>Dato</th></tr></thead>
-            <tbody>
-              {nyeInnbytteListe.length === 0 ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen nye innbytteforespørsler.</td></tr>
-              ) : nyeInnbytteListe.map(function (inn) {
-                return (
-                  <tr key={inn.id} className="dashboard-drill-row" onClick={function () { setModal({ t: 'visInb', d: inn }); }}>
-                    <td>
-                      <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{inn.navn}</div>
-                      <div style={{ fontSize: 10, color: 'var(--t4)' }}>{inn.epost || inn.tlf || '—'}</div>
-                    </td>
-                    <td>{inn.merke} {inn.modell} {inn.aar || ''} · {inn.reg || '—'}</td>
-                    <td>{inn.onsketBil || '—'}</td>
-                    <td><Badge s={inn.status} colors={innbytteColors} /></td>
-                    <td>{inn.dato || '—'}</td>
-                  </tr>
-                );
-              })}
+              {renderNyeHenvendelserRows(nyeHenvendelserListe, 'Ingen nye henvendelser å behandle.')}
             </tbody>
           </table>
         </div>
@@ -1552,29 +1580,12 @@ function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, n
       <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 16 }}>
         <div className="card">
           <div className="card-h">
-            <span className="card-ht">Nye henvendelser</span>
-            <button type="button" className="btn btn-g btn-sm" onClick={() => setTab('henvendelser')}>Se alle →</button>
+            <span className="card-ht">Nye henvendelser ({nyeHenvendelserListe.length})</span>
           </div>
           <table>
-            <thead><tr><th>Fra</th><th>Emne</th><th>Bil</th><th>Kilde</th><th>Status</th></tr></thead>
+            <thead><tr><th>Fra</th><th>Emne / detalj</th><th>Type</th><th>Dato</th><th>Status</th></tr></thead>
             <tbody>
-              {henv.filter(h => h.status === 'Ny').map(h => (
-                <tr key={h.id}>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{h.navn}</div>
-                    <div style={{ fontSize: 10, color: 'var(--t4)' }}>{h.epost}</div>
-                  </td>
-                  <td style={{ maxWidth: 160 }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{h.emne}</div>
-                  </td>
-                  <td><span className="tag">{h.bilRef || '—'}</span></td>
-                  <td><span className="tag">{h.kilde}</span></td>
-                  <td><Badge s={h.status} colors={henvStatusFarger} /></td>
-                </tr>
-              ))}
-              {henv.filter(h => h.status === 'Ny').length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen nye henvendelser</td></tr>
-              )}
+              {renderNyeHenvendelserRows(nyeHenvendelserListe.slice(0, 8), 'Ingen nye henvendelser å behandle.')}
             </tbody>
           </table>
         </div>
@@ -4103,7 +4114,7 @@ function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
   );
 }
 
-function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visTost, refreshStats, setTab, lists }) {
+function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visTost, refreshStats, setTab, lists, initialOpenEpost, onInitialOpenEpostConsumed }) {
   const [filter, setFilter] = useState('Meldinger');
   const [statusFilter, setStatusFilter] = useState('Alle');
   const [kontoFilter, setKontoFilter] = useState('alle');
@@ -4374,6 +4385,12 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
       }
     }
   };
+
+  useEffect(function () {
+    if (!initialOpenEpost?.id) return;
+    openMail(initialOpenEpost);
+    if (onInitialOpenEpostConsumed) onInitialOpenEpostConsumed();
+  }, [initialOpenEpost?.id]);
 
   const syncMail = async () => {
     setSyncing(true);

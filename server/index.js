@@ -672,6 +672,7 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
     iDagKalRow,
     biler,
     ulestEpost,
+    ulestEpostRows,
     totaltKunderRow
   ] = await Promise.all([
     prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
@@ -682,8 +683,21 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
     prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
     prepare('SELECT status, sjekkliste, sjekklister FROM biler WHERE archived = 0 AND status NOT IN (\'Solgt\')').all(),
     countUlestEpost(),
+    prepare(`
+      SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost,
+        m.navn AS mappe_navn, m.mappe_type AS mappe_type,
+        (SELECT COUNT(*) FROM epost_vedlegg v WHERE v.epost_id = e.id) AS vedlegg_count
+      FROM eposter e
+      INNER JOIN mail_kontoer k ON k.id = e.konto_id
+      LEFT JOIN mail_mapper m ON m.id = e.mappe_id
+      WHERE e.slettet = 0 AND e.retning = 'inn' AND e.lest = 0
+      ORDER BY e.mottatt_dato DESC, e.id DESC
+      LIMIT 50
+    `).all(),
     prepare('SELECT COUNT(*) AS c FROM kunder').get()
   ]);
+
+  const ulestEpostListe = await mapEpostRowsWithVedlegg(ulestEpostRows || []);
 
   let aapneOppgaver = 0;
   biler.forEach(function (b) {
@@ -704,6 +718,7 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
       iDagKal: iDagKalRow.c,
       aapneOppgaver,
       ulestEpost,
+      ulestEpostListe,
       totaltKunder: totaltKunderRow.c
     }
   });

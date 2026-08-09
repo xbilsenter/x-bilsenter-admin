@@ -493,6 +493,81 @@ export const TAB_PERMISSIONS = {
   innstillinger: 'innstillinger'
 };
 
+export function buildNyeHenvendelserItems(opts) {
+  const henv = opts.henv || [];
+  const innbytte = opts.innbytte || [];
+  const selgBil = opts.selgBil || [];
+  const ulestEpost = opts.ulestEpost || [];
+  const inkluderEpost = !!opts.inkluderEpost;
+  const items = [];
+
+  henv.filter(function (h) { return h.status === 'Ny'; }).forEach(function (h) {
+    items.push({
+      key: 'henv-' + h.id,
+      type: 'henvendelse',
+      typeLabel: 'Henvendelse',
+      dato: h.dato || '',
+      navn: h.navn || '—',
+      sub: h.epost || '',
+      emne: h.emne || '—',
+      detalj: h.bilRef || '—',
+      status: h.status,
+      data: h
+    });
+  });
+
+  innbytte.filter(function (i) { return i.status === 'Ny'; }).forEach(function (i) {
+    items.push({
+      key: 'inb-' + i.id,
+      type: 'innbytte',
+      typeLabel: 'Innbytte',
+      dato: i.dato || '',
+      navn: i.navn || '—',
+      sub: i.epost || i.tlf || '',
+      emne: [i.merke, i.modell, i.aar].filter(Boolean).join(' ') || 'Innbyttebil',
+      detalj: i.onsketBil || i.reg || '—',
+      status: i.status,
+      data: i
+    });
+  });
+
+  selgBil.filter(function (s) { return s.status === 'Ny'; }).forEach(function (s) {
+    items.push({
+      key: 'selg-' + s.id,
+      type: 'selgbil',
+      typeLabel: 'Selg bil',
+      dato: s.dato || '',
+      navn: s.navn || '—',
+      sub: s.epost || s.tlf || '',
+      emne: [s.merke, s.modell, s.aar].filter(Boolean).join(' ') || 'Bil til salg',
+      detalj: s.reg || '—',
+      status: s.status,
+      data: s
+    });
+  });
+
+  if (inkluderEpost) {
+    ulestEpost.forEach(function (e) {
+      items.push({
+        key: 'epost-' + e.id,
+        type: 'epost',
+        typeLabel: 'E-post',
+        dato: e.dato || e.sortDato || '',
+        navn: e.fraNavn || e.fraEpost || '—',
+        sub: e.fraEpost || e.kontoNavn || '',
+        emne: e.emne || '(Uten emne)',
+        detalj: e.kontoNavn || 'Innboks',
+        status: 'Ulest',
+        data: e
+      });
+    });
+  }
+
+  return items.sort(function (a, b) {
+    return String(b.dato || '').localeCompare(String(a.dato || ''));
+  });
+}
+
 export function canAccess(user, permission) {
   if (!user) return false;
   if (user.isAdmin) return true;
