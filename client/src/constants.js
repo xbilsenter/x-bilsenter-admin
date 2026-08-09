@@ -74,6 +74,27 @@ export function normalizeSjekklisteMalItem(item) {
   return null;
 }
 
+/** Bevarer tom tekst under redigering – brukes kun i innstillings-editor. */
+export function coerceSjekklisteMalRow(item) {
+  if (typeof item === 'string') {
+    return { t: String(item), obligatorisk: true, forhandsvalgt: false };
+  }
+  if (item && typeof item === 'object') {
+    return {
+      t: String(item.t ?? item.text ?? ''),
+      obligatorisk: item.obligatorisk !== false,
+      forhandsvalgt: !!item.forhandsvalgt
+    };
+  }
+  return null;
+}
+
+export function coerceSjekklisteMalRows(items) {
+  return (Array.isArray(items) ? items : [])
+    .map(coerceSjekklisteMalRow)
+    .filter(Boolean);
+}
+
 export function trimSjekklisteMalTekst(value) {
   return String(value || '').replace(/^\s+|\s+$/g, '');
 }

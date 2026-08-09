@@ -19,7 +19,7 @@ import {
   initBilSjekklister, normalizeBilSjekklister, syncBilSjekklisterFromMal,
   mergeOrphanSjekklisteItemsIntoMal,
   calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, getSisteKryssedeSjekklisteItem, normalizeSjekklisteMalItems,
-  finalizeSjekklisteMalItems, trimSjekklisteMalTekst,
+  finalizeSjekklisteMalItems, trimSjekklisteMalTekst, coerceSjekklisteMalRows,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
   getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
   getSavedBilerSection, saveBilerSection,
@@ -9005,40 +9005,54 @@ function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder
 }
 
 function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact }) {
-  const normalized = normalizeSjekklisteMalItems(items);
+  const rows = coerceSjekklisteMalRows(items);
   const [ny, setNy] = useState('');
   const [nyObligatorisk, setNyObligatorisk] = useState(true);
   const [nyForhandsvalgt, setNyForhandsvalgt] = useState(false);
 
   const setItems = (next, finalize) => {
-    onChange(finalize ? finalizeSjekklisteMalItems(next) : normalizeSjekklisteMalItems(next));
+    onChange(finalize ? finalizeSjekklisteMalItems(next) : coerceSjekklisteMalRows(next));
   };
 
   const endre = (idx, patch, finalize) => {
-    const next = normalized.map(function (item, i) {
+    const next = rows.map(function (item, i) {
       return i === idx ? { ...item, ...patch } : item;
     });
     setItems(next, finalize);
   };
 
   const endreTekst = (idx, value) => {
-    if (normalized.some(function (item, i) {
-      return i !== idx && trimSjekklisteMalTekst(item.t).toLowerCase() === trimSjekklisteMalTekst(value).toLowerCase();
-    })) return;
     endre(idx, { t: value }, false);
+  };
+
+  const avsluttTekstRedigering = (idx, rawValue) => {
+    const t = trimSjekklisteMalTekst(rawValue);
+    if (!t) {
+      if (allowEmpty || rows.length > 1) {
+        setItems(rows.filter(function (_, i) { return i !== idx; }), true);
+      }
+      return;
+    }
+    if (rows.some(function (item, i) {
+      return i !== idx && trimSjekklisteMalTekst(item.t).toLowerCase() === t.toLowerCase();
+    })) {
+      endre(idx, { t: rows[idx]?.t || '' }, true);
+      return;
+    }
+    endre(idx, { t: t }, true);
   };
 
   const leggTil = () => {
     const t = trimSjekklisteMalTekst(ny);
-    if (!t || normalized.some(function (item) { return trimSjekklisteMalTekst(item.t).toLowerCase() === t.toLowerCase(); })) return;
-    setItems([...normalized, { t: t, obligatorisk: nyObligatorisk, forhandsvalgt: nyForhandsvalgt }], true);
+    if (!t || rows.some(function (item) { return trimSjekklisteMalTekst(item.t).toLowerCase() === t.toLowerCase(); })) return;
+    setItems([...rows, { t: t, obligatorisk: nyObligatorisk, forhandsvalgt: nyForhandsvalgt }], true);
     setNy('');
   };
 
-  const fjern = (idx) => setItems(normalized.filter(function (_, i) { return i !== idx; }), true);
+  const fjern = (idx) => setItems(rows.filter(function (_, i) { return i !== idx; }), true);
 
   const flytt = (idx, dir) => {
-    const next = [...normalized];
+    const next = [...rows];
     const target = idx + dir;
     if (target < 0 || target >= next.length) return;
     [next[idx], next[target]] = [next[target], next[idx]];
@@ -9052,14 +9066,14 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
       )}
       <div style={{ padding: compact ? 0 : 16 }}>
         <div className="settings-list sjekkliste-mal-list">
-          {normalized.map(function (item, idx) {
+          {rows.map(function (item, idx) {
             return (
-              <div className="settings-item sjekkliste-mal-row" key={'sjekk-mal-' + idx}>
+              <div className="settings-item sjekkliste-mal-row" key={'sjekk-mal-' + idx + '-' + rows.length}>
                 <input
                   className="settings-item__input sjekkliste-mal-input"
                   value={item.t}
                   onChange={(e) => endreTekst(idx, e.target.value)}
-                  onBlur={(e) => endre(idx, { t: trimSjekklisteMalTekst(e.target.value) }, true)}
+                  onBlur={(e) => avsluttTekstRedigering(idx, e.target.value)}
                   placeholder="F.eks. Vasket innvendig"
                 />
                 <select
@@ -9080,8 +9094,8 @@ function SjekklisteMalEditor({ items, onChange, placeholder, allowEmpty, compact
                 </label>
                 <div className="settings-item__actions">
                   <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
-                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === normalized.length - 1}>↓</button>
-                  <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={!allowEmpty && normalized.length <= 1}>✕</button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === rows.length - 1}>↓</button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={!allowEmpty && rows.length <= 1}>✕</button>
                 </div>
               </div>
             );
@@ -9428,20 +9442,23 @@ function KontoPassordSection({ currentUser, visTost }) {
 
 function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppsettChange, onVedlikeholdChange, onStatusChange, visTost }) {
   const [draft, setDraft] = useState(settings);
+  const bilerSnapshotRef = useRef(biler);
 
   useEffect(function () {
-    setDraft(function () {
-      if (!biler?.length) return settings;
-      return {
-        ...settings,
-        bilSjekklister: mergeOrphanSjekklisteItemsIntoMal(
+    bilerSnapshotRef.current = biler;
+  }, [biler]);
+
+  useEffect(function () {
+    const snapshot = bilerSnapshotRef.current;
+    const merged = snapshot?.length
+      ? mergeOrphanSjekklisteItemsIntoMal(
           settings.bilSjekklister,
-          biler,
+          snapshot,
           settings.bilStatuser
         )
-      };
-    });
-  }, [settings, biler]);
+      : settings.bilSjekklister;
+    setDraft({ ...settings, bilSjekklister: merged });
+  }, [settings]);
 
   const setList = (key, value) => setDraft(prev => ({ ...prev, [key]: value }));
   const showBrukere = canAccess(currentUser, 'brukere');
