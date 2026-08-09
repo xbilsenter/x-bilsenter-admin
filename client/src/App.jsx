@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Login from './components/Login.jsx';
 import InnkjopskalkyleView from './components/InnkjopskalkyleView.jsx';
 import SignatureEditor, { buildSignaturePreviewHtml } from './components/SignatureEditor.jsx';
@@ -9556,6 +9556,7 @@ function KontoPassordSection({ currentUser, visTost }) {
 
 function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppsettChange, onVedlikeholdChange, onStatusChange, visTost }) {
   const [draft, setDraft] = useState(settings);
+  const [section, setSection] = useState('konto');
   const bilerSnapshotRef = useRef(biler);
 
   useEffect(function () {
@@ -9579,6 +9580,40 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
   const showInnstillinger = canAccess(currentUser, 'innstillinger');
   const showVedlikehold = canViewVedlikehold(currentUser);
 
+  const settingsTabs = useMemo(function () {
+    const tabs = [{ id: 'konto', label: 'Konto' }];
+    if (showInnstillinger) {
+      tabs.push(
+        { id: 'lister', label: 'Lister' },
+        { id: 'biler', label: 'Biler' },
+        { id: 'statuser', label: 'Statuser' },
+        { id: 'moduler', label: 'Moduler' },
+        { id: 'epost', label: 'E-post' }
+      );
+    } else if (showVedlikehold) {
+      tabs.push({ id: 'vedlikehold', label: 'Vedlikehold' });
+    }
+    if (showBrukere) tabs.push({ id: 'brukere', label: 'Brukere' });
+    return tabs;
+  }, [showInnstillinger, showVedlikehold, showBrukere]);
+
+  useEffect(function () {
+    if (!settingsTabs.some(function (tab) { return tab.id === section; })) {
+      setSection(settingsTabs[0]?.id || 'konto');
+    }
+  }, [settingsTabs, section]);
+
+  const sectionSubtitles = {
+    konto: 'Endre passord for din bruker',
+    lister: 'Ansvarlige, bilmerker og kalendertyper',
+    biler: 'Pipeline-statuser og sjekklister per stasjon',
+    statuser: 'Statuser og farger for kontaktskjema og innbytte',
+    moduler: 'Menyoppsett og vedlikeholdsmodus for nettsiden',
+    epost: 'Mailkontoer og e-postmaler',
+    brukere: 'Brukere, roller og tilganger',
+    vedlikehold: 'Vedlikeholdsmodus for nettsiden'
+  };
+
   const lagreModulOppsett = async (modulOppsett) => {
     const res = await patchInnstillinger({ modulOppsett });
     if (res.settings) {
@@ -9598,108 +9633,95 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
     return res;
   };
 
+  const lagreLister = function () {
+    onSave({
+      ...draft,
+      bilSjekklister: Object.fromEntries(
+        Object.entries(draft.bilSjekklister || {}).map(function ([status, rows]) {
+          return [status, finalizeSjekklisteMalItems(rows)];
+        })
+      )
+    });
+  };
+
+  const showLagreLister = showInnstillinger && ['lister', 'biler', 'statuser'].includes(section);
+
   return (
     <>
       <div className="ph">
         <div>
           <div className="ph-title">Innstillinger</div>
-          <div className="ph-sub">
-            {showInnstillinger
-              ? 'Konto, vedlikehold, brukere, moduler, mailkontoer, bil-pipeline, sjekklister og statuser'
-              : 'Endre passord og se nettside vedlikehold'}
-          </div>
+          <div className="ph-sub">{sectionSubtitles[section] || 'Systemoppsett'}</div>
         </div>
-        {showInnstillinger && (
-          <button type="button" className="btn btn-p" onClick={() => onSave({
-            ...draft,
-            bilSjekklister: Object.fromEntries(
-              Object.entries(draft.bilSjekklister || {}).map(function ([status, rows]) {
-                return [status, finalizeSjekklisteMalItems(rows)];
-              })
-            )
-          })}>Lagre lister</button>
+        {showLagreLister && (
+          <button type="button" className="btn btn-p" onClick={lagreLister}>Lagre endringer</button>
         )}
       </div>
 
-      <KontoPassordSection currentUser={currentUser} visTost={visTost} />
+      <div className="settings-subnav">
+        {settingsTabs.map(function (tab) {
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              className={'settings-subnav__btn' + (section === tab.id ? ' on' : '')}
+              onClick={function () { setSection(tab.id); }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {showVedlikehold && !showInnstillinger && (
-        <div style={{ marginBottom: 16 }}>
-          <VedlikeholdSection
-            vedlikeholdModus={draft.vedlikeholdModus}
-            readOnly={!canToggleVedlikehold(currentUser)}
-            onSave={lagreVedlikehold}
-            visTost={visTost}
+      {section === 'konto' && (
+        <KontoPassordSection currentUser={currentUser} visTost={visTost} />
+      )}
+
+      {section === 'lister' && showInnstillinger && (
+        <div className="settings-grid">
+          <ListEditor
+            title="Ansvarlige"
+            desc="Vises i nedtrekkslister for biler, kontaktskjema, innbytte og kalender."
+            items={draft.ansatte}
+            onChange={v => setList('ansatte', v)}
+            placeholder="Navn på ansatt"
+          />
+          <SelectListEditor
+            title="Bilmerker"
+            desc="Brukes ved registrering og filtrering av biler."
+            items={draft.merker}
+            onChange={v => setList('merker', v)}
+            placeholder="F.eks. Porsche"
+            selectLabel="Velg merke"
+          />
+          <ListEditor
+            title="Kalendertyper"
+            items={draft.kalTyper}
+            onChange={v => setList('kalTyper', v)}
+            placeholder="F.eks. Møte"
           />
         </div>
       )}
 
-      {showInnstillinger && (
-        <>
+      {section === 'biler' && showInnstillinger && (
+        <div className="settings-panel">
           <div className="settings-grid">
-        <ListEditor
-          title="Ansvarlige"
-          desc="Vises i nedtrekkslister for biler, kontaktskjema, innbytte og kalender."
-          items={draft.ansatte}
-          onChange={v => setList('ansatte', v)}
-          placeholder="Navn på ansatt"
-        />
-        <SelectListEditor
-          title="Bilmerker"
-          desc="Brukes ved registrering og filtrering av biler."
-          items={draft.merker}
-          onChange={v => setList('merker', v)}
-          placeholder="F.eks. Porsche"
-          selectLabel="Velg merke"
-        />
-        <ListEditor
-          title="Kalendertyper"
-          items={draft.kalTyper}
-          onChange={v => setList('kalTyper', v)}
-          placeholder="F.eks. Møte"
-        />
-        <StatusListEditor
-          title="Bilstatuser og farger"
-          desc="Pipeline-stasjoner for biler på lager. Rekkefølge styrer kanban og listevisning."
-          statuser={draft.bilStatuser}
-          farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
-          onChange={(statuser, farger) => setDraft(prev => ({
-            ...prev,
-            bilStatuser: statuser,
-            bilStatusFarger: farger,
-            bilSjekklister: normalizeBilSjekklister(statuser, prev.bilSjekklister, prev.sjekklisteMal)
-          }))}
-          placeholder="F.eks. Klargjøring"
-          defaultColors={DEFAULT_BIL_STATUS_FARGER}
-          normalizeColors={normalizeBilStatusFarger}
-        />
-        <StatusListEditor
-          title="Kontaktskjemastatuser og farger"
-          desc="Legg til statuser og velg farge for hver. Brukes i kontaktskjema-listen og filtre."
-          statuser={draft.henvStatuser}
-          farger={draft.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER}
-          onChange={(statuser, farger) => setDraft(prev => ({
-            ...prev,
-            henvStatuser: statuser,
-            henvStatusFarger: farger
-          }))}
-          placeholder="F.eks. Oppfølging"
-        />
-        <StatusListEditor
-          title="Innbytte-statuser og farger"
-          desc="Legg til statuser og velg farge for hver. Brukes i innbytteoversikten og filtre."
-          statuser={draft.innbytteStatuser}
-          farger={draft.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER}
-          onChange={(statuser, farger) => setDraft(prev => ({
-            ...prev,
-            innbytteStatuser: statuser,
-            innbytteStatusFarger: farger
-          }))}
-          placeholder="F.eks. Vurderes"
-          defaultColors={DEFAULT_INNBYTTE_STATUS_FARGER}
-          normalizeColors={normalizeInnbytteStatusFarger}
-        />
-        <div className="settings-grid__full">
+            <StatusListEditor
+              title="Bilstatuser og farger"
+              desc="Pipeline-stasjoner for biler på lager. Rekkefølge styrer kanban og listevisning."
+              statuser={draft.bilStatuser}
+              farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
+              onChange={(statuser, farger) => setDraft(prev => ({
+                ...prev,
+                bilStatuser: statuser,
+                bilStatusFarger: farger,
+                bilSjekklister: normalizeBilSjekklister(statuser, prev.bilSjekklister, prev.sjekklisteMal)
+              }))}
+              placeholder="F.eks. Klargjøring"
+              defaultColors={DEFAULT_BIL_STATUS_FARGER}
+              normalizeColors={normalizeBilStatusFarger}
+            />
+          </div>
           <BilSjekklisterEditor
             statuser={draft.bilStatuser || []}
             farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
@@ -9707,31 +9729,78 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
             onChange={v => setDraft(prev => ({ ...prev, bilSjekklister: v }))}
           />
         </div>
-          </div>
+      )}
 
-          <div className="settings-stack">
-            <div className="settings-stack-row">
+      {section === 'statuser' && showInnstillinger && (
+        <div className="settings-grid">
+          <StatusListEditor
+            title="Kontaktskjemastatuser og farger"
+            desc="Legg til statuser og velg farge for hver. Brukes i kontaktskjema-listen og filtre."
+            statuser={draft.henvStatuser}
+            farger={draft.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER}
+            onChange={(statuser, farger) => setDraft(prev => ({
+              ...prev,
+              henvStatuser: statuser,
+              henvStatusFarger: farger
+            }))}
+            placeholder="F.eks. Oppfølging"
+          />
+          <StatusListEditor
+            title="Innbytte-statuser og farger"
+            desc="Legg til statuser og velg farge for hver. Brukes i innbytteoversikten og filtre."
+            statuser={draft.innbytteStatuser}
+            farger={draft.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER}
+            onChange={(statuser, farger) => setDraft(prev => ({
+              ...prev,
+              innbytteStatuser: statuser,
+              innbytteStatusFarger: farger
+            }))}
+            placeholder="F.eks. Vurderes"
+            defaultColors={DEFAULT_INNBYTTE_STATUS_FARGER}
+            normalizeColors={normalizeInnbytteStatusFarger}
+          />
+        </div>
+      )}
+
+      {section === 'moduler' && showInnstillinger && (
+        <div className="settings-stack">
+          <div className="settings-stack-row">
+            <ModulOppsettSection
+              modulOppsett={draft.modulOppsett}
+              onChange={onModulOppsettChange}
+              onSave={lagreModulOppsett}
+              visTost={visTost}
+            />
+            {showVedlikehold && (
               <VedlikeholdSection
                 vedlikeholdModus={draft.vedlikeholdModus}
                 readOnly={!canToggleVedlikehold(currentUser)}
                 onSave={lagreVedlikehold}
                 visTost={visTost}
               />
-              <ModulOppsettSection
-                modulOppsett={draft.modulOppsett}
-                onChange={onModulOppsettChange}
-                onSave={lagreModulOppsett}
-                visTost={visTost}
-              />
-            </div>
-            <MailKontoerSection onStatusChange={onStatusChange} visTost={visTost} />
-            <EpostMalerSection visTost={visTost} />
+            )}
           </div>
-        </>
+        </div>
       )}
 
-      {showBrukere && (
+      {section === 'epost' && showInnstillinger && (
+        <div className="settings-stack">
+          <MailKontoerSection onStatusChange={onStatusChange} visTost={visTost} />
+          <EpostMalerSection visTost={visTost} />
+        </div>
+      )}
+
+      {section === 'brukere' && showBrukere && (
         <BrukereSection currentUser={currentUser} visTost={visTost} />
+      )}
+
+      {section === 'vedlikehold' && showVedlikehold && !showInnstillinger && (
+        <VedlikeholdSection
+          vedlikeholdModus={draft.vedlikeholdModus}
+          readOnly={!canToggleVedlikehold(currentUser)}
+          onSave={lagreVedlikehold}
+          visTost={visTost}
+        />
       )}
     </>
   );

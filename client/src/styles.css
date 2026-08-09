@@ -423,6 +423,14 @@ select option{background:var(--s1);}
 .inbox-behavior{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:12px 14px;margin-bottom:14px;}
 
 /* INNSTILLINGER */
+.settings-subnav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+.settings-subnav__btn{
+  padding:7px 14px;border-radius:999px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;
+  transition:.12s;border:1px solid var(--b2);background:var(--s1);color:var(--t3);
+}
+.settings-subnav__btn:hover{border-color:var(--acc);color:var(--acc2);}
+.settings-subnav__btn.on{background:var(--accl);border-color:var(--acc);color:var(--acc2);}
+.settings-panel{display:flex;flex-direction:column;gap:12px;}
 .settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px;align-items:start;}
 .settings-grid > *{min-width:0;}
 .settings-grid__full{grid-column:1 / -1;}
