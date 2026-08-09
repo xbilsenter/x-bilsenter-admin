@@ -202,6 +202,7 @@ tr:hover td{background:var(--accl);}
 
 /* MODAL */
 .ov{position:fixed;inset:0;background:rgba(13,31,14,.5);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.ov--no-dismiss{cursor:default;}
 .modal{background:var(--s1);border:1px solid var(--b2);border-radius:var(--radius-lg);padding:26px;width:680px;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-md);}
 .modal.lg{width:820px;}
 .modal.lg.bil-modal{width:920px;max-height:92vh;overflow-y:auto;}

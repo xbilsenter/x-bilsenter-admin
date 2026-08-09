@@ -2862,8 +2862,8 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
   const merkeOptions = buildMerkeOptions(lists.merker, biler, bil.merke);
 
   return (
-    <div className="ov" onClick={onClose}>
-      <div className="modal xl bil-modal" onClick={e => e.stopPropagation()}>
+    <div className="ov ov--no-dismiss">
+      <div className="modal xl bil-modal">
         <div className="bil-modal__header">
           <div>
             <div className="modal-title" style={{ marginBottom: 4 }}>
