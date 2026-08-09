@@ -1751,22 +1751,33 @@ app.post('/api/innbytte/:id/send-tilbud', requireAuth, async function (req, res)
       ? await resolveInnbytteStatus('Under vurdering')
       : await resolveInnbytteStatus('Tilbud sendt');
     const ansvarlig = await getAnsvarligNavn(req);
-
-    await prepare(`
-      UPDATE innbytte SET
-        tilbud = CASE WHEN @tilbud IS NOT NULL THEN @tilbud ELSE tilbud END,
-        status = @status,
-        ansvarlig = @ansvarlig,
-        kommentarer = @kommentarer,
-        updated_at = datetime('now')
-      WHERE id = @id
-    `).run({
+    const updateParams = {
       id: id,
-      tilbud: type === 'tilbud' ? tilbud : null,
       status: newStatus,
       ansvarlig: ansvarlig || '',
       kommentarer: JSON.stringify(kommentarer)
-    });
+    };
+
+    if (type === 'tilbud') {
+      await prepare(`
+        UPDATE innbytte SET
+          tilbud = @tilbud,
+          status = @status,
+          ansvarlig = @ansvarlig,
+          kommentarer = @kommentarer,
+          updated_at = datetime('now')
+        WHERE id = @id
+      `).run({ ...updateParams, tilbud: tilbud });
+    } else {
+      await prepare(`
+        UPDATE innbytte SET
+          status = @status,
+          ansvarlig = @ansvarlig,
+          kommentarer = @kommentarer,
+          updated_at = datetime('now')
+        WHERE id = @id
+      `).run(updateParams);
+    }
 
     res.json({ ok: true, item: mapInnbytte(await prepare('SELECT * FROM innbytte WHERE id = ?').get(id)) });
   } catch (err) {
@@ -1888,22 +1899,33 @@ app.post('/api/selg-bil/:id/send-tilbud', requireAuth, async function (req, res)
       ? await resolveSelgBilStatus('Under vurdering')
       : await resolveSelgBilStatus('Tilbud sendt');
     const ansvarlig = await getAnsvarligNavn(req);
-
-    await prepare(`
-      UPDATE selg_bil SET
-        tilbud = CASE WHEN @tilbud IS NOT NULL THEN @tilbud ELSE tilbud END,
-        status = @status,
-        ansvarlig = @ansvarlig,
-        kommentarer = @kommentarer,
-        updated_at = datetime('now')
-      WHERE id = @id
-    `).run({
+    const updateParams = {
       id: id,
-      tilbud: type === 'tilbud' ? tilbud : null,
       status: newStatus,
       ansvarlig: ansvarlig || '',
       kommentarer: JSON.stringify(kommentarer)
-    });
+    };
+
+    if (type === 'tilbud') {
+      await prepare(`
+        UPDATE selg_bil SET
+          tilbud = @tilbud,
+          status = @status,
+          ansvarlig = @ansvarlig,
+          kommentarer = @kommentarer,
+          updated_at = datetime('now')
+        WHERE id = @id
+      `).run({ ...updateParams, tilbud: tilbud });
+    } else {
+      await prepare(`
+        UPDATE selg_bil SET
+          status = @status,
+          ansvarlig = @ansvarlig,
+          kommentarer = @kommentarer,
+          updated_at = datetime('now')
+        WHERE id = @id
+      `).run(updateParams);
+    }
 
     res.json({ ok: true, item: mapSelgBil(await prepare('SELECT * FROM selg_bil WHERE id = ?').get(id)) });
   } catch (err) {
