@@ -8897,8 +8897,8 @@ function VedlikeholdSection({ vedlikeholdModus, onSave, visTost, readOnly }) {
 
           <div className="maint-hero__action">
             {skrivebeskyttet ? (
-              <span className="maint-switch__label is-readonly">
-                {draft.aktiv ? 'På (kun admin kan endre)' : 'Av (kun admin kan endre)'}
+              <span className={`maint-switch__label${draft.aktiv ? ' is-on' : ''}`}>
+                {draft.aktiv ? 'På' : 'Av'}
               </span>
             ) : (
               <>
@@ -8935,39 +8935,36 @@ function VedlikeholdSection({ vedlikeholdModus, onSave, visTost, readOnly }) {
           </div>
         )}
 
+        {!skrivebeskyttet && (
         <div className="maint-message">
           <div className="fl">Melding til besøkende</div>
           <p className="settings-desc">
-            {skrivebeskyttet
-              ? 'Vises på vedlikeholdssiden når modus er aktivert. Kun admin kan endre melding og modus.'
-              : 'Vises på vedlikeholdssiden når modus er aktivert.'}
+            Vises på vedlikeholdssiden når modus er aktivert.
           </p>
           <textarea
             rows={3}
             value={draft.melding || ''}
-            disabled={skrivebeskyttet || savingToggle || savingMessage}
-            readOnly={skrivebeskyttet}
+            disabled={savingToggle || savingMessage}
             onChange={(e) => setDraft(prev => ({ ...prev, melding: e.target.value }))}
             placeholder={defaultMelding}
           />
-          {!skrivebeskyttet && (
-            <div className="maint-message__foot">
-              <div className="maint-message__hint">
-                {draft.aktiv
-                  ? 'Endringer i meldingen oppdateres på nettsiden innen ca. 15 sekunder.'
-                  : 'Meldingen lagres og er klar neste gang vedlikehold aktiveres.'}
-              </div>
-              <button
-                type="button"
-                className="btn btn-g btn-sm"
-                disabled={!meldingEndret || savingToggle || savingMessage}
-                onClick={() => lagre(draft, 'message')}
-              >
-                {savingMessage ? 'Lagrer…' : 'Lagre melding'}
-              </button>
+          <div className="maint-message__foot">
+            <div className="maint-message__hint">
+              {draft.aktiv
+                ? 'Endringer i meldingen oppdateres på nettsiden innen ca. 15 sekunder.'
+                : 'Meldingen lagres og er klar neste gang vedlikehold aktiveres.'}
             </div>
-          )}
+            <button
+              type="button"
+              className="btn btn-g btn-sm"
+              disabled={!meldingEndret || savingToggle || savingMessage}
+              onClick={() => lagre(draft, 'message')}
+            >
+              {savingMessage ? 'Lagrer…' : 'Lagre melding'}
+            </button>
+          </div>
         </div>
+        )}
       </div>
     </div>
   );
