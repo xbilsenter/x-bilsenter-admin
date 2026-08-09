@@ -17,7 +17,7 @@ import {
   DEFAULT_BIL_STATUS_FARGER, DEFAULT_SJEKKLISTE_MAL, DEFAULT_BIL_SJEKKLISTER,
   getAktivSjekkliste, withSjekklisteUpdate, withStatusChange,
   initBilSjekklister, normalizeBilSjekklister, syncBilSjekklisterFromMal,
-  calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, normalizeSjekklisteMalItems,
+  calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, getSisteKryssedeSjekklisteItem, normalizeSjekklisteMalItems,
   finalizeSjekklisteMalItems, trimSjekklisteMalTekst,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
   getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
@@ -1831,6 +1831,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     const list = getAktivSjekkliste(bil);
     const prog = calcSjekklisteFremdrift(list);
     const { f, t, pst } = prog;
+    const sisteSjekk = getSisteKryssedeSjekklisteItem(list);
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
     const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
     return (
@@ -1848,6 +1849,11 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
         </div>
         <div className="bil-name">{bil.merke} {bil.modell}</div>
         <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge)}</div>
+        {sisteSjekk ? (
+          <div className="bil-card__siste-sjekk" title="Siste fullførte sjekkliste-punkt">
+            {sisteSjekk}
+          </div>
+        ) : null}
         {(linkKal > 0 || linkHenv > 0) && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
             {linkKal > 0 && <span className="chip chip-gray">{linkKal} avtale{linkKal > 1 ? 'r' : ''}</span>}
@@ -1871,6 +1877,7 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
     const list = getAktivSjekkliste(bil);
     const prog = calcSjekklisteFremdrift(list);
     const { f, t, pst } = prog;
+    const sisteSjekk = getSisteKryssedeSjekklisteItem(list);
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
     const linkHenv = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
     return (
@@ -1901,6 +1908,11 @@ function BilerView({ biler, setModal, lists, kal, henv, updateBil, reorderBiler,
           <div className="bil-pipeline-meta">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge) || '—'}</div>
           <div className="bil-pipeline-ans">{bil.ansvarlig || '—'}</div>
           <div className="bil-pipeline-prog">
+            {sisteSjekk ? (
+              <div className="bil-pipeline-siste-sjekk" title="Siste fullførte sjekkliste-punkt">
+                {sisteSjekk}
+              </div>
+            ) : null}
             {t > 0 ? (
               <>
                 <div className="prog-lbl">{f}/{t} oblig. · {pst}%</div>

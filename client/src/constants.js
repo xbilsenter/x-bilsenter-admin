@@ -128,6 +128,15 @@ export function harApneObligatoriskeOppgaver(list) {
   });
 }
 
+export function getSisteKryssedeSjekklisteItem(items) {
+  const list = normalizeSjekklisteItems(items);
+  let siste = '';
+  list.forEach(function (item) {
+    if (item.f && item.t) siste = item.t;
+  });
+  return siste || null;
+}
+
 export function normalizeBilSjekklister(statuser, sjekklister, legacyMal) {
   const src = sjekklister && typeof sjekklister === 'object' && !Array.isArray(sjekklister)
     ? sjekklister
