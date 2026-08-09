@@ -40,6 +40,7 @@ import {
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
   buildMerkeOptions, resolveMerkeFromLists, formatBilFarge,
+  parseNumberInput, numberInputDisplay, numberInputForSave, BIL_NUMERIC_FIELDS,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
@@ -2698,14 +2699,20 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
       return;
     }
     setBil(function (prev) {
-      updateBil(prev.id, { [k]: v }, msg);
-      return { ...prev, [k]: v };
+      const stored = v;
+      const payload = BIL_NUMERIC_FIELDS.has(k) ? numberInputForSave(v) : v;
+      updateBil(prev.id, { [k]: payload }, msg);
+      return { ...prev, [k]: stored };
     });
   };
 
   const oppdaterOkonomi = (patch, msg) => {
-    const okonomi = { ...normalizeBilOkonomi(bil.okonomi), ...patch };
-    oppdater('okonomi', okonomi, msg || 'Økonomi oppdatert ✓');
+    setBil(function (prev) {
+      const local = { ...normalizeBilOkonomi(prev.okonomi), ...patch };
+      const forSave = normalizeBilOkonomi(local);
+      updateBil(prev.id, { okonomi: forSave }, msg || 'Økonomi oppdatert ✓');
+      return { ...prev, okonomi: local };
+    });
   };
 
   const oppdaterArsprove = (patch, msg) => {
@@ -2896,11 +2903,11 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
               <div className="form-row gap">
                 <div>
                   <div className="fl">Årsmodell</div>
-                  <input type="number" value={bil.aar || 0} onChange={e => oppdater('aar', +e.target.value)} />
+                  <input type="number" value={numberInputDisplay(bil.aar)} onChange={e => oppdater('aar', parseNumberInput(e.target.value))} />
                 </div>
                 <div>
                   <div className="fl">Kilometerstand</div>
-                  <input type="number" value={bil.km || 0} onChange={e => oppdater('km', +e.target.value)} />
+                  <input type="number" value={numberInputDisplay(bil.km)} onChange={e => oppdater('km', parseNumberInput(e.target.value))} />
                 </div>
               </div>
               <div className="gap">
@@ -3092,13 +3099,19 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
 }
 
 function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
-  const okonomi = normalizeBilOkonomi(bil.okonomi);
-  const stats = calcBilOkonomi(bil.innkjop, bil.salg, okonomi);
+  const okonomi = bil.okonomi && typeof bil.okonomi === 'object'
+    ? { ...normalizeBilOkonomi(bil.okonomi), ...bil.okonomi }
+    : normalizeBilOkonomi(bil.okonomi);
+  const stats = calcBilOkonomi(
+    numberInputForSave(bil.innkjop),
+    numberInputForSave(bil.salg),
+    okonomi
+  );
   const [nyKostLabel, setNyKostLabel] = useState('');
   const [nyKostBelop, setNyKostBelop] = useState('');
 
   const settOkonomiFelt = (key, value) => {
-    oppdaterOkonomi({ [key]: Number(value) || 0 });
+    oppdaterOkonomi({ [key]: parseNumberInput(value) });
   };
 
   const leggTilKostnad = () => {
@@ -3137,11 +3150,11 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
           <div className="form-row gap">
             <div>
               <div className="fl">Innkjøpspris (kr)</div>
-              <input type="number" value={bil.innkjop || 0} onChange={e => oppdater('innkjop', +e.target.value, 'Innkjøp oppdatert ✓')} />
+              <input type="number" value={numberInputDisplay(bil.innkjop)} onChange={e => oppdater('innkjop', parseNumberInput(e.target.value), 'Innkjøp oppdatert ✓')} />
             </div>
             <div>
               <div className="fl">Salgspris (kr)</div>
-              <input type="number" value={bil.salg || 0} onChange={e => oppdater('salg', +e.target.value, 'Salgspris oppdatert ✓')} />
+              <input type="number" value={numberInputDisplay(bil.salg)} onChange={e => oppdater('salg', parseNumberInput(e.target.value), 'Salgspris oppdatert ✓')} />
             </div>
           </div>
         </div>
@@ -3159,7 +3172,7 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
             <div className="fv" style={{ color: stats.nettoMargin >= 0 ? 'var(--acc)' : 'var(--red)', fontWeight: 800, fontSize: 18 }}>
               {nok(stats.nettoMargin)}
             </div>
-            {bil.salg > 0 ? (
+            {numberInputForSave(bil.salg) > 0 ? (
               <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 4 }}>{stats.marginProsent}% av salgspris</div>
             ) : null}
           </div>
@@ -3179,7 +3192,7 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
           return (
             <div key={key}>
               <div className="fl">{label}</div>
-              <input type="number" value={okonomi[key] || 0} onChange={e => settOkonomiFelt(key, e.target.value)} />
+              <input type="number" value={numberInputDisplay(okonomi[key])} onChange={e => settOkonomiFelt(key, e.target.value)} />
             </div>
           );
         })}
@@ -3199,9 +3212,9 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
             />
             <input
               type="number"
-              value={item.belop || 0}
+              value={numberInputDisplay(item.belop)}
               placeholder="Beløp"
-              onChange={e => oppdaterKostnad(item.id, { belop: +e.target.value })}
+              onChange={e => oppdaterKostnad(item.id, { belop: parseNumberInput(e.target.value) })}
             />
             <button type="button" className="btn btn-red btn-xs" onClick={function () { slettKostnad(item.id); }}>
               Slett
@@ -3325,13 +3338,13 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
           <div><div className="fl">Farge</div><input value={f.farge} onChange={e => s('farge', e.target.value)} /></div>
         </div>
         <div className="form-row3 gap">
-          <div><div className="fl">Årsmodell</div><input type="number" value={f.aar} onChange={e => s('aar', +e.target.value)} /></div>
-          <div><div className="fl">Kilometerstand</div><input type="number" value={f.km} onChange={e => s('km', +e.target.value)} /></div>
+          <div><div className="fl">Årsmodell</div><input type="number" value={numberInputDisplay(f.aar)} onChange={e => s('aar', parseNumberInput(e.target.value))} /></div>
+          <div><div className="fl">Kilometerstand</div><input type="number" value={numberInputDisplay(f.km)} onChange={e => s('km', parseNumberInput(e.target.value))} /></div>
           <div><div className="fl">Status</div><select value={f.status} onChange={e => s('status', e.target.value)}>{lists.bilStatuser.map(x => <option key={x}>{x}</option>)}</select></div>
         </div>
         <div className="form-row gap">
-          <div><div className="fl">Innkjøpspris (kr)</div><input type="number" value={f.innkjop} onChange={e => s('innkjop', +e.target.value)} /></div>
-          <div><div className="fl">Salgspris (kr)</div><input type="number" value={f.salg} onChange={e => s('salg', +e.target.value)} /></div>
+          <div><div className="fl">Innkjøpspris (kr)</div><input type="number" value={numberInputDisplay(f.innkjop)} onChange={e => s('innkjop', parseNumberInput(e.target.value))} /></div>
+          <div><div className="fl">Salgspris (kr)</div><input type="number" value={numberInputDisplay(f.salg)} onChange={e => s('salg', parseNumberInput(e.target.value))} /></div>
         </div>
         <div className="gap">
           <div className="fl">Frist neste EU-kontroll</div>
@@ -3347,6 +3360,10 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
         <div className="modal-footer">
           <button type="button" className="btn btn-p" onClick={() => f.reg && f.modell && onSave({
             ...f,
+            aar: numberInputForSave(f.aar),
+            km: numberInputForSave(f.km),
+            innkjop: numberInputForSave(f.innkjop),
+            salg: numberInputForSave(f.salg),
             tilstandsrapport: normalizeBilTilstandsrapport(f.tilstandsrapport),
             ...initBilSjekklister(f.status || 'Innkjøpt', lists.bilSjekklister),
             logg: f.svvData ? [{

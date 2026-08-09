@@ -1003,6 +1003,26 @@ export function erArsprovekjennemerkeIbruk(raw) {
   return true;
 }
 
+export function parseNumberInput(raw) {
+  const value = String(raw ?? '').trim();
+  if (value === '') return '';
+  const n = Number(value);
+  return Number.isFinite(n) ? n : '';
+}
+
+export function numberInputDisplay(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  return value;
+}
+
+export function numberInputForSave(value) {
+  if (value === '' || value === null || value === undefined) return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export const BIL_NUMERIC_FIELDS = new Set(['aar', 'km', 'innkjop', 'salg']);
+
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
   const inn = Number(innkjop) || 0;
