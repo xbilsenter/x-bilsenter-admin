@@ -531,7 +531,9 @@ const DEFAULT_BIL_TILSTANDSRAPPORT = {
   lakkeringNodvendig: false,
   lakkeringUtfort: false,
   lakkstiftLakkboksNodvendig: false,
-  lakkstiftLakkboksUtfort: false
+  lakkstiftLakkboksUtfort: false,
+  bulkopprettingNodvendig: false,
+  bulkopprettingUtfort: false
 };
 
 function normalizeBilTilstandsrapport(raw) {
@@ -552,7 +554,9 @@ function normalizeBilTilstandsrapport(raw) {
     lakkeringNodvendig: !!o.lakkeringNodvendig,
     lakkeringUtfort: !!o.lakkeringUtfort,
     lakkstiftLakkboksNodvendig: !!o.lakkstiftLakkboksNodvendig,
-    lakkstiftLakkboksUtfort: !!o.lakkstiftLakkboksUtfort
+    lakkstiftLakkboksUtfort: !!o.lakkstiftLakkboksUtfort,
+    bulkopprettingNodvendig: !!o.bulkopprettingNodvendig,
+    bulkopprettingUtfort: !!o.bulkopprettingUtfort
   };
 }
 

@@ -729,7 +729,9 @@ export const DEFAULT_BIL_TILSTANDSRAPPORT = {
   lakkeringNodvendig: false,
   lakkeringUtfort: false,
   lakkstiftLakkboksNodvendig: false,
-  lakkstiftLakkboksUtfort: false
+  lakkstiftLakkboksUtfort: false,
+  bulkopprettingNodvendig: false,
+  bulkopprettingUtfort: false
 };
 
 export function normalizeBilTilstandsrapport(raw) {
@@ -750,7 +752,9 @@ export function normalizeBilTilstandsrapport(raw) {
     lakkeringNodvendig: !!o.lakkeringNodvendig,
     lakkeringUtfort: !!o.lakkeringUtfort,
     lakkstiftLakkboksNodvendig: !!o.lakkstiftLakkboksNodvendig,
-    lakkstiftLakkboksUtfort: !!o.lakkstiftLakkboksUtfort
+    lakkstiftLakkboksUtfort: !!o.lakkstiftLakkboksUtfort,
+    bulkopprettingNodvendig: !!o.bulkopprettingNodvendig,
+    bulkopprettingUtfort: !!o.bulkopprettingUtfort
   };
 }
 
@@ -767,6 +771,8 @@ export function tilstandsrapportDelerChips(raw) {
   if (tr.lakkeringUtfort) chips.push({ label: 'Lakkering utført', tone: 'green' });
   if (tr.lakkstiftLakkboksNodvendig) chips.push({ label: 'Lakkstift/lakkboks nødvendig', tone: 'red' });
   if (tr.lakkstiftLakkboksUtfort) chips.push({ label: 'Lakkstift/lakkboks utført', tone: 'green' });
+  if (tr.bulkopprettingNodvendig) chips.push({ label: 'Bulkoppretting nødvendig', tone: 'red' });
+  if (tr.bulkopprettingUtfort) chips.push({ label: 'Bulkoppretting utført', tone: 'green' });
   return chips;
 }
 
@@ -778,6 +784,7 @@ export function tilstandsrapportNodvendigLabels(raw) {
   if (tr.felglakkeringNodvendig) labels.push('Felglakkering nødvendig');
   if (tr.lakkeringNodvendig) labels.push('Lakkering nødvendig');
   if (tr.lakkstiftLakkboksNodvendig) labels.push('Lakkstift/lakkboks nødvendig');
+  if (tr.bulkopprettingNodvendig) labels.push('Bulkoppretting nødvendig');
   return labels;
 }
 

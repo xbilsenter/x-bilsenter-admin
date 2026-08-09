@@ -2504,6 +2504,22 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
             />
             Lakkstift/lakkboks utført
           </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.bulkopprettingNodvendig}
+              onChange={function (e) { patch({ bulkopprettingNodvendig: e.target.checked }); }}
+            />
+            Bulkoppretting nødvendig
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.bulkopprettingUtfort}
+              onChange={function (e) { patch({ bulkopprettingUtfort: e.target.checked }); }}
+            />
+            Bulkoppretting utført
+          </label>
         </div>
       </div>
     </div>
