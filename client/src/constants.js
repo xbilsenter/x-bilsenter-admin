@@ -706,7 +706,7 @@ export const DEFAULT_BIL_TILSTANDSRAPPORT = {
   status: 'ikke_utfort',
   stylingDelerNodvendig: false,
   stylingDelerBestilt: false,
-  reparasjonsdelerMaBestilles: false,
+  reparasjonsdelerNodvendig: false,
   reparasjonsdelerBestilt: false
 };
 
@@ -721,7 +721,7 @@ export function normalizeBilTilstandsrapport(raw) {
     status: status,
     stylingDelerNodvendig: !!o.stylingDelerNodvendig,
     stylingDelerBestilt: !!o.stylingDelerBestilt,
-    reparasjonsdelerMaBestilles: !!o.reparasjonsdelerMaBestilles,
+    reparasjonsdelerNodvendig: !!(o.reparasjonsdelerNodvendig || o.reparasjonsdelerMaBestilles),
     reparasjonsdelerBestilt: !!o.reparasjonsdelerBestilt
   };
 }

@@ -2405,10 +2405,10 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
           <label className="tilstandsrapport-check">
             <input
               type="checkbox"
-              checked={tr.reparasjonsdelerMaBestilles}
-              onChange={function (e) { patch({ reparasjonsdelerMaBestilles: e.target.checked }); }}
+              checked={tr.reparasjonsdelerNodvendig}
+              onChange={function (e) { patch({ reparasjonsdelerNodvendig: e.target.checked }); }}
             />
-            Reparasjonsdeler må bestilles
+            Reparasjonsdeler nødvendig
           </label>
           <label className="tilstandsrapport-check">
             <input
