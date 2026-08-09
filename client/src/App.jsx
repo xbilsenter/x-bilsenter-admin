@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Login from './components/Login.jsx';
 import InnkjopskalkyleView from './components/InnkjopskalkyleView.jsx';
+import {
+  buildInnbytteTilbudMelding,
+  buildInnbytteVisningMelding,
+  buildSelgBilTilbudMelding,
+  buildSelgBilVisningMelding,
+  DEFAULT_TILBUD_EPOST_MALER,
+  TILBUD_EPOST_MAL_DEFS,
+  normalizeTilbudEpostMaler
+} from './lib/tilbudEpostMaler.js';
 import SignatureEditor, { buildSignaturePreviewHtml } from './components/SignatureEditor.jsx';
 import MailComposer, { buildMailPreviewHtml, cleanComposeHtml, htmlIsEmpty } from './components/MailComposer.jsx';
 import {
@@ -6032,31 +6041,6 @@ function IngestBilderSeksjon({ bilder }) {
   );
 }
 
-function buildInnbytteIntroAvsnitt(inn, finnMeta) {
-  const kundeBil = innbytteKundeBil(inn);
-  const varBil = innbytteVarBil(inn, finnMeta);
-  return `Viser til innbytteskjema hvor du ønsker å bytte inn din ${kundeBil} med ${varBil}.`;
-}
-
-function buildInnbytteTilbudMelding(inn, tilbudKr, finnMeta) {
-  const pris = tilbudKr ? nok(tilbudKr) : '…';
-  return [
-    `Hei ${inn.navn || ''},`,
-    '',
-    buildInnbytteIntroAvsnitt(inn, finnMeta),
-    '',
-    `Vi er nærmere ${pris} for din bil i innbytte.`,
-    '',
-    'Ønsker du å avtale visning av vår bil?'
-  ].join('\n');
-}
-
-function innbytteKundeBil(inn) {
-  const bil = [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ');
-  if (bil && inn.reg) return `${bil} (${inn.reg})`;
-  return bil || inn.reg || 'bilen din';
-}
-
 function parseFinnItemId(input) {
   const s = String(input || '').trim();
   if (!s) return null;
@@ -6068,32 +6052,6 @@ function parseFinnItemId(input) {
 
 function finnItemUrl(id) {
   return id ? `https://www.finn.no/mobility/item/${id}` : null;
-}
-
-function formatVarBilForEpost(finnMeta, rawFinn) {
-  const id = finnMeta?.id || parseFinnItemId(rawFinn);
-  const url = finnMeta?.url || finnItemUrl(id);
-  const navn = finnMeta?.title ? String(finnMeta.title).trim() : '';
-  if (navn && url) return `vår ${navn} (${url})`;
-  if (navn) return `vår ${navn}`;
-  if (url) return `vår bil (${url})`;
-  return 'vår bil';
-}
-
-function innbytteVarBil(inn, finnMeta) {
-  return formatVarBilForEpost(finnMeta, inn.onsketBil);
-}
-
-function buildInnbytteVisningMelding(inn, finnMeta) {
-  return [
-    `Hei ${inn.navn || ''},`,
-    '',
-    buildInnbytteIntroAvsnitt(inn, finnMeta),
-    '',
-    'Vi er nok ikke så langt unna hverandre på innbytteverdi av din bil. Kom gjerne innom for å titte på vår bil – faller den i smak blir vi enige.',
-    '',
-    'Ønsker du å avtale visning av vår bil?'
-  ].join('\n');
 }
 
 function InnbytteView({ innbytte, setModal, lists, visTost }) {
@@ -6166,45 +6124,6 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
       )}
     </>
   );
-}
-
-function selgBilLabel(inn) {
-  return [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ') || 'bilen din';
-}
-
-function buildSelgBilTilbudMelding(inn, pris) {
-  const bil = selgBilLabel(inn);
-  const fornavn = String(inn.navn || '').trim().split(/\s+/)[0] || 'du';
-  const prisTekst = pris ? Number(pris).toLocaleString('nb-NO') : '…';
-  return [
-    `Hei ${fornavn},`,
-    '',
-    `Takk for henvendelsen om salg av ${bil}${inn.reg ? ' (' + inn.reg + ')' : ''}.`,
-    '',
-    `Vi kan tilby kr ${prisTekst} for direkte oppkjøp av bilen.`,
-    '',
-    'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale tid for gjennomgang.',
-    '',
-    'Med vennlig hilsen',
-    'X Bilsenter AS'
-  ].join('\n');
-}
-
-function buildSelgBilVisningMelding(inn) {
-  const bil = selgBilLabel(inn);
-  const fornavn = String(inn.navn || '').trim().split(/\s+/)[0] || 'du';
-  return [
-    `Hei ${fornavn},`,
-    '',
-    `Takk for henvendelsen om salg av ${bil}${inn.reg ? ' (' + inn.reg + ')' : ''}.`,
-    '',
-    'Vi er nok ikke så langt unna hverandre på pris. Kom gjerne innom så vi kan se på bilen sammen – da finner vi raskt ut om vi blir enige.',
-    '',
-    'Ønsker du å avtale tid for befaring?',
-    '',
-    'Med vennlig hilsen',
-    'X Bilsenter AS'
-  ].join('\n');
 }
 
 function SelgBilView({ selgBil, setModal, lists, visTost }) {
@@ -6286,7 +6205,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
   const [tilbud, setTilbud] = useState(inn.tilbud || '');
   const [finnSokLaster, setFinnSokLaster] = useState(false);
   const [melding, setMelding] = useState(function () {
-    return buildSelgBilTilbudMelding(data, data.tilbud || '');
+    return buildSelgBilTilbudMelding(data, data.tilbud || '', lists?.tilbudEpostMaler);
   });
   const [sending, setSending] = useState(false);
   const sendKonto = (mailStatus?.kontoer || []).find(function (k) { return k.standard; })
@@ -6294,23 +6213,23 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
 
   useEffect(function () {
     if (svarType === 'visning') {
-      setMelding(buildSelgBilVisningMelding(inn));
+      setMelding(buildSelgBilVisningMelding(inn, lists?.tilbudEpostMaler));
     } else {
-      setMelding(buildSelgBilTilbudMelding(inn, tilbud));
+      setMelding(buildSelgBilTilbudMelding(inn, tilbud, lists?.tilbudEpostMaler));
     }
-  }, [svarType, tilbud, inn]);
+  }, [svarType, tilbud, inn, lists?.tilbudEpostMaler]);
 
   const setSvarModus = (type) => {
     setSvarType(type);
     setMelding(type === 'visning'
-      ? buildSelgBilVisningMelding(inn)
-      : buildSelgBilTilbudMelding(inn, tilbud));
+      ? buildSelgBilVisningMelding(inn, lists?.tilbudEpostMaler)
+      : buildSelgBilTilbudMelding(inn, tilbud, lists?.tilbudEpostMaler));
   };
 
   const oppdaterMelding = () => {
     setMelding(svarType === 'visning'
-      ? buildSelgBilVisningMelding(inn)
-      : buildSelgBilTilbudMelding(inn, tilbud));
+      ? buildSelgBilVisningMelding(inn, lists?.tilbudEpostMaler)
+      : buildSelgBilTilbudMelding(inn, tilbud, lists?.tilbudEpostMaler));
   };
 
   const opp = (k, v, msg) => {
@@ -6619,7 +6538,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
   const [finnLaster, setFinnLaster] = useState(false);
   const [finnSokLaster, setFinnSokLaster] = useState(false);
   const [melding, setMelding] = useState(function () {
-    return buildInnbytteTilbudMelding(data, data.tilbud || '', null);
+    return buildInnbytteTilbudMelding(data, data.tilbud || '', null, lists?.tilbudEpostMaler);
   });
   const [sending, setSending] = useState(false);
   const sendKonto = (mailStatus?.kontoer || []).find(function (k) { return k.standard; })
@@ -6651,23 +6570,23 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
   useEffect(function () {
     if (svarType === 'visning') {
       if (finnLaster) return;
-      setMelding(buildInnbytteVisningMelding(inn, finnMeta));
+      setMelding(buildInnbytteVisningMelding(inn, finnMeta, lists?.tilbudEpostMaler));
     } else {
-      setMelding(buildInnbytteTilbudMelding(inn, tilbud, finnMeta));
+      setMelding(buildInnbytteTilbudMelding(inn, tilbud, finnMeta, lists?.tilbudEpostMaler));
     }
-  }, [finnMeta, finnLaster, svarType, tilbud, inn]);
+  }, [finnMeta, finnLaster, svarType, tilbud, inn, lists?.tilbudEpostMaler]);
 
   const setSvarModus = (type) => {
     setSvarType(type);
     setMelding(type === 'visning'
-      ? buildInnbytteVisningMelding(inn, finnMeta)
-      : buildInnbytteTilbudMelding(inn, tilbud, finnMeta));
+      ? buildInnbytteVisningMelding(inn, finnMeta, lists?.tilbudEpostMaler)
+      : buildInnbytteTilbudMelding(inn, tilbud, finnMeta, lists?.tilbudEpostMaler));
   };
 
   const oppdaterMelding = () => {
     setMelding(svarType === 'visning'
-      ? buildInnbytteVisningMelding(inn, finnMeta)
-      : buildInnbytteTilbudMelding(inn, tilbud, finnMeta));
+      ? buildInnbytteVisningMelding(inn, finnMeta, lists?.tilbudEpostMaler)
+      : buildInnbytteTilbudMelding(inn, tilbud, finnMeta, lists?.tilbudEpostMaler));
   };
 
   const opp = (k, v, msg) => {
@@ -8390,6 +8309,76 @@ function MailKontoerSection({ onStatusChange, visTost }) {
 
 const EMPTY_EPOST_MAL = { navn: '', emne: '', html: '' };
 
+function TilbudEpostMalerSection({ maler, onChange, onSave, visTost }) {
+  const [saving, setSaving] = useState(false);
+  const normalized = normalizeTilbudEpostMaler(maler);
+
+  const setMal = (key, value) => {
+    onChange({ ...normalized, [key]: value });
+  };
+
+  const resetMal = (key) => {
+    if (!window.confirm('Tilbakestill denne malen til standardtekst?')) return;
+    onChange({ ...normalized, [key]: DEFAULT_TILBUD_EPOST_MALER[key] });
+  };
+
+  const lagre = async () => {
+    setSaving(true);
+    try {
+      await onSave();
+      visTost('Tilbudmaler lagret ✓');
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke lagre tilbudmaler ✗');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="inbox-list-hd">
+        <div>
+          <span className="card-ht">Tilbudmaler (innbytte og selg bil)</span>
+          <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 4 }}>
+            Standardtekst når du sender tilbud eller inviterer til visning/befaring fra innbytte og selg bil.
+          </div>
+        </div>
+        <button type="button" className="btn btn-p btn-sm" onClick={lagre} disabled={saving}>
+          {saving ? 'Lagrer…' : 'Lagre tilbudmaler'}
+        </button>
+      </div>
+      <div style={{ padding: 16 }} className="settings-stack">
+        {TILBUD_EPOST_MAL_DEFS.map(function (def) {
+          return (
+            <div key={def.key} className="mail-konto-form tilbud-mal-form">
+              <div className="tilbud-mal-form__head">
+                <div>
+                  <div className="tilbud-mal-form__title">{def.title}</div>
+                  <div className="tilbud-mal-form__desc">{def.desc}</div>
+                </div>
+                <button type="button" className="btn btn-g btn-xs" onClick={() => resetMal(def.key)}>
+                  Tilbakestill
+                </button>
+              </div>
+              <div className="tilbud-mal-form__placeholders">
+                Tilgjengelige felt: {def.placeholders.map(function (p) {
+                  return <code key={p}>{p}</code>;
+                })}
+              </div>
+              <textarea
+                rows={10}
+                value={normalized[def.key] || ''}
+                onChange={e => setMal(def.key, e.target.value)}
+                style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontFamily: 'inherit' }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function EpostMalerSection({ visTost }) {
   const [maler, setMaler] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -9656,7 +9645,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
     biler: 'Pipeline-statuser og sjekklister per stasjon',
     statuser: 'Statuser og farger for kontaktskjema og innbytte',
     moduler: 'Menyoppsett og moduler i CRM',
-    epost: 'Mailkontoer og e-postmaler',
+    epost: 'Mailkontoer, tilbudmaler og innboksmaler',
     brukere: 'Brukere, roller og tilganger'
   };
 
@@ -9830,6 +9819,12 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
       {section === 'epost' && showInnstillinger && (
         <div className="settings-stack">
           <MailKontoerSection onStatusChange={onStatusChange} visTost={visTost} />
+          <TilbudEpostMalerSection
+            maler={draft.tilbudEpostMaler}
+            onChange={(v) => setDraft(function (prev) { return { ...prev, tilbudEpostMaler: v }; })}
+            onSave={() => onSave({ tilbudEpostMaler: draft.tilbudEpostMaler })}
+            visTost={visTost}
+          />
           <EpostMalerSection visTost={visTost} />
         </div>
       )}

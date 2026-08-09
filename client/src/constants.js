@@ -369,6 +369,7 @@ export const KAL_TYPER = [
 export const ANSATTE = ['Waleed', 'Ahmed', 'Sara', 'Mikael', 'Lena'];
 
 import merkerJson from '../../merker.json';
+import { DEFAULT_TILBUD_EPOST_MALER } from './lib/tilbudEpostMaler.js';
 
 export const MERKER = merkerJson;
 
@@ -1157,5 +1158,6 @@ export const DEFAULT_INNSTILLINGER = {
   innbytteStatuser: INNBYTTE_STATUSER,
   innbytteStatusFarger: DEFAULT_INNBYTTE_STATUS_FARGER,
   kalTyper: KAL_TYPER,
-  modulOppsett: DEFAULT_MODUL_OPPSATT
+  modulOppsett: DEFAULT_MODUL_OPPSATT,
+  tilbudEpostMaler: DEFAULT_TILBUD_EPOST_MALER
 };

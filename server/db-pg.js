@@ -23,6 +23,8 @@ const {
   normalizeBilStatusFarger,
   normalizeHenvStatusFarger,
   normalizeInnbytteStatusFarger,
+  normalizeTilbudEpostMaler,
+  DEFAULT_TILBUD_EPOST_MALER,
   normalizeBilSjekklister,
   sjekklisteFraMalServer,
   parseBilSjekklisterObject,
@@ -704,7 +706,8 @@ async function ensureInnstillingDefaults() {
     innbytte_status_farger: DEFAULT_INNSTILLINGER.innbytteStatusFarger,
     kal_typer: DEFAULT_INNSTILLINGER.kalTyper,
     modul_oppsett: DEFAULT_INNSTILLINGER.modulOppsett,
-    vedlikehold_modus: DEFAULT_VEDLIKEHOLD
+    vedlikehold_modus: DEFAULT_VEDLIKEHOLD,
+    tilbud_epost_maler: DEFAULT_TILBUD_EPOST_MALER
   };
 
   const rows = await prepare('SELECT key FROM innstillinger').all();
@@ -758,7 +761,8 @@ async function getInnstillinger() {
       parseJson(byKey.innbytte_status_farger, DEFAULT_INNBYTTE_STATUS_FARGER)
     ),
     kalTyper: parseJson(byKey.kal_typer, DEFAULT_INNSTILLINGER.kalTyper),
-    modulOppsett: normalizeModulOppsett(parseJson(byKey.modul_oppsett, DEFAULT_INNSTILLINGER.modulOppsett))
+    modulOppsett: normalizeModulOppsett(parseJson(byKey.modul_oppsett, DEFAULT_INNSTILLINGER.modulOppsett)),
+    tilbudEpostMaler: normalizeTilbudEpostMaler(parseJson(byKey.tilbud_epost_maler, DEFAULT_TILBUD_EPOST_MALER))
   };
 }
 
@@ -887,6 +891,13 @@ async function saveInnstillinger(partial) {
     await upsertInnstilling(
       'vedlikehold_modus',
       JSON.stringify(normalizeVedlikeholdModus(partial.vedlikeholdModus))
+    );
+  }
+
+  if (partial.tilbudEpostMaler && typeof partial.tilbudEpostMaler === 'object') {
+    await upsertInnstilling(
+      'tilbud_epost_maler',
+      JSON.stringify(normalizeTilbudEpostMaler(partial.tilbudEpostMaler))
     );
   }
 

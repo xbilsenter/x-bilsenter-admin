@@ -76,6 +76,11 @@ const DEFAULT_INNBYTTE_STATUS_FARGER = {
   Avslått: '#DC2626'
 };
 
+const {
+  DEFAULT_TILBUD_EPOST_MALER,
+  normalizeTilbudEpostMaler
+} = require('../shared/tilbud-epost-maler');
+
 const DEFAULT_INNSTILLINGER = {
   ansatte: ['Waleed', 'Ahmed', 'Sara', 'Mikael', 'Lena'],
   merker: MERKER,
@@ -108,7 +113,8 @@ const DEFAULT_INNSTILLINGER = {
     { id: 'oppgaver', label: 'Oppgaver' },
     { id: 'vegvesen', label: 'Vegvesen-oppslag' },
     { id: 'innstillinger', label: 'Innstillinger' }
-  ]
+  ],
+  tilbudEpostMaler: DEFAULT_TILBUD_EPOST_MALER
 };
 
 const SETTINGS_KEYS = {
@@ -618,5 +624,7 @@ module.exports = {
   normalizeMerkerList,
   NYE_INNKOMMENDE_EPOST_DAGER,
   nyeInnkommendeEpostSince,
-  epostThreadKeySql
+  epostThreadKeySql,
+  DEFAULT_TILBUD_EPOST_MALER,
+  normalizeTilbudEpostMaler
 };
