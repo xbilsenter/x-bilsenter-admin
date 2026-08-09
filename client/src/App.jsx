@@ -3502,7 +3502,6 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
           onChange={function (next) { s('tilstandsrapport', next); }}
         />
         <div className="gap"><div className="fl">Ansvarlig</div><select value={f.ansvarlig} onChange={e => s('ansvarlig', e.target.value)}>{lists.ansatte.map(a => <option key={a}>{a}</option>)}</select></div>
-        <div className="gap"><div className="fl">Frist</div><input type="date" value={f.frist} onChange={e => s('frist', e.target.value)} /></div>
         <div className="gap"><div className="fl">Notater</div><textarea rows={2} value={f.notater} onChange={e => s('notater', e.target.value)} /></div>
         <div className="modal-footer">
           <button type="button" className="btn btn-p" onClick={() => f.reg && f.modell && onSave({
