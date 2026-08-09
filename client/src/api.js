@@ -83,6 +83,10 @@ export function refreshFinnInventory() {
   return request('/drift/finn-refresh', { method: 'POST' });
 }
 
+export function getVedlikehold() {
+  return request('/vedlikehold');
+}
+
 export function getHenvendelser() {
   return request('/henvendelser');
 }

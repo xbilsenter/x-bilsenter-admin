@@ -490,6 +490,17 @@ export function canAccess(user, permission) {
   return (user.permissions || []).includes(permission);
 }
 
+export function canViewVedlikehold(user) {
+  if (!user) return false;
+  if (canToggleVedlikehold(user) || canAccess(user, 'innstillinger')) return true;
+  const role = resolveRoleKey(user.role);
+  return role === 'Innkjøpssjef' || role === 'Selger';
+}
+
+export function canToggleVedlikehold(user) {
+  return !!user?.isAdmin;
+}
+
 const LEGACY_ROLE_ALIASES = { Admin: 'Daglig leder', Regnskap: 'Innkjøpssjef' };
 
 export function resolveRoleKey(role) {

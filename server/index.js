@@ -2575,6 +2575,10 @@ app.get('/api/lister', requireAuth, async function (_req, res) {
   res.json({ ok: true, lists: await getLister() });
 });
 
+app.get('/api/vedlikehold', requireAuth, async function (_req, res) {
+  res.json({ ok: true, vedlikeholdModus: await getVedlikeholdModus() });
+});
+
 app.get('/api/innstillinger', requireAuth, requirePermission('innstillinger'), async function (_req, res) {
   res.json({ ok: true, settings: await getInnstillinger() });
 });

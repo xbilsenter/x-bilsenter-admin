@@ -31,12 +31,13 @@ import {
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
-  PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk
+  PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk,
+  canViewVedlikehold, canToggleVedlikehold
 } from './constants.js';
 import {
   getToken, logout,
   getMe,
-  getDashboard, getNettsideDrift, getSitePreviewUrl, refreshFinnInventory, getHenvendelser, patchHenvendelse, deleteHenvendelse,
+  getDashboard, getNettsideDrift, getSitePreviewUrl, getVedlikehold, getHenvendelser, patchHenvendelse, deleteHenvendelse,
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
@@ -350,6 +351,13 @@ export default function App() {
       safeLoad(getSelgBil, (s) => setSelgBil(s.items || [])),
       safeLoad(getKalender, (k) => setKal(k.items || [])),
       safeLoad(getInnkjopskalkyle, (k) => setInnkjopskalkyle(k.items || [])),
+      safeLoad(getVedlikehold, (v) => {
+        if (v.vedlikeholdModus) {
+          setInnstillinger(function (prev) {
+            return { ...prev, vedlikeholdModus: v.vedlikeholdModus };
+          });
+        }
+      }),
       safeLoad(getInnstillinger, (s) => {
         if (s.settings) setInnstillinger(s.settings);
       })
@@ -803,6 +811,16 @@ export default function App() {
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               currentUser={user}
               vedlikeholdModus={innstillinger.vedlikeholdModus}
+              onVedlikeholdSave={async (vedlikeholdModus) => {
+                const res = await patchInnstillinger({ vedlikeholdModus });
+                if (res.settings?.vedlikeholdModus) {
+                  setInnstillinger(function (prev) {
+                    return { ...prev, vedlikeholdModus: res.settings.vedlikeholdModus };
+                  });
+                }
+                return res;
+              }}
+              visTost={visTost}
               henvStatusFarger={innstillinger.henvStatusFarger}
               bilStatusFarger={innstillinger.bilStatusFarger}
               innbytteStatusFarger={innstillinger.innbytteStatusFarger}
@@ -1143,13 +1161,11 @@ async function openNettside(url, { preview = false } = {}) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
+function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus, onVedlikeholdClick }) {
   const [drift, setDrift] = useState(null);
   const [laster, setLaster] = useState(true);
   const [feil, setFeil] = useState('');
-  const [finnRefresh, setFinnRefresh] = useState(false);
-  const [finnMelding, setFinnMelding] = useState('');
-  const kanAdministrere = canAccess(currentUser, 'innstillinger');
+  const kanSeVedlikehold = canViewVedlikehold(currentUser);
   const vedlikehold = vedlikeholdModus || DEFAULT_INNSTILLINGER.vedlikeholdModus;
 
   const oppdater = useCallback(async function (stille) {
@@ -1170,22 +1186,6 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
     const id = setInterval(function () { oppdater(true); }, DRIFT_POLL_MS);
     return function () { clearInterval(id); };
   }, [oppdater]);
-
-  async function oppdaterFinnLager() {
-    setFinnRefresh(true);
-    setFinnMelding('');
-    try {
-      const res = await refreshFinnInventory();
-      const tid = res.updatedAt
-        ? new Date(res.updatedAt).toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE })
-        : 'nå';
-      setFinnMelding(`FINN-lager oppdatert · ${res.total || 0} biler · ${tid}`);
-    } catch (err) {
-      setFinnMelding(err.message || 'Kunne ikke oppdatere FINN-lager');
-    } finally {
-      setFinnRefresh(false);
-    }
-  }
 
   const status = drift?.besokendeStatus || (vedlikehold.aktiv ? 'vedlikehold' : 'live');
   const statusMeta = {
@@ -1247,9 +1247,9 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
           {feil && !drift && (
             <div className="drift-dash__err">{feil}</div>
           )}
-          {finnMelding && (
-            <div className="drift-dash__err" style={{ color: finnMelding.startsWith('FINN-lager') ? 'var(--green)' : 'var(--red)' }}>
-              {finnMelding}
+          {drift?.finn === 'configured' && (
+            <div className="drift-dash__meta" style={{ marginTop: 6 }}>
+              FINN-lager oppdateres automatisk hvert 2. minutt.
             </div>
           )}
         </div>
@@ -1273,18 +1273,18 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
         <button type="button" className="btn btn-g btn-sm" onClick={function () { oppdater(false); }}>
           Oppdater
         </button>
-        {kanAdministrere && (
+        {kanSeVedlikehold && (
           <button
             type="button"
             className="btn btn-g btn-sm"
-            onClick={oppdaterFinnLager}
-            disabled={finnRefresh || drift?.finn === 'missing'}
+            onClick={function () {
+              if (canAccess(currentUser, 'innstillinger')) {
+                setTab('innstillinger');
+              } else if (onVedlikeholdClick) {
+                onVedlikeholdClick();
+              }
+            }}
           >
-            {finnRefresh ? 'Oppdaterer FINN…' : 'Oppdater FINN-lager'}
-          </button>
-        )}
-        {kanAdministrere && (
-          <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innstillinger'); }}>
             Vedlikehold
           </button>
         )}
@@ -1293,8 +1293,11 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
   );
 }
 
-function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger }) {
+function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, nyeInnbytte, iDagKal, setTab, setModal, currentUser, vedlikeholdModus, onVedlikeholdSave, visTost, henvStatusFarger, bilStatusFarger, innbytteStatusFarger }) {
   const [aktivDrilldown, setAktivDrilldown] = useState(null);
+  const vedlikeholdRef = useRef(null);
+  const visVedlikeholdPanel = canViewVedlikehold(currentUser) && !canAccess(currentUser, 'innstillinger');
+  const kanEndreVedlikehold = canToggleVedlikehold(currentUser);
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
   const lagerBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status !== 'Solgt'; });
   const nyeHenvListe = henv.filter(function (h) { return h.status === 'Ny'; });
@@ -1529,7 +1532,21 @@ function Dashboard({ biler, henv, innbytte, kal, paaLager, reservert, nyeHenv, n
         setTab={setTab}
         currentUser={currentUser}
         vedlikeholdModus={vedlikeholdModus}
+        onVedlikeholdClick={function () {
+          vedlikeholdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
       />
+
+      {visVedlikeholdPanel && (
+        <div id="vedlikehold-panel" ref={vedlikeholdRef} style={{ marginBottom: 16 }}>
+          <VedlikeholdSection
+            vedlikeholdModus={vedlikeholdModus}
+            readOnly={!kanEndreVedlikehold}
+            onSave={onVedlikeholdSave}
+            visTost={visTost}
+          />
+        </div>
+      )}
 
       <div className="stats">
         {statCards.map(function (s) {
@@ -8659,10 +8676,11 @@ function BrukereSection({ currentUser, visTost }) {
   );
 }
 
-function VedlikeholdSection({ vedlikeholdModus, onSave, visTost }) {
+function VedlikeholdSection({ vedlikeholdModus, onSave, visTost, readOnly }) {
   const [draft, setDraft] = useState(vedlikeholdModus || DEFAULT_INNSTILLINGER.vedlikeholdModus);
   const [savingToggle, setSavingToggle] = useState(false);
   const [savingMessage, setSavingMessage] = useState(false);
+  const skrivebeskyttet = !!readOnly;
 
   useEffect(function () {
     setDraft(vedlikeholdModus || DEFAULT_INNSTILLINGER.vedlikeholdModus);
@@ -8695,7 +8713,7 @@ function VedlikeholdSection({ vedlikeholdModus, onSave, visTost }) {
   };
 
   const settAktiv = (aktiv) => {
-    if (savingToggle || savingMessage || aktiv === !!draft.aktiv) return;
+    if (skrivebeskyttet || savingToggle || savingMessage || aktiv === !!draft.aktiv) return;
     lagre({ ...draft, aktiv }, 'toggle');
   };
 
@@ -8730,18 +8748,26 @@ function VedlikeholdSection({ vedlikeholdModus, onSave, visTost }) {
           </div>
 
           <div className="maint-hero__action">
-            <label className="maint-switch" title={draft.aktiv ? 'Deaktiver vedlikehold' : 'Aktiver vedlikehold'}>
-              <input
-                type="checkbox"
-                checked={!!draft.aktiv}
-                disabled={savingToggle || savingMessage}
-                onChange={(e) => settAktiv(e.target.checked)}
-              />
-              <span className="maint-switch__track" aria-hidden="true" />
-            </label>
-            <span className={`maint-switch__label${draft.aktiv ? ' is-on' : ''}`}>
-              {savingToggle ? 'Lagrer…' : (draft.aktiv ? 'På' : 'Av')}
-            </span>
+            {skrivebeskyttet ? (
+              <span className="maint-switch__label is-readonly">
+                {draft.aktiv ? 'På (kun admin kan endre)' : 'Av (kun admin kan endre)'}
+              </span>
+            ) : (
+              <>
+                <label className="maint-switch" title={draft.aktiv ? 'Deaktiver vedlikehold' : 'Aktiver vedlikehold'}>
+                  <input
+                    type="checkbox"
+                    checked={!!draft.aktiv}
+                    disabled={savingToggle || savingMessage}
+                    onChange={(e) => settAktiv(e.target.checked)}
+                  />
+                  <span className="maint-switch__track" aria-hidden="true" />
+                </label>
+                <span className={`maint-switch__label${draft.aktiv ? ' is-on' : ''}`}>
+                  {savingToggle ? 'Lagrer…' : (draft.aktiv ? 'På' : 'Av')}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -8763,29 +8789,36 @@ function VedlikeholdSection({ vedlikeholdModus, onSave, visTost }) {
 
         <div className="maint-message">
           <div className="fl">Melding til besøkende</div>
-          <p className="settings-desc">Vises på vedlikeholdssiden når modus er aktivert.</p>
+          <p className="settings-desc">
+            {skrivebeskyttet
+              ? 'Vises på vedlikeholdssiden når modus er aktivert. Kun admin kan endre melding og modus.'
+              : 'Vises på vedlikeholdssiden når modus er aktivert.'}
+          </p>
           <textarea
             rows={3}
             value={draft.melding || ''}
-            disabled={savingToggle || savingMessage}
+            disabled={skrivebeskyttet || savingToggle || savingMessage}
+            readOnly={skrivebeskyttet}
             onChange={(e) => setDraft(prev => ({ ...prev, melding: e.target.value }))}
             placeholder={defaultMelding}
           />
-          <div className="maint-message__foot">
-            <div className="maint-message__hint">
-              {draft.aktiv
-                ? 'Endringer i meldingen oppdateres på nettsiden innen ca. 15 sekunder.'
-                : 'Meldingen lagres og er klar neste gang vedlikehold aktiveres.'}
+          {!skrivebeskyttet && (
+            <div className="maint-message__foot">
+              <div className="maint-message__hint">
+                {draft.aktiv
+                  ? 'Endringer i meldingen oppdateres på nettsiden innen ca. 15 sekunder.'
+                  : 'Meldingen lagres og er klar neste gang vedlikehold aktiveres.'}
+              </div>
+              <button
+                type="button"
+                className="btn btn-g btn-sm"
+                disabled={!meldingEndret || savingToggle || savingMessage}
+                onClick={() => lagre(draft, 'message')}
+              >
+                {savingMessage ? 'Lagrer…' : 'Lagre melding'}
+              </button>
             </div>
-            <button
-              type="button"
-              className="btn btn-g btn-sm"
-              disabled={!meldingEndret || savingToggle || savingMessage}
-              onClick={() => lagre(draft, 'message')}
-            >
-              {savingMessage ? 'Lagrer…' : 'Lagre melding'}
-            </button>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -9459,6 +9492,7 @@ function InnstillingerView({ settings, currentUser, onSave, onModulOppsettChange
             <div className="settings-stack-row">
               <VedlikeholdSection
                 vedlikeholdModus={draft.vedlikeholdModus}
+                readOnly={!canToggleVedlikehold(currentUser)}
                 onSave={lagreVedlikehold}
                 visTost={visTost}
               />
