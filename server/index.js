@@ -38,6 +38,8 @@ const {
   updateMailKonto,
   deleteMailKonto,
   countUlestEpost,
+  countNyeInnkommendeEpost,
+  listNyeInnkommendeEpost,
   getEpostUtkastList,
   getEpostUtkastById,
   countEpostUtkast,
@@ -672,7 +674,8 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
     iDagKalRow,
     biler,
     ulestEpost,
-    ulestEpostRows,
+    nyeInnkommendeEpost,
+    nyeInnkommendeEpostRows,
     totaltKunderRow
   ] = await Promise.all([
     prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
@@ -683,21 +686,12 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
     prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
     prepare('SELECT status, sjekkliste, sjekklister FROM biler WHERE archived = 0 AND status NOT IN (\'Solgt\')').all(),
     countUlestEpost(),
-    prepare(`
-      SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost,
-        m.navn AS mappe_navn, m.mappe_type AS mappe_type,
-        (SELECT COUNT(*) FROM epost_vedlegg v WHERE v.epost_id = e.id) AS vedlegg_count
-      FROM eposter e
-      INNER JOIN mail_kontoer k ON k.id = e.konto_id
-      LEFT JOIN mail_mapper m ON m.id = e.mappe_id
-      WHERE e.slettet = 0 AND e.retning = 'inn' AND e.lest = 0
-      ORDER BY e.mottatt_dato DESC, e.id DESC
-      LIMIT 50
-    `).all(),
+    countNyeInnkommendeEpost(),
+    listNyeInnkommendeEpost(50),
     prepare('SELECT COUNT(*) AS c FROM kunder').get()
   ]);
 
-  const ulestEpostListe = await mapEpostRowsWithVedlegg(ulestEpostRows || []);
+  const nyeInnkommendeEpostListe = await mapEpostRowsWithVedlegg(nyeInnkommendeEpostRows || []);
 
   let aapneOppgaver = 0;
   biler.forEach(function (b) {
@@ -710,16 +704,17 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
   res.json({
     ok: true,
     stats: {
-      nyeHenv: nyeHenvRow.c,
-      nyeInnbytte: nyeInnbytteRow.c,
-      nyeSelgBil: nyeSelgBilRow.c,
-      paaLager: paaLagerRow.c,
-      reservert: reservertRow.c,
-      iDagKal: iDagKalRow.c,
+      nyeHenv: Number(nyeHenvRow.c) || 0,
+      nyeInnbytte: Number(nyeInnbytteRow.c) || 0,
+      nyeSelgBil: Number(nyeSelgBilRow.c) || 0,
+      paaLager: Number(paaLagerRow.c) || 0,
+      reservert: Number(reservertRow.c) || 0,
+      iDagKal: Number(iDagKalRow.c) || 0,
       aapneOppgaver,
-      ulestEpost,
-      ulestEpostListe,
-      totaltKunder: totaltKunderRow.c
+      ulestEpost: Number(ulestEpost) || 0,
+      nyeInnkommendeEpost: Number(nyeInnkommendeEpost) || 0,
+      nyeInnkommendeEpostListe,
+      totaltKunder: Number(totaltKunderRow.c) || 0
     }
   });
 });

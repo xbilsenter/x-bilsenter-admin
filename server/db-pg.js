@@ -40,7 +40,9 @@ const {
   normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE,
   normalizeBilArsprovekjennemerke,
-  normalizeMerkerList
+  normalizeMerkerList,
+  nyeInnkommendeEpostSince,
+  epostThreadKeySql
 } = require('./db-shared');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
@@ -606,7 +608,47 @@ async function countUlestEpost() {
     INNER JOIN mail_kontoer k ON k.id = e.konto_id
     WHERE e.retning = 'inn' AND e.lest = 0 AND e.slettet = 0
   `).get();
-  return row.c;
+  return Number(row?.c || 0);
+}
+
+async function countNyeInnkommendeEpost() {
+  const since = nyeInnkommendeEpostSince();
+  const threadKey = epostThreadKeySql('e');
+  const row = await prepare(`
+    SELECT COUNT(*) AS c FROM (
+      SELECT DISTINCT ${threadKey} AS tid
+      FROM eposter e
+      INNER JOIN mail_kontoer k ON k.id = e.konto_id
+      WHERE e.slettet = 0 AND e.retning = 'inn' AND e.lest = 0
+        AND COALESCE(e.mottatt_dato, e.created_at) >= @since
+    ) t
+  `).get({ since });
+  return Number(row?.c || 0);
+}
+
+async function listNyeInnkommendeEpost(limit) {
+  const since = nyeInnkommendeEpostSince();
+  const max = Math.max(1, Math.min(Number(limit) || 50, 100));
+  const threadKey = epostThreadKeySql('e');
+  const threadKey2 = epostThreadKeySql('e2');
+  return prepare(`
+    SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost,
+      m.navn AS mappe_navn, m.mappe_type AS mappe_type,
+      (SELECT COUNT(*) FROM epost_vedlegg v WHERE v.epost_id = e.id) AS vedlegg_count
+    FROM eposter e
+    INNER JOIN mail_kontoer k ON k.id = e.konto_id
+    LEFT JOIN mail_mapper m ON m.id = e.mappe_id
+    WHERE e.slettet = 0 AND e.retning = 'inn' AND e.lest = 0
+      AND COALESCE(e.mottatt_dato, e.created_at) >= @since
+      AND e.id IN (
+        SELECT MAX(e2.id) FROM eposter e2
+        WHERE e2.slettet = 0 AND e2.retning = 'inn' AND e2.lest = 0
+          AND COALESCE(e2.mottatt_dato, e2.created_at) >= @since
+        GROUP BY ${threadKey2}
+      )
+    ORDER BY e.mottatt_dato DESC, e.id DESC
+    LIMIT ${max}
+  `).all({ since });
 }
 
 async function deleteMailKonto(id) {
@@ -1624,6 +1666,8 @@ module.exports = {
   deleteMailKonto,
   cleanupOrphanEposter,
   countUlestEpost,
+  countNyeInnkommendeEpost,
+  listNyeInnkommendeEpost,
   getEpostUtkastList,
   getEpostUtkastById,
   countEpostUtkast,

@@ -552,6 +552,19 @@ function normalizeBilArsprovekjennemerke(raw) {
   };
 }
 
+const NYE_INNKOMMENDE_EPOST_DAGER = 14;
+
+function nyeInnkommendeEpostSince() {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - NYE_INNKOMMENDE_EPOST_DAGER);
+  return d.toISOString();
+}
+
+function epostThreadKeySql(alias) {
+  const a = alias || 'e';
+  return `COALESCE(NULLIF(${a}.thread_id, ''), ${a}.message_id, 'id-' || CAST(${a}.id AS TEXT))`;
+}
+
 module.exports = {
   parseJson,
   formatDate,
@@ -596,5 +609,8 @@ module.exports = {
   normalizeBilTilstandsrapport,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE,
   normalizeBilArsprovekjennemerke,
-  normalizeMerkerList
+  normalizeMerkerList,
+  NYE_INNKOMMENDE_EPOST_DAGER,
+  nyeInnkommendeEpostSince,
+  epostThreadKeySql
 };

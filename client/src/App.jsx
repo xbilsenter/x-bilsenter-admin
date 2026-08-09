@@ -473,19 +473,20 @@ export default function App() {
     );
   }
 
-  const nyeHenv = stats.nyeHenv ?? henv.filter(h => h.status === 'Ny').length;
-  const nyeInnbytte = stats.nyeInnbytte ?? innbytte.filter(i => i.status === 'Ny').length;
-  const nyeSelgBil = stats.nyeSelgBil ?? selgBil.filter(i => i.status === 'Ny').length;
-  const paaLager = stats.paaLager ?? biler.filter(b => isBilAktiv(b) && b.status !== 'Solgt').length;
-  const reservert = stats.reservert ?? biler.filter(b => isBilAktiv(b) && b.status === 'Reservert').length;
-  const iDagKal = stats.iDagKal ?? kal.filter(k => k.dato === IDAG).length;
-  const aapneOppgaver = stats.aapneOppgaver ?? biler.filter(isBilAktiv).reduce(
+  const nyeHenv = Number(stats.nyeHenv ?? henv.filter(h => h.status === 'Ny').length) || 0;
+  const nyeInnbytte = Number(stats.nyeInnbytte ?? innbytte.filter(i => i.status === 'Ny').length) || 0;
+  const nyeSelgBil = Number(stats.nyeSelgBil ?? selgBil.filter(i => i.status === 'Ny').length) || 0;
+  const paaLager = Number(stats.paaLager ?? biler.filter(b => isBilAktiv(b) && b.status !== 'Solgt').length) || 0;
+  const reservert = Number(stats.reservert ?? biler.filter(b => isBilAktiv(b) && b.status === 'Reservert').length) || 0;
+  const iDagKal = Number(stats.iDagKal ?? kal.filter(k => k.dato === IDAG).length) || 0;
+  const aapneOppgaver = Number(stats.aapneOppgaver ?? biler.filter(isBilAktiv).reduce(
     (s, b) => s + getAktivSjekkliste(b).filter(x => x.obligatorisk && !x.f).length, 0
-  );
-  const ulestEpost = stats.ulestEpost ?? mailStatus.ulest ?? epost.filter(e => e.retning === 'inn' && !e.lest).length;
+  )) || 0;
+  const ulestEpost = Number(stats.ulestEpost ?? mailStatus.ulest ?? epost.filter(e => e.retning === 'inn' && !e.lest).length) || 0;
   const harInnboks = canAccess(user, 'innboks');
-  const ulestEpostListe = harInnboks ? (stats.ulestEpostListe || []) : [];
-  const nyeHenvendelserTotal = (nyeHenv + nyeInnbytte + nyeSelgBil + (harInnboks ? (Number(ulestEpost) || 0) : 0));
+  const nyeInnkommendeEpost = Number(stats.nyeInnkommendeEpost ?? 0) || 0;
+  const nyeInnkommendeEpostListe = harInnboks ? (stats.nyeInnkommendeEpostListe || []) : [];
+  const nyeHenvendelserTotal = nyeHenv + nyeInnbytte + nyeSelgBil + (harInnboks ? nyeInnkommendeEpost : 0);
 
   const lists = innstillinger;
 
@@ -814,7 +815,7 @@ export default function App() {
               biler={biler} henv={henv} innbytte={innbytte} selgBil={selgBil} kal={kal}
               paaLager={paaLager} reservert={reservert}
               nyeHenvendelserTotal={nyeHenvendelserTotal}
-              ulestEpostListe={ulestEpostListe}
+              ulestEpostListe={nyeInnkommendeEpostListe}
               harInnboks={harInnboks}
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               setInnboksOpenEpost={setInnboksOpenEpost}
