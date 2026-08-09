@@ -432,14 +432,33 @@ export function resolveMerkeFromLists(merke, merker) {
   });
   if (exact) return exact;
 
-  const partial = merker.find(function (m) {
-    const a = m.toLowerCase();
-    const b = normalized.toLowerCase();
-    return a.includes(b) || b.includes(a);
-  });
-  if (partial) return partial;
-
   return normalized;
+}
+
+/** Full modellbetegnelse fra Autosys/Vegvesen (handelsbetegnelse + typebetegnelse osv.). */
+export function buildFullBilModellFromVehicle(v) {
+  if (!v || typeof v !== 'object') return '';
+
+  const parts = [];
+  const candidates = [
+    v.modell,
+    v.typebetegnelse,
+    v.variant,
+    v.versjon
+  ];
+
+  candidates.forEach(function (part) {
+    const text = String(part || '').trim();
+    if (!text) return;
+    const lower = text.toLowerCase();
+    const duplicate = parts.some(function (existing) {
+      const el = existing.toLowerCase();
+      return el === lower || el.includes(lower) || lower.includes(el);
+    });
+    if (!duplicate) parts.push(text);
+  });
+
+  return parts.join(' ');
 }
 
 export const SFARGE = {

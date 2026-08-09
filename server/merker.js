@@ -56,13 +56,6 @@ function resolveMerkeFromLists(merke, merker) {
   });
   if (exact) return exact;
 
-  const partial = merker.find(function (m) {
-    const a = m.toLowerCase();
-    const b = normalized.toLowerCase();
-    return a.includes(b) || b.includes(a);
-  });
-  if (partial) return partial;
-
   return normalized;
 }
 

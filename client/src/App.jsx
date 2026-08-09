@@ -40,6 +40,7 @@ import {
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
   buildMerkeOptions, resolveMerkeFromLists, formatBilFarge,
+  buildFullBilModellFromVehicle,
   parseNumberInput, numberInputDisplay, numberInputForSave, BIL_NUMERIC_FIELDS,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader,
@@ -3239,14 +3240,16 @@ function autosysRegFromStored(svvData) {
 
 function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
   const v = vehicle || {};
-  const merker = buildMerkeOptions(lists.merker, null, v.merke || prev.merke);
+  const fullMerke = String(v.merke || '').trim();
+  const fullModell = buildFullBilModellFromVehicle(v);
+  const merker = buildMerkeOptions(lists.merker, null, fullMerke || prev.merke);
   const aarRaw = v.arsmodell != null ? String(v.arsmodell).trim() : '';
   const aarParsed = aarRaw ? Number(aarRaw) : NaN;
 
   return {
     reg: v.regNr ? normalizeBilReg(v.regNr) : prev.reg,
-    merke: v.merke ? resolveMerkeFromLists(v.merke, merker) : prev.merke,
-    modell: v.modell || prev.modell,
+    merke: fullMerke ? resolveMerkeFromLists(fullMerke, merker) : prev.merke,
+    modell: fullModell || prev.modell,
     aar: Number.isFinite(aarParsed) && aarParsed > 0 ? aarParsed : prev.aar,
     farge: formatSvvFargeNavn(v.farge) || prev.farge,
     euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || prev.euKontroll,
@@ -3260,12 +3263,13 @@ function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
 }
 
 function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
-  const merkeOptions = buildMerkeOptions(lists.merker, biler, null);
+  const initialMerkeOptions = buildMerkeOptions(lists.merker, biler, null);
   const [f, setF] = useState({
-    reg: '', merke: merkeOptions.includes('Annet') ? 'Annet' : (merkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
+    reg: '', merke: initialMerkeOptions.includes('Annet') ? 'Annet' : (initialMerkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
     farge: '', status: lists.bilStatuser[0] || 'Innkjøpt', ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
     euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null
   });
+  const merkeOptions = buildMerkeOptions(lists.merker, biler, f.merke);
   const [autosysLoading, setAutosysLoading] = useState(false);
   const [autosysError, setAutosysError] = useState('');
   const [autosysPreview, setAutosysPreview] = useState('');
@@ -3297,7 +3301,11 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
         if (normalizeBilReg(prev.reg) !== reg) return prev;
         return { ...prev, ...applyAutosysToBilForm(vehicle, data.raw || null, lists, prev) };
       });
-      setAutosysPreview([vehicle.merke, vehicle.modell, vehicle.arsmodell].filter(Boolean).join(' '));
+      setAutosysPreview([
+        String(vehicle.merke || '').trim(),
+        buildFullBilModellFromVehicle(vehicle),
+        vehicle.arsmodell
+      ].filter(Boolean).join(' '));
       if (visTost) visTost('Autosys-data hentet ✓');
     } catch (err) {
       if (reqId !== autosysReqRef.current) return;
@@ -8077,11 +8085,14 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
   const leggTilBil = async () => {
     if (!resultat) return;
     const v = resultat;
+    const fullMerke = String(v.merke || '').trim();
+    const fullModell = buildFullBilModellFromVehicle(v);
+    const merkeOptions = buildMerkeOptions(lists.merker, biler, fullMerke);
     const startStatus = lists.bilStatuser[0] || 'Innkjøpt';
     const nyBil = {
       reg: v.regNr || reg.toUpperCase(),
-      merke: v.merke || 'Ukjent',
-      modell: v.modell || 'Ukjent',
+      merke: fullMerke ? resolveMerkeFromLists(fullMerke, merkeOptions) : 'Ukjent',
+      modell: fullModell || 'Ukjent',
       aar: Number(v.arsmodell) || 0,
       km: 0,
       innkjop: 0,
