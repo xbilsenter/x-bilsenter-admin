@@ -2618,11 +2618,13 @@ function BilArsprovekjennemerkeTab({ bil, biler, oppdaterArsprove }) {
 }
 
 function buildAutosysLagring(parsed, raw, lists, prevBil, overstyrt) {
+  const o = getBilAutosysOverstyrt(prevBil, overstyrt);
   const autosysFields = buildAutosysBilFelt(parsed, raw, lists, prevBil, overstyrt);
   const patch = { svvData: autosysFields.svvData };
   const localUpdate = { svvData: autosysFields.svvData };
 
   BIL_AUTOSYS_FELTER.forEach(function (key) {
+    if (o[key]) return;
     const val = autosysFields[key];
     if (val == null || val === '') return;
     if (key === 'aar' && !Number(val)) return;
@@ -2631,6 +2633,32 @@ function buildAutosysLagring(parsed, raw, lists, prevBil, overstyrt) {
   });
 
   return { patch, localUpdate, parsed, overstyrt: getBilAutosysOverstyrt(autosysFields.svvData) };
+}
+
+function applyAutosysLocalUpdate(prevBil, localUpdate, overstyrt) {
+  const o = getBilAutosysOverstyrt(prevBil, overstyrt);
+  const next = {
+    ...prevBil,
+    svvData: localUpdate.svvData != null ? localUpdate.svvData : prevBil.svvData
+  };
+  BIL_AUTOSYS_FELTER.forEach(function (key) {
+    if (o[key]) return;
+    if (localUpdate[key] == null || localUpdate[key] === '') return;
+    if (key === 'aar' && !Number(localUpdate[key])) return;
+    next[key] = localUpdate[key];
+  });
+  return next;
+}
+
+function mergeBilAfterAutosysSave(prevBil, saved) {
+  if (!saved) return prevBil;
+  const o = getBilAutosysOverstyrt(prevBil);
+  const next = { ...saved };
+  BIL_AUTOSYS_FELTER.forEach(function (key) {
+    if (o[key]) next[key] = prevBil[key];
+  });
+  next.svvData = mergeAutosysOverstyrtIntoSvvData(saved.svvData, o);
+  return next;
 }
 
 async function hentAutosysPayload(reg, lists, prevBil, overstyrt) {
@@ -2652,39 +2680,69 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
   const [activeTab, setActiveTab] = useState('informasjon');
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(null);
+  const bilRef = useRef(bil);
+  const autosysOverstyrtRef = useRef(autosysOverstyrt);
+  bilRef.current = bil;
+  autosysOverstyrtRef.current = autosysOverstyrt;
 
   useEffect(function () {
     setBil(data);
-    setAutosysOverstyrt(getBilAutosysOverstyrt(data));
+    const o = getBilAutosysOverstyrt(data);
+    setAutosysOverstyrt(o);
+    bilRef.current = data;
+    autosysOverstyrtRef.current = o;
   }, [data.id]);
 
   const lagreAutosys = useCallback(async function (options) {
-    const reg = normalizeBilReg(bil.reg);
-    const result = await hentAutosysPayload(reg, lists, bil, autosysOverstyrt);
-    setAutosysOverstyrt(result.overstyrt || {});
-    setBil(function (prev) { return { ...prev, ...result.localUpdate }; });
-    const saved = await updateBil(bil.id, result.patch, options?.silent ? undefined : 'Autosys-data oppdatert ✓');
+    const currentBil = bilRef.current;
+    const currentOverstyrt = autosysOverstyrtRef.current;
+    const reg = normalizeBilReg(currentBil.reg);
+    const result = await hentAutosysPayload(reg, lists, currentBil, currentOverstyrt);
+    const nextOverstyrt = result.overstyrt || {};
+    autosysOverstyrtRef.current = nextOverstyrt;
+    setAutosysOverstyrt(nextOverstyrt);
+    setBil(function (prev) {
+      const next = applyAutosysLocalUpdate(prev, result.localUpdate, nextOverstyrt);
+      bilRef.current = next;
+      return next;
+    });
+    const saved = await updateBil(currentBil.id, result.patch, options?.silent ? undefined : 'Autosys-data oppdatert ✓');
     if (saved) {
-      setBil(saved);
+      setBil(function (prev) {
+        const next = mergeBilAfterAutosysSave(prev, saved);
+        bilRef.current = next;
+        autosysOverstyrtRef.current = getBilAutosysOverstyrt(next);
+        return next;
+      });
       setAutosysOverstyrt(getBilAutosysOverstyrt(saved));
     }
     return result.parsed;
-  }, [bil, lists, updateBil, autosysOverstyrt]);
+  }, [lists, updateBil]);
 
   useEffect(function () {
     const reg = normalizeBilReg(data.reg);
     if (!isValidBilReg(reg)) return;
     if (hasAutosysVehicleData(data.svvData)) return;
 
-    const overstyrt = getBilAutosysOverstyrt(data);
     let cancelled = false;
-    hentAutosysPayload(reg, lists, data, overstyrt).then(async function (result) {
+    hentAutosysPayload(reg, lists, bilRef.current, autosysOverstyrtRef.current).then(async function (result) {
       if (cancelled) return;
-      setAutosysOverstyrt(result.overstyrt || {});
-      setBil(function (prev) { return { ...prev, ...result.localUpdate }; });
+      const nextOverstyrt = result.overstyrt || {};
+      autosysOverstyrtRef.current = nextOverstyrt;
+      setAutosysOverstyrt(nextOverstyrt);
+      setBil(function (prev) {
+        const next = applyAutosysLocalUpdate(prev, result.localUpdate, nextOverstyrt);
+        bilRef.current = next;
+        return next;
+      });
       const saved = await updateBil(data.id, result.patch);
       if (!cancelled && saved) {
-        setBil(saved);
+        setBil(function (prev) {
+          const next = mergeBilAfterAutosysSave(prev, saved);
+          bilRef.current = next;
+          autosysOverstyrtRef.current = getBilAutosysOverstyrt(next);
+          return next;
+        });
         setAutosysOverstyrt(getBilAutosysOverstyrt(saved));
       }
     }).catch(function () { /* stille bakgrunnshenting */ });
@@ -2744,7 +2802,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     setBil(function (prev) {
       const stored = v;
       const payload = BIL_NUMERIC_FIELDS.has(k) ? numberInputForSave(v) : v;
-      let nextOverstyrt = getBilAutosysOverstyrt(prev, autosysOverstyrt);
+      let nextOverstyrt = getBilAutosysOverstyrt(prev);
 
       if (k === 'reg') {
         const fetchedReg = autosysRegFromStored(prev.svvData);
@@ -2757,6 +2815,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
         nextOverstyrt = markBilAutosysOverstyrt(nextOverstyrt, k);
       }
 
+      autosysOverstyrtRef.current = nextOverstyrt;
       setAutosysOverstyrt(nextOverstyrt);
 
       const patch = { [k]: payload };
@@ -2765,11 +2824,13 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
       }
 
       updateBil(prev.id, patch, msg);
-      return {
+      const next = {
         ...prev,
         [k]: stored,
         ...(patch.svvData != null ? { svvData: patch.svvData } : {})
       };
+      bilRef.current = next;
+      return next;
     });
   };
 
