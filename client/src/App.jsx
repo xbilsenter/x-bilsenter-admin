@@ -186,14 +186,16 @@ function matchesEpostTilBil(e, bil, henv) {
   return false;
 }
 
-function countBilHenvendelser(bil, henv, innbytte, epost) {
+function countBilHenvendelser(bil, henv, innbytte, epost, inkluderEpost) {
   let total = (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).length;
   total += (innbytte || []).filter(function (i) { return matchesInnbytteTilBil(i, bil); }).length;
-  total += (epost || []).filter(function (e) { return matchesEpostTilBil(e, bil, henv); }).length;
+  if (inkluderEpost) {
+    total += (epost || []).filter(function (e) { return matchesEpostTilBil(e, bil, henv); }).length;
+  }
   return total;
 }
 
-function buildBilHenvendelseItems(bil, henv, innbytte, epost) {
+function buildBilHenvendelseItems(bil, henv, innbytte, epost, inkluderEpost) {
   const items = [];
 
   (henv || []).filter(function (h) { return matchesBilRef(h.bilRef, bil.reg); }).forEach(function (h) {
@@ -228,21 +230,23 @@ function buildBilHenvendelseItems(bil, henv, innbytte, epost) {
     });
   });
 
-  (epost || []).filter(function (e) { return matchesEpostTilBil(e, bil, henv); }).forEach(function (e) {
-    items.push({
-      key: 'epost-' + e.id,
-      type: 'epost',
-      typeLabel: 'E-post',
-      dato: e.dato || e.sortDato || '',
-      title: e.emne || '(Uten emne)',
-      sub: e.fraNavn || e.fraEpost || '—',
-      meta: e.retning === 'ut' ? 'Utgående' : 'Innkommende',
-      badge: e.lest ? 'Lest' : 'Ulest',
-      badgeKind: 'epost',
-      data: e,
-      sortDato: e.sortDato || e.dato || ''
+  if (inkluderEpost) {
+    (epost || []).filter(function (e) { return matchesEpostTilBil(e, bil, henv); }).forEach(function (e) {
+      items.push({
+        key: 'epost-' + e.id,
+        type: 'epost',
+        typeLabel: 'E-post',
+        dato: e.dato || e.sortDato || '',
+        title: e.emne || '(Uten emne)',
+        sub: e.fraNavn || e.fraEpost || '—',
+        meta: e.retning === 'ut' ? 'Utgående' : 'Innkommende',
+        badge: e.lest ? 'Lest' : 'Ulest',
+        badgeKind: 'epost',
+        data: e,
+        sortDato: e.sortDato || e.dato || ''
+      });
     });
-  });
+  }
 
   return items.sort(function (a, b) {
     return String(b.sortDato || '').localeCompare(String(a.sortDato || ''));
@@ -1805,6 +1809,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
   const [dropStatus, setDropStatus] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const skipClick = useRef(false);
+  const harInnboks = canAccess(currentUser, 'innboks');
   const aktiveBiler = biler.filter(isBilAktiv);
   const arkivBiler = biler.filter(function (b) { return b.archived; });
   const sourceBiler = section === 'arkiv' ? arkivBiler : aktiveBiler;
@@ -1925,7 +1930,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     const { f, t, pst } = prog;
     const sisteSjekk = getSisteKryssedeSjekklisteItem(list);
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
-    const linkHenv = countBilHenvendelser(bil, henv, innbytte, epost);
+    const linkHenv = countBilHenvendelser(bil, henv, innbytte, epost, harInnboks);
     return (
       <div
         className={`bil-card${dragId === bil.id ? ' bil-card--dragging' : ''}`}
@@ -1965,7 +1970,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     const { f, t, pst } = prog;
     const sisteSjekk = getSisteKryssedeSjekklisteItem(list);
     const linkKal = (kal || []).filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); }).length;
-    const linkHenv = countBilHenvendelser(bil, henv, innbytte, epost);
+    const linkHenv = countBilHenvendelser(bil, henv, innbytte, epost, harInnboks);
     return (
       <div
         key={bil.id}
@@ -2538,7 +2543,8 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
   const avtaler = (kal || [])
     .filter(function (e) { return matchesBilRef(e.bilRef, bil.reg); })
     .sort(function (a, b) { return a.dato.localeCompare(b.dato) || a.tid.localeCompare(b.tid); });
-  const henvendelser = buildBilHenvendelseItems(bil, henv, innbytte, epost);
+  const harInnboks = canAccess(currentUser, 'innboks');
+  const henvendelser = buildBilHenvendelseItems(bil, henv, innbytte, epost, harInnboks);
 
   const openHenvendelseItem = function (item) {
     if (item.type === 'kontaktskjema') setModal({ t: 'visHenv', d: item.data });
