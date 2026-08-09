@@ -779,6 +779,30 @@ select option{background:var(--s1);}
   .bruker-perm-grid{grid-template-columns:1fr;}
   .kal-month-nav{gap:8px;}
   .sig-editor__toolbar{gap:4px;}
+  .kalkyle-platforms{
+    flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity;
+    margin-left:-16px;margin-right:-16px;padding:0 16px 4px;gap:10px;
+  }
+  .kalkyle-platform-group{flex-wrap:nowrap;flex-shrink:0;gap:8px;}
+  .kalkyle-platform-group--annet{padding-left:10px;margin-left:2px;border-left:1px solid var(--b1);}
+  .kalkyle-platform{flex-shrink:0;scroll-snap-align:start;}
+  .kalkyle-layout{min-height:0;grid-template-columns:1fr;}
+  .kalkyle-layout--list .kalkyle-main{display:none;}
+  .kalkyle-layout--detail .kalkyle-list{display:none;}
+  .kalkyle-list-body{max-height:none;}
+  .kalkyle-grid{grid-template-columns:1fr;}
+  .kalkyle-comments{min-height:160px;}
+  .kalkyle-autosys-grid{grid-template-columns:1fr;}
+  .kalkyle-sheet-hd{flex-direction:column;align-items:stretch;}
+  .kalkyle-sheet-actions{width:100%;}
+  .kalkyle-sheet-actions .btn{flex:1;justify-content:center;min-width:calc(50% - 4px);}
+  .kalkyle-reg-row{flex-direction:column;align-items:stretch;}
+  .kalkyle-reg-row .btn{width:100%;justify-content:center;}
+  .kalkyle-mobile-bar{display:flex;margin-bottom:10px;}
+  .kalkyle-result-value{font-size:20px;}
+  .inb-modal__field,.inb-modal__field select{min-width:0;width:100%;}
+  .inb-modal__toolbar-fields{flex-direction:column;width:100%;}
+  .sjekkliste-mal-input{min-width:0;width:100%;}
 }
 
 .ingest-bilder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;margin:0 0 14px;}
@@ -836,6 +860,7 @@ select option{background:var(--s1);}
 .kalkyle-platforms{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px;}
 .kalkyle-platform-group{display:flex;flex-wrap:wrap;gap:8px;}
 .kalkyle-platform-group--annet{padding-left:12px;border-left:1px solid var(--b1);}
+.kalkyle-mobile-bar{display:none;}
 .kalkyle-platform{padding:8px 12px;border:1px solid var(--b1);border-radius:999px;background:var(--s1);font-size:11px;font-weight:700;color:var(--t2);cursor:pointer;font-family:inherit;}
 .kalkyle-platform.on,.kalkyle-platform:hover{background:var(--accl);border-color:rgba(25,186,96,.35);color:var(--acc2);}
 .kalkyle-layout{display:grid;grid-template-columns:280px 1fr;gap:14px;min-height:560px;}
@@ -876,10 +901,3 @@ select option{background:var(--s1);}
 .kalkyle-result{margin-top:8px;padding:12px 14px;border:2px solid rgba(31,122,58,.25);border-radius:10px;background:rgba(31,122,58,.06);}
 .kalkyle-result-value{font-size:22px;font-weight:900;color:#1f7a3a;margin-top:4px;}
 .kalkyle-comments{flex:1;min-height:420px;padding:12px;border:1px solid var(--b2);border-radius:10px;background:var(--s2);font-size:12px;line-height:1.55;resize:vertical;font-family:inherit;color:var(--t1);}
-
-@media(max-width:980px){
-  .kalkyle-layout{grid-template-columns:1fr;}
-  .kalkyle-grid{grid-template-columns:1fr;}
-  .kalkyle-comments{min-height:180px;}
-  .kalkyle-autosys-grid{grid-template-columns:1fr;}
-}

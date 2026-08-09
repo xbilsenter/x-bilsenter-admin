@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import useIsMobile from '../useIsMobile.js';
 import { lookupKjoretoy, lookupOmregistreringsavgift, postInnkjopskalkyle, patchInnkjopskalkyle, deleteInnkjopskalkyle } from '../api.js';
 import { KALKYLE_AUKSJON_PLATTFORMER, KALKYLE_ANDRE_KILDER, KALKYLE_KILDER, calcInnkjopspris, formatSvvFargeNavn, isKalkyleAuksjon } from '../constants.js';
 import {
@@ -575,6 +576,8 @@ function KalkyleForm({ form, setForm, onSave, onDelete, onReset, saving, editMod
 }
 
 export default function InnkjopskalkyleView({ items, setItems, visTost, currentUser }) {
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState('list');
   const [platform, setPlatform] = useState(KALKYLE_KILDER[0]);
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState(function () {
@@ -594,18 +597,26 @@ export default function InnkjopskalkyleView({ items, setItems, visTost, currentU
 
   const selected = selectedId ? (items || []).find(function (i) { return i.id === selectedId; }) : null;
 
-  const resetForm = function (auksjonOverride) {
+  useEffect(function () {
+    if (!isMobile) setMobileView('list');
+  }, [isMobile]);
+
+  const resetForm = function (auksjonOverride, options) {
+    const openDetail = options?.openDetail !== false;
     setSelectedId(null);
     setForm({ ...EMPTY_FORM, auksjon: auksjonOverride || platform });
+    if (isMobile) setMobileView(openDetail ? 'detail' : 'list');
   };
 
   const selectItem = function (item) {
     setSelectedId(item.id);
     setForm(formFromItem(item));
+    if (isMobile) setMobileView('detail');
   };
 
   const handlePlatformChange = function (next) {
     setPlatform(next);
+    if (isMobile) setMobileView('list');
     if (!selectedId) {
       setForm(function (prev) {
         const nextForm = { ...prev, auksjon: next };
@@ -657,7 +668,7 @@ export default function InnkjopskalkyleView({ items, setItems, visTost, currentU
     try {
       await deleteInnkjopskalkyle(selectedId);
       setItems(function (prev) { return prev.filter(function (row) { return row.id !== selectedId; }); });
-      resetForm(platform);
+      resetForm(platform, { openDetail: false });
       visTost('Kalkyle slettet ✓');
     } catch (err) {
       visTost(err.message || 'Kunne ikke slette ✗');
@@ -712,7 +723,7 @@ export default function InnkjopskalkyleView({ items, setItems, visTost, currentU
         </div>
       </div>
 
-      <div className="kalkyle-layout">
+      <div className={'kalkyle-layout' + (isMobile && mobileView === 'list' ? ' kalkyle-layout--list' : '') + (isMobile && mobileView === 'detail' ? ' kalkyle-layout--detail' : '')}>
         <aside className="kalkyle-list">
           <div className="kalkyle-list-hd">Lagrede kalkyler · {platform}</div>
           <div className="kalkyle-list-body">
@@ -746,6 +757,11 @@ export default function InnkjopskalkyleView({ items, setItems, visTost, currentU
         </aside>
 
         <div className="kalkyle-main">
+          {isMobile && mobileView === 'detail' && (
+            <div className="kalkyle-mobile-bar">
+              <button type="button" className="btn btn-g btn-sm" onClick={() => setMobileView('list')}>← Tilbake til liste</button>
+            </div>
+          )}
           <KalkyleForm
             form={form}
             setForm={setForm}
