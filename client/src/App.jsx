@@ -1289,7 +1289,7 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
   const [drift, setDrift] = useState(null);
   const [laster, setLaster] = useState(true);
   const [feil, setFeil] = useState('');
-  const kanSeVedlikehold = canViewVedlikehold(currentUser);
+  const kanToggleVedlikehold = canToggleVedlikehold(currentUser);
   const vedlikehold = vedlikeholdModus || DEFAULT_INNSTILLINGER.vedlikeholdModus;
 
   const oppdater = useCallback(async function (stille) {
@@ -1397,7 +1397,7 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
         <button type="button" className="btn btn-g btn-sm" onClick={function () { oppdater(false); }}>
           Oppdater
         </button>
-        {kanSeVedlikehold && (
+        {kanToggleVedlikehold && (
           <button
             type="button"
             className="btn btn-g btn-sm"
