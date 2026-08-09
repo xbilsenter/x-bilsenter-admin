@@ -9699,12 +9699,14 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
           defaultColors={DEFAULT_INNBYTTE_STATUS_FARGER}
           normalizeColors={normalizeInnbytteStatusFarger}
         />
-        <BilSjekklisterEditor
-          statuser={draft.bilStatuser || []}
-          farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
-          sjekklister={draft.bilSjekklister || DEFAULT_BIL_SJEKKLISTER}
-          onChange={v => setDraft(prev => ({ ...prev, bilSjekklister: v }))}
-        />
+        <div className="settings-grid__full">
+          <BilSjekklisterEditor
+            statuser={draft.bilStatuser || []}
+            farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
+            sjekklister={draft.bilSjekklister || DEFAULT_BIL_SJEKKLISTER}
+            onChange={v => setDraft(prev => ({ ...prev, bilSjekklister: v }))}
+          />
+        </div>
           </div>
 
           <div className="settings-stack">
