@@ -3372,10 +3372,14 @@ function autosysRegFromStored(svvData) {
 
 function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
   const initialMerkeOptions = buildMerkeOptions(lists.merker, biler, null);
-  const [f, setF] = useState({
-    reg: '', merke: initialMerkeOptions.includes('Annet') ? 'Annet' : (initialMerkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
-    farge: '', status: lists.bilStatuser[0] || 'Innkjøpt', ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
-    euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null
+  const [f, setF] = useState(function () {
+    const status = lists.bilStatuser[0] || 'Innkjøpt';
+    return {
+      reg: '', merke: initialMerkeOptions.includes('Annet') ? 'Annet' : (initialMerkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
+      farge: '', status, ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
+      euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null,
+      ...initBilSjekklister(status, lists.bilSjekklister)
+    };
   });
   const merkeOptions = buildMerkeOptions(lists.merker, biler, f.merke);
   const [autosysOverstyrt, setAutosysOverstyrt] = useState({});
@@ -3451,6 +3455,24 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
     });
   };
 
+  const handleStatusChange = function (newStatus) {
+    setF(function (prev) {
+      if (newStatus === prev.status) return prev;
+      return { ...prev, ...withStatusChange(prev, newStatus, lists.bilSjekklister) };
+    });
+  };
+
+  const toggleSjekk = function (i) {
+    setF(function (prev) {
+      const list = getAktivSjekkliste(prev);
+      const ny = list.map(function (s, idx) { return idx === i ? { ...s, f: !s.f } : s; });
+      return { ...prev, ...withSjekklisteUpdate(prev, ny) };
+    });
+  };
+
+  const sjekkliste = getAktivSjekkliste(f);
+  const sjekkProg = calcSjekklisteFremdrift(sjekkliste);
+
   return (
     <div className="ov" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
@@ -3487,8 +3509,29 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
         <div className="form-row3 gap">
           <div><div className="fl">Årsmodell</div><input type="number" value={numberInputDisplay(f.aar)} onChange={e => s('aar', parseNumberInput(e.target.value))} /></div>
           <div><div className="fl">Kilometerstand</div><input type="number" value={numberInputDisplay(f.km)} onChange={e => s('km', parseNumberInput(e.target.value))} /></div>
-          <div><div className="fl">Status</div><select value={f.status} onChange={e => s('status', e.target.value)}>{lists.bilStatuser.map(x => <option key={x}>{x}</option>)}</select></div>
+          <div><div className="fl">Status</div><select value={f.status} onChange={e => handleStatusChange(e.target.value)}>{lists.bilStatuser.map(x => <option key={x}>{x}</option>)}</select></div>
         </div>
+        {sjekkliste.length > 0 && (
+          <div className="gap">
+            <div className="modal-sec">Sjekkliste — {f.status} ({sjekkProg.f}/{sjekkProg.t} obligatoriske fullført)</div>
+            <div style={{ marginBottom: 6 }}>
+              <div className="prog-bar" style={{ height: 5 }}>
+                <div className="prog-fill" style={{ width: sjekkProg.pst + '%', height: 5 }} />
+              </div>
+            </div>
+            {sjekkliste.map(function (s, i) {
+              return (
+                <div className="chk-item" key={i}>
+                  <div className={`chk-box${s.f ? ' done' : ''}`} onClick={() => toggleSjekk(i)}>
+                    {s.f && <span style={{ color: '#fff', fontSize: 10, fontWeight: 900 }}>✓</span>}
+                  </div>
+                  <span className={`chk-txt${s.f ? ' done' : ''}`}>{s.t}</span>
+                  {!s.obligatorisk && <span className="chip chip-gray" style={{ fontSize: 9, marginLeft: 6 }}>Frivillig</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="form-row gap">
           <div><div className="fl">Innkjøpspris (kr)</div><input type="number" value={numberInputDisplay(f.innkjop)} onChange={e => s('innkjop', parseNumberInput(e.target.value))} /></div>
           <div><div className="fl">Salgspris (kr)</div><input type="number" value={numberInputDisplay(f.salg)} onChange={e => s('salg', parseNumberInput(e.target.value))} /></div>
@@ -3512,7 +3555,8 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
             salg: numberInputForSave(f.salg),
             tilstandsrapport: normalizeBilTilstandsrapport(f.tilstandsrapport),
             svvData: f.svvData ? mergeAutosysOverstyrtIntoSvvData(f.svvData, autosysOverstyrt) : null,
-            ...initBilSjekklister(f.status || 'Innkjøpt', lists.bilSjekklister),
+            sjekklister: f.sjekklister,
+            sjekkliste: f.sjekkliste,
             logg: f.svvData ? [{
               tekst: 'Hentet fra Autosys',
               dato: new Date().toLocaleString('nb-NO', { timeZone: NORSK_TIDSSONE }),
