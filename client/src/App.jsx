@@ -822,9 +822,11 @@ export default function App() {
     }
   };
 
-  const sendHenvSvar = async (id, svar) => {
+  const sendHenvSvar = async (id, payload) => {
+    const svar = typeof payload === 'string' ? payload : payload?.svar;
+    const kontoId = typeof payload === 'object' ? payload?.kontoId : null;
     try {
-      const res = await sendHenvendelseSvar(id, { svar });
+      const res = await sendHenvendelseSvar(id, { svar, kontoId: kontoId || null });
       if (res.item) setHenv(prev => prev.map(h => h.id === id ? res.item : h));
       visTost('Svar sendt ✓');
       refreshStats();
@@ -5779,7 +5781,7 @@ function HenvModal({ data, onClose, updateHenv, deleteHenv, onSendSvar, visTost,
     if (mailStatus?.smtpConfigured && onSendSvar) {
       setSending(true);
       try {
-        const updated = await onSendSvar(h.id, svar);
+        const updated = await onSendSvar(h.id, { svar, kontoId: sendKonto?.id || null });
         if (updated) {
           setH({
             ...updated,
@@ -6344,7 +6346,8 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
       const updated = await onSendTilbud(inn.id, {
         type: svarType,
         tilbud: svarType === 'tilbud' ? String(tilbud).trim() : undefined,
-        melding: melding.trim()
+        melding: melding.trim(),
+        kontoId: sendKonto?.id || null
       });
       if (updated) {
         const sender = currentUser?.name || currentUser?.username || '';
@@ -6700,7 +6703,8 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
       const updated = await onSendTilbud(inn.id, {
         type: svarType,
         tilbud: svarType === 'tilbud' ? String(tilbud).trim() : undefined,
-        melding: melding.trim()
+        melding: melding.trim(),
+        kontoId: sendKonto?.id || null
       });
       if (updated) {
         const sender = currentUser?.name || currentUser?.username || '';

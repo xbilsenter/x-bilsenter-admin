@@ -32,154 +32,7 @@ function parseEmailList(value) {
 
 const ADMIN_PUBLIC_URL = process.env.ADMIN_PUBLIC_URL || process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8090';
 
-const {
-  decodeHtmlEntities,
-  normalizeOutgoingHtml,
-  MAIL_BODY_PARAGRAPH_STYLE,
-  MAIL_BODY_TEXT_COLOR,
-  prepareSignatureHtmlForSend
-} = require('../shared/mail-html-normalize');
-
-const MAIL_BODY_WRAP_STYLE = `font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:${MAIL_BODY_TEXT_COLOR}`;
-
-function wrapMailBody(html) {
-  return html ? `<div style="${MAIL_BODY_WRAP_STYLE}">${html}</div>` : '';
-}
-
-function wrapMailSignature(html) {
-  return html ? `<div style="margin-top:12px">${html}</div>` : '';
-}
-
-function prepareSignatureHtml(signatur, baseUrl) {
-  const sig = String(signatur || '').trim();
-  if (!sig) return { html: '', plain: '' };
-  if (isHtmlContent(sig)) {
-    const html = prepareSignatureHtmlForSend(absolutizeUploadUrls(sig, baseUrl));
-    return { html: html, plain: htmlToText(html) };
-  }
-  return { html: textToHtml(sig), plain: sig };
-}
-
-function isHtmlContent(value) {
-  return /<[a-z][\s\S]*>/i.test(String(value || ''));
-}
-
-function htmlToText(html) {
-  let out = String(html || '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<\/h[1-6]>/gi, '\n\n')
-    .replace(/<\/tr>/gi, '\n')
-    .replace(/<[^>]+>/g, '');
-
-  out = decodeHtmlEntities(out);
-  out = out.split('\n').map(function (line) {
-    return line.replace(/[ \t]+/g, ' ').trim();
-  }).join('\n');
-  out = out.replace(/\n{3,}/g, '\n\n');
-  return out.trim();
-}
-
-function textToHtml(text) {
-  const escaped = String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  const paragraphs = escaped.split(/\n{2,}/).filter(function (p) { return p.trim(); });
-  if (!paragraphs.length) return '';
-  return paragraphs.map(function (para) {
-    return `<p style="${MAIL_BODY_PARAGRAPH_STYLE};color:${MAIL_BODY_TEXT_COLOR}">${para.replace(/\n/g, '<br>')}</p>`;
-  }).join('');
-}
-
-function absolutizeUploadUrls(html, baseUrl) {
-  const base = String(baseUrl || ADMIN_PUBLIC_URL).replace(/\/$/, '');
-  return String(html || '').replace(/src=["'](\/uploads\/[^"']+)["']/gi, function (_m, path) {
-    return `src="${base}${path}"`;
-  });
-}
-
-const REPLY_QUOTE_MARKER = 'data-xbilsenter-quote="1"';
-
-function findReplyQuoteStart(html) {
-  const str = String(html || '');
-  const idx = str.indexOf(REPLY_QUOTE_MARKER);
-  if (idx === -1) return -1;
-  const start = str.lastIndexOf('<div', idx);
-  return start > -1 ? start : idx;
-}
-
-function splitReplyQuoteHtml(html) {
-  const start = findReplyQuoteStart(html);
-  if (start === -1) {
-    return { userHtml: html || '', quoteHtml: '' };
-  }
-  return {
-    userHtml: String(html).slice(0, start),
-    quoteHtml: String(html).slice(start)
-  };
-}
-
-function prepareMailContent(text, html, signatur, baseUrl, quoteHtml) {
-  const userRaw = normalizeOutgoingHtml(String(html || '').trim());
-  const quoteRaw = normalizeOutgoingHtml(String(quoteHtml || '').trim());
-
-  if (userRaw || quoteRaw) {
-    let userHtml = absolutizeUploadUrls(userRaw, baseUrl);
-    let quotePart = quoteRaw ? absolutizeUploadUrls(quoteRaw, baseUrl) : '';
-
-    if (!quotePart) {
-      const split = splitReplyQuoteHtml(userHtml);
-      userHtml = split.userHtml;
-      quotePart = split.quoteHtml;
-    }
-
-    const userText = htmlToText(userHtml);
-    const quoteText = quotePart ? htmlToText(quotePart) : '';
-    const preparedSig = prepareSignatureHtml(signatur, baseUrl);
-
-    if (!preparedSig.html) {
-      const merged = `${userHtml}${quotePart}`;
-      return {
-        text: htmlToText(merged),
-        html: wrapMailBody(merged)
-      };
-    }
-
-    const userBlock = wrapMailBody(userHtml);
-    const sigBlock = wrapMailSignature(preparedSig.html);
-    const textParts = [userText, preparedSig.plain, quoteText].filter(function (part) {
-      return part && part.trim();
-    });
-
-    return {
-      text: textParts.join('\n\n'),
-      html: `${userBlock}${sigBlock}${quotePart}`
-    };
-  }
-
-  return appendSignature(text, signatur, baseUrl);
-}
-
-function appendSignature(text, signatur, baseUrl) {
-  const body = String(text || '').trimEnd();
-  const preparedSig = prepareSignatureHtml(signatur, baseUrl);
-
-  if (!preparedSig.html) {
-    return {
-      text: body,
-      html: wrapMailBody(textToHtml(body))
-    };
-  }
-
-  const fullText = body ? `${body}\n\n${preparedSig.plain}` : preparedSig.plain;
-  const bodyHtml = wrapMailBody(textToHtml(body));
-  const sigBlock = wrapMailSignature(preparedSig.html);
-  return { text: fullText, html: bodyHtml ? `${bodyHtml}${sigBlock}` : sigBlock };
-}
+const { prepareMailContent } = require('../shared/mail-content');
 
 async function getMailStatus() {
   const kontoer = await getMailKontoer(false);
@@ -262,7 +115,7 @@ function getFromAddress(konto) {
 async function storeOutboundMail(record, attachmentRecords) {
   const sentMappe = await getSentMappeForKonto(record.konto_id);
   const info = await prepare(`
-    INSERT INTO eposter (
+    INSERT OR IGNORE INTO eposter (
       konto_id, mappe_id, message_id, thread_id, in_reply_to, retning,
       fra_navn, fra_epost, til_epost, emne, innhold, innhold_html,
       lest, henvendelse_id, mottatt_dato
@@ -272,7 +125,17 @@ async function storeOutboundMail(record, attachmentRecords) {
       @lest, @henvendelse_id, @mottatt_dato
     )
   `).run({ ...record, mappe_id: sentMappe?.id || null, lest: 1 });
-  const rowId = info.lastInsertRowid;
+
+  let rowId = info.lastInsertRowid;
+  if (!rowId) {
+    const existing = await prepare(`
+      SELECT id FROM eposter WHERE konto_id = ? AND message_id = ?
+    `).get(record.konto_id, record.message_id);
+    rowId = existing?.id || null;
+  }
+  if (!rowId) {
+    throw new Error('Kunne ikke lagre sendt e-post i innboksen.');
+  }
 
   for (const att of attachmentRecords || []) {
     await saveEpostVedlegg(rowId, att);
@@ -388,7 +251,8 @@ async function sendMail(options) {
     throw new Error(formatSmtpError(err, konto));
   });
 
-  const messageId = normalizeMessageId(info.messageId) || `sent-${Date.now()}@local`;
+  const messageId = normalizeMessageId(info.messageId)
+    || `sent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}@local`;
   const storedAttachments = [];
   for (const file of attachments || []) {
     const content = file.content;

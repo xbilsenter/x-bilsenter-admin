@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { uploadSignatureImage } from '../api.js';
 import { normalizeOutgoingHtml } from '../mailHtmlNormalize.js';
+import { buildOutgoingMailPreviewHtml } from '../mailContent.js';
 
 const FONTS = [
   { label: 'Arial', value: 'Arial' },
@@ -60,50 +61,12 @@ export function cleanComposeHtml(html) {
   return normalizeOutgoingHtml(html);
 }
 
-const REPLY_QUOTE_MARKER = 'data-xbilsenter-quote="1"';
-
-function findReplyQuoteStart(html) {
-  const str = String(html || '');
-  const idx = str.indexOf(REPLY_QUOTE_MARKER);
-  if (idx === -1) return -1;
-  const start = str.lastIndexOf('<div', idx);
-  return start > -1 ? start : idx;
-}
-
-function splitReplyQuoteHtml(html) {
-  const start = findReplyQuoteStart(html);
-  if (start === -1) {
-    return { userHtml: html || '', quoteHtml: '' };
-  }
-  return {
-    userHtml: String(html).slice(0, start),
-    quoteHtml: String(html).slice(start)
-  };
-}
-
 export function buildMailPreviewHtml(bodyHtml, signaturHtml, quoteHtml) {
-  const body = expandUploadUrls(cleanComposeHtml(bodyHtml));
-  let quote = expandUploadUrls(quoteHtml || '');
-  const sig = expandUploadUrls(signaturHtml);
-
-  if (!quote && body) {
-    const split = splitReplyQuoteHtml(body);
-    if (split.quoteHtml) {
-      quote = expandUploadUrls(split.quoteHtml);
-    }
-  }
-
-  if (!sig) {
-    return [
-      body ? `<div class="mail-preview-body">${body}</div>` : '',
-      quote ? `<div class="mail-preview-quote">${quote}</div>` : ''
-    ].filter(Boolean).join('');
-  }
-
-  const bodyBlock = body ? `<div class="mail-preview-body">${body}</div>` : '';
-  const sigBlock = `<div class="mail-preview-sig">${sig}</div>`;
-  const quoteBlock = quote ? `<div class="mail-preview-quote">${quote}</div>` : '';
-  return `${bodyBlock}${sigBlock}${quoteBlock}`;
+  return buildOutgoingMailPreviewHtml({
+    html: cleanComposeHtml(bodyHtml),
+    signatur: signaturHtml,
+    quoteHtml: quoteHtml || ''
+  });
 }
 
 export default function MailComposer({ value, onChange, placeholder }) {

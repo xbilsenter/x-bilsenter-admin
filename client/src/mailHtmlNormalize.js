@@ -3,7 +3,7 @@ const MAIL_BODY_TEXT_COLOR = '#000000';
 const SIGNATURE_DEFAULT_LINK_COLOR = '#19BA60';
 const SIGNATURE_DEFAULT_TEXT_COLOR = '#000000';
 
-function decodeHtmlEntities(text) {
+export function decodeHtmlEntities(text) {
   return String(text || '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/g, '&')
@@ -232,3 +232,5 @@ export function prepareSignatureHtmlForSend(html) {
   out = ensureSignatureBlockColors(out);
   return out;
 }
+
+export { MAIL_BODY_PARAGRAPH_STYLE, MAIL_BODY_TEXT_COLOR };

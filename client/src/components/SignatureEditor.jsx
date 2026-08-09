@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { uploadSignatureImage } from '../api.js';
 import { normalizeOutgoingHtml, prepareSignatureHtmlForSend } from '../mailHtmlNormalize.js';
+import { buildOutgoingMailPreviewHtml } from '../mailContent.js';
 
 function escapeHtmlAttr(text) {
   return String(text || '')
@@ -64,17 +65,10 @@ function normalizeUploadUrls(html) {
 }
 
 export function buildSignaturePreviewHtml(bodyText, signaturHtml) {
-  const body = String(bodyText || '').trim();
-  const sig = expandUploadUrls(signaturHtml);
-  if (!sig) {
-    return body
-      ? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${body.replace(/\n/g, '<br>')}</div>`
-      : '';
-  }
-  const bodyHtml = body
-    ? `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;margin-bottom:12px">${body.replace(/\n/g, '<br>')}</div>`
-    : '';
-  return `${bodyHtml}<div class="sig-preview">${sig}</div>`;
+  return buildOutgoingMailPreviewHtml({
+    text: bodyText,
+    signatur: signaturHtml
+  });
 }
 
 export default function SignatureEditor({ value, onChange, accountName, accountEmail }) {
@@ -244,7 +238,7 @@ export default function SignatureEditor({ value, onChange, accountName, accountE
           <div className="mail-signatur-preview__label">Forhåndsvisning</div>
           <div
             className="sig-editor__preview-body"
-            dangerouslySetInnerHTML={{ __html: expandUploadUrls(value) }}
+            dangerouslySetInnerHTML={{ __html: expandUploadUrls(prepareSignatureHtmlForSend(value)) }}
           />
         </div>
       )}
