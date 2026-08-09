@@ -38,6 +38,50 @@ function normalizeListEntry(listOrItem, key) {
   return displayValue(listOrItem);
 }
 
+/** Slå sammen alle handelsbetegnelser — aldri bruk merke som modell. */
+function normalizeHandelsbetegnelse(value, typebetegnelse, merke) {
+  const parts = [];
+
+  function pushPart(text) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    const lower = t.toLowerCase();
+    if (parts.some(function (p) { return p.toLowerCase() === lower; })) return;
+    parts.push(t);
+  }
+
+  if (value != null && value !== '') {
+    if (Array.isArray(value)) {
+      value.forEach(function (item) {
+        if (typeof item === 'string' || typeof item === 'number') {
+          pushPart(item);
+          return;
+        }
+        if (item && typeof item === 'object' && item.handelsbetegnelse != null && item.handelsbetegnelse !== '') {
+          pushPart(item.handelsbetegnelse);
+        }
+      });
+    } else if (typeof value === 'object') {
+      pushPart(value.handelsbetegnelse);
+    } else {
+      pushPart(displayValue(value));
+    }
+  }
+
+  if (parts.length) return parts.join(' ');
+
+  const type = String(typebetegnelse || '').trim();
+  if (!type) return null;
+
+  const brand = String(merke || '').trim();
+  if (brand && type.toLowerCase().startsWith(brand.toLowerCase())) {
+    const stripped = type.slice(brand.length).trim();
+    return stripped || type;
+  }
+
+  return type;
+}
+
 function pick(obj, paths) {
   for (let i = 0; i < paths.length; i++) {
     const val = getAt(obj, paths[i]);
@@ -363,7 +407,11 @@ function parseVehicle(raw) {
   return {
     regNr: regNr ? normalizeRegNr(regNr) : null,
     merke: normalizeListEntry(generelt.merke, 'merke'),
-    modell: normalizeListEntry(generelt.handelsbetegnelse, 'handelsbetegnelse'),
+    modell: normalizeHandelsbetegnelse(
+      generelt.handelsbetegnelse,
+      generelt.typebetegnelse,
+      normalizeListEntry(generelt.merke, 'merke')
+    ),
     variant: ef.variant || normalizeListEntry(generelt.variant, 'variant') || displayValue(generelt.variant),
     versjon: ef.versjon || normalizeListEntry(generelt.versjon, 'versjon') || displayValue(generelt.versjon),
     arsmodell,
@@ -690,6 +738,7 @@ module.exports = {
   lookupVehicleFull,
   normalizeRegNr,
   parseVehicle,
+  normalizeHandelsbetegnelse,
   buildDisplaySections,
   sectionsFromParsed,
   toIsoDateFromNorwegian,
