@@ -25,6 +25,19 @@ function firstItem(list, key) {
   return item?.handelsbetegnelse || item?.merke || item?.kodeBeskrivelse || item?.kodeNavn || null;
 }
 
+/** Vegvesen returnerer ofte både [{ merke: 'X' }] og { merke: 'X' } – normaliser begge. */
+function normalizeListEntry(listOrItem, key) {
+  if (listOrItem == null || listOrItem === '') return null;
+  if (Array.isArray(listOrItem)) return firstItem(listOrItem, key);
+  if (typeof listOrItem === 'object') {
+    if (key && listOrItem[key] != null && listOrItem[key] !== '') {
+      return listOrItem[key];
+    }
+    return codeValue(listOrItem);
+  }
+  return displayValue(listOrItem);
+}
+
 function pick(obj, paths) {
   for (let i = 0; i < paths.length; i++) {
     const val = getAt(obj, paths[i]);
@@ -339,22 +352,25 @@ function parseVehicle(raw) {
     || null;
 
   const arsmodell = generelt.arModell
-    || kg.nasjonalGodkjenning?.nasjonaltGodkjenningsAr
+    || generelt.arsmodell
+    || generelt.aarsmodell
     || lookupOvrigTekniskData(ovrige, 'modellår')
     || lookupOvrigTekniskData(ovrige, 'årsmodell')
+    || lookupOvrigTekniskData(ovrige, 'modellaar')
+    || kg.nasjonalGodkjenning?.nasjonaltGodkjenningsAr
     || null;
 
   return {
     regNr: regNr ? normalizeRegNr(regNr) : null,
-    merke: firstItem(generelt.merke, 'merke'),
-    modell: firstItem(generelt.handelsbetegnelse, 'handelsbetegnelse') || firstItem(generelt.handelsbetegnelse) || generelt.typebetegnelse,
-    variant: ef.variant || firstItem(generelt.variant, 'variant') || displayValue(generelt.variant),
-    versjon: ef.versjon || firstItem(generelt.versjon, 'versjon') || displayValue(generelt.versjon),
+    merke: normalizeListEntry(generelt.merke, 'merke'),
+    modell: normalizeListEntry(generelt.handelsbetegnelse, 'handelsbetegnelse') || generelt.typebetegnelse,
+    variant: ef.variant || normalizeListEntry(generelt.variant, 'variant') || displayValue(generelt.variant),
+    versjon: ef.versjon || normalizeListEntry(generelt.versjon, 'versjon') || displayValue(generelt.versjon),
     arsmodell,
     farge: formatSvvFargeNavn(
-      codeValue(firstItem(karosseri.rFarge, 'kodeNavn'))
-      || codeValue(firstItem(karosseri.rFarge, 'kodeBeskrivelse'))
-      || codeValue(firstItem(karosseri.rFarge))
+      codeValue(normalizeListEntry(karosseri.rFarge, 'kodeNavn'))
+      || codeValue(normalizeListEntry(karosseri.rFarge, 'kodeBeskrivelse'))
+      || codeValue(normalizeListEntry(karosseri.rFarge))
     ),
     drivstoff: codeValue(miljoGruppe.drivstoffKodeMiljodata) || codeValue(drivstoffEntry?.drivstoffKode) || codeValue(drivstoffEntry),
     girkasse: codeValue(motor.girkassetype) || codeValue(firstItem(motor.girkassetype, 'kodeBeskrivelse')),

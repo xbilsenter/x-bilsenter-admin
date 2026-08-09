@@ -2583,23 +2583,18 @@ function BilArsprovekjennemerkeTab({ bil, biler, oppdaterArsprove }) {
 }
 
 function buildAutosysLagring(parsed, raw, lists, prevBil) {
-  const svvPayload = {
-    vehicle: parsed,
-    raw: raw || null,
-    fetchedAt: new Date().toISOString()
-  };
-  const patch = { svvData: svvPayload };
-  const localUpdate = { svvData: svvPayload };
-  const euIso = normalizeEuKontrollDato(parsed.nesteEuKontroll);
-  if (euIso) {
-    patch.euKontroll = euIso;
-    localUpdate.euKontroll = euIso;
-  }
-  const autosysFields = applyAutosysToBilForm(parsed, raw || parsed, lists, prevBil);
-  if (autosysFields.farge) {
-    patch.farge = autosysFields.farge;
-    localUpdate.farge = autosysFields.farge;
-  }
+  const autosysFields = applyAutosysToBilForm(parsed, raw, lists, prevBil);
+  const patch = { svvData: autosysFields.svvData };
+  const localUpdate = { svvData: autosysFields.svvData };
+
+  ['reg', 'merke', 'modell', 'aar', 'farge', 'euKontroll'].forEach(function (key) {
+    const val = autosysFields[key];
+    if (val == null || val === '') return;
+    if (key === 'aar' && !Number(val)) return;
+    patch[key] = val;
+    localUpdate[key] = val;
+  });
+
   return { patch, localUpdate, parsed };
 }
 
@@ -3232,18 +3227,35 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
 }
 
 // ─── NY BIL MODAL ────────────────────────────────────────────────────────────
+function autosysRegFromStored(svvData) {
+  if (!svvData || typeof svvData !== 'object') return '';
+  return normalizeBilReg(
+    svvData.vehicle?.regNr
+    || svvData.regNr
+    || svvData.raw?.kjoretoyId?.kjennemerke
+    || svvData.kjoretoyId?.kjennemerke
+  );
+}
+
 function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
   const v = vehicle || {};
   const merker = buildMerkeOptions(lists.merker, null, v.merke || prev.merke);
+  const aarRaw = v.arsmodell != null ? String(v.arsmodell).trim() : '';
+  const aarParsed = aarRaw ? Number(aarRaw) : NaN;
+
   return {
-    reg: v.regNr || prev.reg,
-    merke: resolveMerkeFromLists(v.merke, merker),
+    reg: v.regNr ? normalizeBilReg(v.regNr) : prev.reg,
+    merke: v.merke ? resolveMerkeFromLists(v.merke, merker) : prev.merke,
     modell: v.modell || prev.modell,
-    aar: Number(v.arsmodell) || prev.aar,
+    aar: Number.isFinite(aarParsed) && aarParsed > 0 ? aarParsed : prev.aar,
     farge: formatSvvFargeNavn(v.farge) || prev.farge,
     euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || prev.euKontroll,
     notater: prev.notater || '',
-    svvData: rawData || v
+    svvData: {
+      vehicle: v,
+      raw: rawData && typeof rawData === 'object' ? rawData : null,
+      fetchedAt: new Date().toISOString()
+    }
   };
 }
 
@@ -3257,6 +3269,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
   const [autosysLoading, setAutosysLoading] = useState(false);
   const [autosysError, setAutosysError] = useState('');
   const [autosysPreview, setAutosysPreview] = useState('');
+  const autosysReqRef = useRef(0);
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const hentAutosys = useCallback(async function (regInput) {
@@ -3267,32 +3280,40 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
       return;
     }
 
-    const savedReg = normalizeBilReg(f.svvData?.regNr || f.svvData?.kjoretoyId?.kjennemerke);
+    const savedReg = autosysRegFromStored(f.svvData);
     if (savedReg && savedReg === reg) return;
 
+    const reqId = ++autosysReqRef.current;
     setAutosysLoading(true);
     setAutosysError('');
     setAutosysPreview('');
     try {
       const data = await lookupKjoretoy(reg);
+      if (reqId !== autosysReqRef.current) return;
+
       const vehicle = data.vehicle;
       if (!vehicle) throw new Error('Fant ingen kjøretøydata.');
       setF(function (prev) {
-        return { ...prev, ...applyAutosysToBilForm(vehicle, data.raw || vehicle, lists, prev) };
+        if (normalizeBilReg(prev.reg) !== reg) return prev;
+        return { ...prev, ...applyAutosysToBilForm(vehicle, data.raw || null, lists, prev) };
       });
       setAutosysPreview([vehicle.merke, vehicle.modell, vehicle.arsmodell].filter(Boolean).join(' '));
       if (visTost) visTost('Autosys-data hentet ✓');
     } catch (err) {
+      if (reqId !== autosysReqRef.current) return;
       setAutosysError(err.message || 'Autosys-oppslag feilet.');
-      setF(function (prev) { return { ...prev, svvData: null }; });
+      setF(function (prev) {
+        if (normalizeBilReg(prev.reg) !== reg) return prev;
+        return { ...prev, svvData: null };
+      });
     } finally {
-      setAutosysLoading(false);
+      if (reqId === autosysReqRef.current) setAutosysLoading(false);
     }
   }, [f.reg, f.svvData, lists, visTost]);
 
   const handleRegBlur = function () {
     const reg = normalizeBilReg(f.reg);
-    if (reg.length < 5) return;
+    if (!isValidBilReg(reg)) return;
     hentAutosys(reg);
   };
 
