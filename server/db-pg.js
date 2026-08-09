@@ -897,7 +897,7 @@ async function saveInnstillinger(partial) {
   if (partial.tilbudEpostMaler && typeof partial.tilbudEpostMaler === 'object') {
     await upsertInnstilling(
       'tilbud_epost_maler',
-      JSON.stringify(normalizeTilbudEpostMaler(partial.tilbudEpostMaler))
+      JSON.stringify(normalizeTilbudEpostMaler(partial.tilbudEpostMaler, { trim: true }))
     );
   }
 

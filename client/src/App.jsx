@@ -1061,9 +1061,13 @@ export default function App() {
                     });
                     refreshStats();
                   }
-                  visTost('Innstillinger lagret ✓');
+                  const tilbudOnly = next.tilbudEpostMaler
+                    && Object.keys(next).length === 1;
+                  if (!tilbudOnly) visTost('Innstillinger lagret ✓');
+                  return res;
                 } catch (err) {
                   visTost(err.message || 'Kunne ikke lagre innstillinger ✗');
+                  throw err;
                 }
               }}
               onModulOppsettChange={(modulOppsett) => setInnstillinger(function (prev) {
@@ -8311,21 +8315,45 @@ const EMPTY_EPOST_MAL = { navn: '', emne: '', html: '' };
 
 function TilbudEpostMalerSection({ maler, onChange, onSave, visTost }) {
   const [saving, setSaving] = useState(false);
-  const normalized = normalizeTilbudEpostMaler(maler);
+  const [localMaler, setLocalMaler] = useState(function () {
+    return normalizeTilbudEpostMaler(maler);
+  });
+  const malerSnapshotRef = useRef('');
+
+  useEffect(function () {
+    const next = normalizeTilbudEpostMaler(maler);
+    const snapshot = JSON.stringify(next);
+    if (snapshot !== malerSnapshotRef.current) {
+      malerSnapshotRef.current = snapshot;
+      setLocalMaler(next);
+    }
+  }, [maler]);
 
   const setMal = (key, value) => {
-    onChange({ ...normalized, [key]: value });
+    setLocalMaler(function (prev) {
+      const next = { ...prev, [key]: value };
+      onChange(next);
+      return next;
+    });
   };
 
   const resetMal = (key) => {
     if (!window.confirm('Tilbakestill denne malen til standardtekst?')) return;
-    onChange({ ...normalized, [key]: DEFAULT_TILBUD_EPOST_MALER[key] });
+    setLocalMaler(function (prev) {
+      const next = { ...prev, [key]: DEFAULT_TILBUD_EPOST_MALER[key] };
+      onChange(next);
+      return next;
+    });
   };
 
   const lagre = async () => {
     setSaving(true);
     try {
-      await onSave();
+      const payload = normalizeTilbudEpostMaler(localMaler, { trim: true });
+      await onSave(payload);
+      malerSnapshotRef.current = JSON.stringify(payload);
+      setLocalMaler(payload);
+      onChange(payload);
       visTost('Tilbudmaler lagret ✓');
     } catch (err) {
       visTost(err.message || 'Kunne ikke lagre tilbudmaler ✗');
@@ -8367,7 +8395,7 @@ function TilbudEpostMalerSection({ maler, onChange, onSave, visTost }) {
               </div>
               <textarea
                 rows={10}
-                value={normalized[def.key] || ''}
+                value={localMaler[def.key] || ''}
                 onChange={e => setMal(def.key, e.target.value)}
                 style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontFamily: 'inherit' }}
               />
@@ -9822,7 +9850,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
           <TilbudEpostMalerSection
             maler={draft.tilbudEpostMaler}
             onChange={(v) => setDraft(function (prev) { return { ...prev, tilbudEpostMaler: v }; })}
-            onSave={() => onSave({ tilbudEpostMaler: draft.tilbudEpostMaler })}
+            onSave={(tilbudEpostMaler) => onSave({ tilbudEpostMaler })}
             visTost={visTost}
           />
           <EpostMalerSection visTost={visTost} />

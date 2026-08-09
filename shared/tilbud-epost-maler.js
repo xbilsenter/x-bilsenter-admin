@@ -81,13 +81,22 @@ function expandInnbytteIntroPlaceholder(text) {
   return String(text || '').replace(/\{\{intro\}\}/g, INNBYTTE_INTRO_MAL);
 }
 
-function normalizeTilbudEpostMaler(input) {
+function normalizeTilbudEpostMaler(input, options) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const fillMissing = opts.fillMissing !== false;
+  const trimValues = opts.trim === true;
+  const expandIntro = opts.expandIntro !== false;
   const src = input && typeof input === 'object' ? input : {};
   const out = {};
   TILBUD_EPOST_MAL_KEYS.forEach(function (key) {
-    let val = String(src[key] != null ? src[key] : DEFAULT_TILBUD_EPOST_MALER[key] || '').trim();
-    if (!val) val = DEFAULT_TILBUD_EPOST_MALER[key];
-    if (key === 'innbytteTilbud' || key === 'innbytteVisning') {
+    const hasOwn = Object.prototype.hasOwnProperty.call(src, key);
+    let val = hasOwn ? String(src[key] != null ? src[key] : '') : '';
+    if (!hasOwn && fillMissing) {
+      val = DEFAULT_TILBUD_EPOST_MALER[key];
+    }
+    if (trimValues) val = val.trim();
+    if (trimValues && !val) val = DEFAULT_TILBUD_EPOST_MALER[key];
+    if (expandIntro && (key === 'innbytteTilbud' || key === 'innbytteVisning')) {
       val = expandInnbytteIntroPlaceholder(val);
     }
     out[key] = val;

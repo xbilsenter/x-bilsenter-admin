@@ -77,13 +77,22 @@ function expandInnbytteIntroPlaceholder(text) {
   return String(text || '').replace(/\{\{intro\}\}/g, INNBYTTE_INTRO_MAL);
 }
 
-export function normalizeTilbudEpostMaler(input) {
+export function normalizeTilbudEpostMaler(input, options) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const fillMissing = opts.fillMissing !== false;
+  const trimValues = opts.trim === true;
+  const expandIntro = opts.expandIntro !== false;
   const src = input && typeof input === 'object' ? input : {};
   const out = {};
   Object.keys(DEFAULT_TILBUD_EPOST_MALER).forEach(function (key) {
-    let val = String(src[key] != null ? src[key] : DEFAULT_TILBUD_EPOST_MALER[key] || '').trim();
-    if (!val) val = DEFAULT_TILBUD_EPOST_MALER[key];
-    if (key === 'innbytteTilbud' || key === 'innbytteVisning') {
+    const hasOwn = Object.prototype.hasOwnProperty.call(src, key);
+    let val = hasOwn ? String(src[key] != null ? src[key] : '') : '';
+    if (!hasOwn && fillMissing) {
+      val = DEFAULT_TILBUD_EPOST_MALER[key];
+    }
+    if (trimValues) val = val.trim();
+    if (trimValues && !val) val = DEFAULT_TILBUD_EPOST_MALER[key];
+    if (expandIntro && (key === 'innbytteTilbud' || key === 'innbytteVisning')) {
       val = expandInnbytteIntroPlaceholder(val);
     }
     out[key] = val;
@@ -145,8 +154,16 @@ function selgBilLabel(inn) {
 }
 
 function pickMal(maler, key) {
-  const normalized = normalizeTilbudEpostMaler(maler);
-  return normalized[key] || DEFAULT_TILBUD_EPOST_MALER[key];
+  const src = maler && typeof maler === 'object' ? maler : {};
+  const raw = src[key];
+  const val = raw != null ? String(raw).trim() : '';
+  if (val) {
+    if (key === 'innbytteTilbud' || key === 'innbytteVisning') {
+      return expandInnbytteIntroPlaceholder(val);
+    }
+    return val;
+  }
+  return DEFAULT_TILBUD_EPOST_MALER[key];
 }
 
 export function buildInnbytteTilbudMelding(inn, tilbudKr, finnMeta, maler) {
