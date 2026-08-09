@@ -342,10 +342,14 @@ async function getAnsvarligNavn(req) {
   return String(user?.name || user?.username || '').trim();
 }
 
-async function resolveBilAnsvarlig(req, body) {
+async function resolveModulAnsvarlig(req, body) {
   if (body && body.ansvarlig !== undefined) return body.ansvarlig;
   const auto = await getAnsvarligNavn(req);
   return auto || null;
+}
+
+async function resolveBilAnsvarlig(req, body) {
+  return resolveModulAnsvarlig(req, body);
 }
 
 async function resolveInnbytteStatus(key) {
@@ -1023,15 +1027,17 @@ app.patch('/api/henvendelser/:id', requireAuth, async function (req, res) {
   }
 
   if (b.kundeId !== undefined) {
-    await prepare('UPDATE henvendelser SET kunde_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(b.kundeId || null, id);
+    const kundeAnsvarlig = await resolveModulAnsvarlig(req, b);
+    await prepare(`
+      UPDATE henvendelser SET
+        kunde_id = ?,
+        ansvarlig = COALESCE(?, ansvarlig),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(b.kundeId || null, kundeAnsvarlig, id);
   }
 
-  let ansvarlig = b.ansvarlig ?? null;
-  if (b.svar != null && b.ansvarlig === undefined) {
-    const auto = await getAnsvarligNavn(req);
-    if (auto) ansvarlig = auto;
-  }
+  const ansvarlig = await resolveModulAnsvarlig(req, b);
 
   await prepare(`
     UPDATE henvendelser SET
@@ -1351,6 +1357,20 @@ app.patch('/api/innboks/:id', requireAuth, async function (req, res) {
     await prepare('UPDATE eposter SET kunde_id = ? WHERE id = ?').run(b.kundeId || null, id);
   }
 
+  const endretUtenAnsvarlig = b.ansvarlig === undefined && (
+    b.lest != null
+    || b.flagged != null
+    || b.henvendelseId != null
+    || b.status != null
+    || b.kundeId !== undefined
+  );
+  if (endretUtenAnsvarlig) {
+    const autoAnsvarlig = await getAnsvarligNavn(req);
+    if (autoAnsvarlig) {
+      await prepare('UPDATE eposter SET ansvarlig = ? WHERE id = ?').run(autoAnsvarlig, id);
+    }
+  }
+
   const fresh = await getEpostRowById(id);
   const items = await mapEpostRowsWithVedlegg([fresh]);
   res.json({ ok: true, item: items[0] });
@@ -1650,8 +1670,14 @@ app.patch('/api/innbytte/:id', requireAuth, async function (req, res) {
 
   const b = req.body || {};
   if (b.kundeId !== undefined) {
-    await prepare('UPDATE innbytte SET kunde_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(b.kundeId || null, id);
+    const kundeAnsvarlig = await resolveModulAnsvarlig(req, b);
+    await prepare(`
+      UPDATE innbytte SET
+        kunde_id = ?,
+        ansvarlig = COALESCE(?, ansvarlig),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(b.kundeId || null, kundeAnsvarlig, id);
   }
 
   let kommentarerJson = null;
@@ -1662,6 +1688,8 @@ app.patch('/api/innbytte/:id', requireAuth, async function (req, res) {
       return res.status(403).json({ ok: false, error: err.message || 'Ugyldig kommentar-endring.' });
     }
   }
+
+  const ansvarlig = await resolveModulAnsvarlig(req, b);
 
   await prepare(`
     UPDATE innbytte SET
@@ -1674,7 +1702,7 @@ app.patch('/api/innbytte/:id', requireAuth, async function (req, res) {
   `).run({
     id,
     status: b.status ?? null,
-    ansvarlig: b.ansvarlig ?? null,
+    ansvarlig,
     tilbud: b.tilbud != null ? String(b.tilbud) : null,
     kommentarer: kommentarerJson
   });
@@ -1798,8 +1826,14 @@ app.patch('/api/selg-bil/:id', requireAuth, async function (req, res) {
 
   const b = req.body || {};
   if (b.kundeId !== undefined) {
-    await prepare('UPDATE selg_bil SET kunde_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .run(b.kundeId || null, id);
+    const kundeAnsvarlig = await resolveModulAnsvarlig(req, b);
+    await prepare(`
+      UPDATE selg_bil SET
+        kunde_id = ?,
+        ansvarlig = COALESCE(?, ansvarlig),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(b.kundeId || null, kundeAnsvarlig, id);
   }
 
   let kommentarerJson = null;
@@ -1810,6 +1844,8 @@ app.patch('/api/selg-bil/:id', requireAuth, async function (req, res) {
       return res.status(403).json({ ok: false, error: err.message || 'Ugyldig kommentar-endring.' });
     }
   }
+
+  const ansvarlig = await resolveModulAnsvarlig(req, b);
 
   await prepare(`
     UPDATE selg_bil SET
@@ -1822,7 +1858,7 @@ app.patch('/api/selg-bil/:id', requireAuth, async function (req, res) {
   `).run({
     id,
     status: b.status ?? null,
-    ansvarlig: b.ansvarlig ?? null,
+    ansvarlig,
     tilbud: b.tilbud != null ? String(b.tilbud) : null,
     kommentarer: kommentarerJson
   });
@@ -2437,6 +2473,8 @@ app.patch('/api/kalender/:id', requireAuth, async function (req, res) {
     await prepare('UPDATE kalender SET kunde_id = ? WHERE id = ?').run(b.kundeId || null, id);
   }
 
+  const ansvarlig = await resolveModulAnsvarlig(req, b);
+
   await prepare(`
     UPDATE kalender SET
       tittel = COALESCE(@tittel, tittel),
@@ -2455,7 +2493,7 @@ app.patch('/api/kalender/:id', requireAuth, async function (req, res) {
     dato: b.dato ?? null,
     tid: b.tid ?? null,
     tid_slutt: b.tidSlutt ?? null,
-    ansvarlig: b.ansvarlig ?? null,
+    ansvarlig,
     bil_ref: b.bilRef ?? null,
     notat: b.notat ?? null
   });
