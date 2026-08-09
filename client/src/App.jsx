@@ -41,6 +41,8 @@ import {
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
   buildMerkeOptions, resolveMerkeFromLists, formatBilFarge,
   buildFullBilModellFromVehicle,
+  BIL_AUTOSYS_FELTER, getBilAutosysOverstyrt, markBilAutosysOverstyrt,
+  mergeAutosysOverstyrtIntoSvvData, buildAutosysBilFelt,
   parseNumberInput, numberInputDisplay, numberInputForSave, BIL_NUMERIC_FIELDS,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader,
@@ -2615,12 +2617,12 @@ function BilArsprovekjennemerkeTab({ bil, biler, oppdaterArsprove }) {
   );
 }
 
-function buildAutosysLagring(parsed, raw, lists, prevBil) {
-  const autosysFields = applyAutosysToBilForm(parsed, raw, lists, prevBil);
+function buildAutosysLagring(parsed, raw, lists, prevBil, overstyrt) {
+  const autosysFields = buildAutosysBilFelt(parsed, raw, lists, prevBil, overstyrt);
   const patch = { svvData: autosysFields.svvData };
   const localUpdate = { svvData: autosysFields.svvData };
 
-  ['reg', 'merke', 'modell', 'aar', 'farge', 'euKontroll'].forEach(function (key) {
+  BIL_AUTOSYS_FELTER.forEach(function (key) {
     const val = autosysFields[key];
     if (val == null || val === '') return;
     if (key === 'aar' && !Number(val)) return;
@@ -2628,10 +2630,10 @@ function buildAutosysLagring(parsed, raw, lists, prevBil) {
     localUpdate[key] = val;
   });
 
-  return { patch, localUpdate, parsed };
+  return { patch, localUpdate, parsed, overstyrt: getBilAutosysOverstyrt(autosysFields.svvData) };
 }
 
-async function hentAutosysPayload(reg, lists, prevBil) {
+async function hentAutosysPayload(reg, lists, prevBil, overstyrt) {
   const normalized = normalizeBilReg(reg);
   if (!isValidBilReg(normalized)) {
     throw new Error('Mangler gyldig registreringsnummer på bilen.');
@@ -2639,39 +2641,52 @@ async function hentAutosysPayload(reg, lists, prevBil) {
   const data = await lookupKjoretoy(normalized);
   const parsed = data.vehicle;
   if (!parsed) throw new Error('Fant ingen kjøretøydata.');
-  return buildAutosysLagring(parsed, data.raw || null, lists, prevBil);
+  return buildAutosysLagring(parsed, data.raw || null, lists, prevBil, overstyrt);
 }
 
 function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
+  const [autosysOverstyrt, setAutosysOverstyrt] = useState(function () {
+    return getBilAutosysOverstyrt(data);
+  });
   const [activeTab, setActiveTab] = useState('informasjon');
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(null);
 
   useEffect(function () {
     setBil(data);
+    setAutosysOverstyrt(getBilAutosysOverstyrt(data));
   }, [data.id]);
 
   const lagreAutosys = useCallback(async function (options) {
     const reg = normalizeBilReg(bil.reg);
-    const result = await hentAutosysPayload(reg, lists, bil);
+    const result = await hentAutosysPayload(reg, lists, bil, autosysOverstyrt);
+    setAutosysOverstyrt(result.overstyrt || {});
     setBil(function (prev) { return { ...prev, ...result.localUpdate }; });
     const saved = await updateBil(bil.id, result.patch, options?.silent ? undefined : 'Autosys-data oppdatert ✓');
-    if (saved) setBil(saved);
+    if (saved) {
+      setBil(saved);
+      setAutosysOverstyrt(getBilAutosysOverstyrt(saved));
+    }
     return result.parsed;
-  }, [bil, lists, updateBil]);
+  }, [bil, lists, updateBil, autosysOverstyrt]);
 
   useEffect(function () {
     const reg = normalizeBilReg(data.reg);
     if (!isValidBilReg(reg)) return;
     if (hasAutosysVehicleData(data.svvData)) return;
 
+    const overstyrt = getBilAutosysOverstyrt(data);
     let cancelled = false;
-    hentAutosysPayload(reg, lists, data).then(async function (result) {
+    hentAutosysPayload(reg, lists, data, overstyrt).then(async function (result) {
       if (cancelled) return;
+      setAutosysOverstyrt(result.overstyrt || {});
       setBil(function (prev) { return { ...prev, ...result.localUpdate }; });
       const saved = await updateBil(data.id, result.patch);
-      if (!cancelled && saved) setBil(saved);
+      if (!cancelled && saved) {
+        setBil(saved);
+        setAutosysOverstyrt(getBilAutosysOverstyrt(saved));
+      }
     }).catch(function () { /* stille bakgrunnshenting */ });
 
     return function () { cancelled = true; };
@@ -2729,8 +2744,32 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     setBil(function (prev) {
       const stored = v;
       const payload = BIL_NUMERIC_FIELDS.has(k) ? numberInputForSave(v) : v;
-      updateBil(prev.id, { [k]: payload }, msg);
-      return { ...prev, [k]: stored };
+      let nextOverstyrt = getBilAutosysOverstyrt(prev, autosysOverstyrt);
+
+      if (k === 'reg') {
+        const fetchedReg = autosysRegFromStored(prev.svvData);
+        if (fetchedReg && normalizeBilReg(payload) !== fetchedReg) {
+          nextOverstyrt = {};
+        } else {
+          nextOverstyrt = markBilAutosysOverstyrt(nextOverstyrt, k);
+        }
+      } else if (BIL_AUTOSYS_FELTER.includes(k)) {
+        nextOverstyrt = markBilAutosysOverstyrt(nextOverstyrt, k);
+      }
+
+      setAutosysOverstyrt(nextOverstyrt);
+
+      const patch = { [k]: payload };
+      if (BIL_AUTOSYS_FELTER.includes(k)) {
+        patch.svvData = mergeAutosysOverstyrtIntoSvvData(prev.svvData, nextOverstyrt);
+      }
+
+      updateBil(prev.id, patch, msg);
+      return {
+        ...prev,
+        [k]: stored,
+        ...(patch.svvData != null ? { svvData: patch.svvData } : {})
+      };
     });
   };
 
@@ -3270,30 +3309,6 @@ function autosysRegFromStored(svvData) {
   );
 }
 
-function applyAutosysToBilForm(vehicle, rawData, lists, prev) {
-  const v = vehicle || {};
-  const fullMerke = String(v.merke || '').trim();
-  const fullModell = buildFullBilModellFromVehicle(v);
-  const merker = buildMerkeOptions(lists.merker, null, fullMerke || prev.merke);
-  const aarRaw = v.arsmodell != null ? String(v.arsmodell).trim() : '';
-  const aarParsed = aarRaw ? Number(aarRaw) : NaN;
-
-  return {
-    reg: v.regNr ? normalizeBilReg(v.regNr) : prev.reg,
-    merke: fullMerke ? resolveMerkeFromLists(fullMerke, merker) : prev.merke,
-    modell: fullModell || prev.modell,
-    aar: Number.isFinite(aarParsed) && aarParsed > 0 ? aarParsed : prev.aar,
-    farge: formatSvvFargeNavn(v.farge) || prev.farge,
-    euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || prev.euKontroll,
-    notater: prev.notater || '',
-    svvData: {
-      vehicle: v,
-      raw: rawData && typeof rawData === 'object' ? rawData : null,
-      fetchedAt: new Date().toISOString()
-    }
-  };
-}
-
 function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
   const initialMerkeOptions = buildMerkeOptions(lists.merker, biler, null);
   const [f, setF] = useState({
@@ -3302,13 +3317,22 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
     euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null
   });
   const merkeOptions = buildMerkeOptions(lists.merker, biler, f.merke);
+  const [autosysOverstyrt, setAutosysOverstyrt] = useState({});
   const [autosysLoading, setAutosysLoading] = useState(false);
   const [autosysError, setAutosysError] = useState('');
   const [autosysPreview, setAutosysPreview] = useState('');
   const autosysReqRef = useRef(0);
-  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const autosysOverstyrtRef = useRef(autosysOverstyrt);
+  autosysOverstyrtRef.current = autosysOverstyrt;
 
-  const hentAutosys = useCallback(async function (regInput) {
+  const s = function (k, v) {
+    if (BIL_AUTOSYS_FELTER.includes(k) && k !== 'reg') {
+      setAutosysOverstyrt(function (prev) { return markBilAutosysOverstyrt(prev, k); });
+    }
+    setF(function (p) { return { ...p, [k]: v }; });
+  };
+
+  const hentAutosys = useCallback(async function (regInput, force) {
     const reg = normalizeBilReg(regInput != null ? regInput : f.reg);
     if (!isValidBilReg(reg)) {
       setAutosysError('Skriv inn et gyldig registreringsnummer.');
@@ -3317,7 +3341,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
     }
 
     const savedReg = autosysRegFromStored(f.svvData);
-    if (savedReg && savedReg === reg) return;
+    if (!force && savedReg && savedReg === reg) return;
 
     const reqId = ++autosysReqRef.current;
     setAutosysLoading(true);
@@ -3331,7 +3355,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
       if (!vehicle) throw new Error('Fant ingen kjøretøydata.');
       setF(function (prev) {
         if (normalizeBilReg(prev.reg) !== reg) return prev;
-        return { ...prev, ...applyAutosysToBilForm(vehicle, data.raw || null, lists, prev) };
+        return { ...prev, ...buildAutosysBilFelt(vehicle, data.raw || null, lists, prev, autosysOverstyrtRef.current) };
       });
       setAutosysPreview([
         String(vehicle.merke || '').trim(),
@@ -3360,6 +3384,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
   const handleRegChange = function (value) {
     setAutosysError('');
     setAutosysPreview('');
+    setAutosysOverstyrt({});
     setF(function (prev) {
       return { ...prev, reg: value.toUpperCase(), svvData: null };
     });
@@ -3379,7 +3404,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
                 onBlur={handleRegBlur}
                 placeholder="AB12345"
               />
-              <button type="button" className="btn btn-g btn-sm" onClick={() => hentAutosys()} disabled={autosysLoading}>
+              <button type="button" className="btn btn-g btn-sm" onClick={() => hentAutosys(undefined, true)} disabled={autosysLoading}>
                 {autosysLoading ? 'Henter…' : 'Hent Autosys'}
               </button>
             </div>
@@ -3426,6 +3451,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
             innkjop: numberInputForSave(f.innkjop),
             salg: numberInputForSave(f.salg),
             tilstandsrapport: normalizeBilTilstandsrapport(f.tilstandsrapport),
+            svvData: f.svvData ? mergeAutosysOverstyrtIntoSvvData(f.svvData, autosysOverstyrt) : null,
             ...initBilSjekklister(f.status || 'Innkjøpt', lists.bilSjekklister),
             logg: f.svvData ? [{
               tekst: 'Hentet fra Autosys',

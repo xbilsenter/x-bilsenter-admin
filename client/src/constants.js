@@ -960,6 +960,64 @@ export function hasAutosysVehicleData(svvData) {
   return !!(vehicle.regNr || vehicle.merke || vehicle.modell || vehicle.registreringsstatus || vehicle.understell);
 }
 
+/** Felt Autosys kan fylle ut på bil — manuelle endringer låses med overstyrt-flagg. */
+export const BIL_AUTOSYS_FELTER = ['reg', 'merke', 'modell', 'aar', 'farge', 'euKontroll'];
+
+export function getBilAutosysOverstyrt(source, explicit) {
+  if (explicit && typeof explicit === 'object') return { ...explicit };
+  const svv = source?.svvData || source;
+  if (svv && typeof svv === 'object' && svv.overstyrt && typeof svv.overstyrt === 'object') {
+    return { ...svv.overstyrt };
+  }
+  return {};
+}
+
+export function markBilAutosysOverstyrt(overstyrt, field) {
+  if (!BIL_AUTOSYS_FELTER.includes(field)) return overstyrt || {};
+  return { ...(overstyrt || {}), [field]: true };
+}
+
+export function mergeAutosysOverstyrtIntoSvvData(svvData, overstyrt) {
+  const o = overstyrt || {};
+  if (!svvData || typeof svvData !== 'object') {
+    return Object.keys(o).length ? { overstyrt: o } : svvData;
+  }
+  return { ...svvData, overstyrt: o };
+}
+
+export function buildAutosysBilFelt(vehicle, rawData, lists, prev, overstyrt) {
+  const v = vehicle || {};
+  const o = getBilAutosysOverstyrt(prev, overstyrt);
+  const fullMerke = String(v.merke || '').trim();
+  const fullModell = buildFullBilModellFromVehicle(v);
+  const merker = buildMerkeOptions(lists.merker, null, fullMerke || prev.merke);
+  const aarRaw = v.arsmodell != null ? String(v.arsmodell).trim() : '';
+  const aarParsed = aarRaw ? Number(aarRaw) : NaN;
+
+  const autosys = {
+    reg: v.regNr ? normalizeBilReg(v.regNr) : prev.reg,
+    merke: fullMerke ? resolveMerkeFromLists(fullMerke, merker) : prev.merke,
+    modell: fullModell || prev.modell,
+    aar: Number.isFinite(aarParsed) && aarParsed > 0 ? aarParsed : prev.aar,
+    farge: formatSvvFargeNavn(v.farge) || prev.farge,
+    euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || prev.euKontroll
+  };
+
+  const result = {};
+  BIL_AUTOSYS_FELTER.forEach(function (key) {
+    result[key] = o[key] ? prev[key] : autosys[key];
+  });
+
+  result.notater = prev.notater || '';
+  result.svvData = mergeAutosysOverstyrtIntoSvvData({
+    vehicle: v,
+    raw: rawData && typeof rawData === 'object' ? rawData : null,
+    fetchedAt: new Date().toISOString()
+  }, o);
+
+  return result;
+}
+
 export const DEFAULT_BIL_ARSPROVEKJENNEMERKE = {
   skiltnummer: '',
   fraDato: '',
