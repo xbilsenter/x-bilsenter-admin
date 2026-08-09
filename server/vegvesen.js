@@ -363,7 +363,7 @@ function parseVehicle(raw) {
   return {
     regNr: regNr ? normalizeRegNr(regNr) : null,
     merke: normalizeListEntry(generelt.merke, 'merke'),
-    modell: normalizeListEntry(generelt.handelsbetegnelse, 'handelsbetegnelse') || generelt.typebetegnelse,
+    modell: normalizeListEntry(generelt.handelsbetegnelse, 'handelsbetegnelse'),
     variant: ef.variant || normalizeListEntry(generelt.variant, 'variant') || displayValue(generelt.variant),
     versjon: ef.versjon || normalizeListEntry(generelt.versjon, 'versjon') || displayValue(generelt.versjon),
     arsmodell,

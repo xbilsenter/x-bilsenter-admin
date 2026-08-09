@@ -435,30 +435,23 @@ export function resolveMerkeFromLists(merke, merker) {
   return normalized;
 }
 
-/** Full modellbetegnelse fra Autosys/Vegvesen (handelsbetegnelse + typebetegnelse osv.). */
+/** Modellbetegnelse fra Autosys/Vegvesen (handelsbetegnelse + typebetegnelse, uten variant/versjon). */
 export function buildFullBilModellFromVehicle(v) {
   if (!v || typeof v !== 'object') return '';
 
-  const parts = [];
-  const candidates = [
-    v.modell,
-    v.typebetegnelse,
-    v.variant,
-    v.versjon
-  ];
+  const handels = String(v.modell || '').trim();
+  const type = String(v.typebetegnelse || '').trim();
 
-  candidates.forEach(function (part) {
-    const text = String(part || '').trim();
-    if (!text) return;
-    const lower = text.toLowerCase();
-    const duplicate = parts.some(function (existing) {
-      const el = existing.toLowerCase();
-      return el === lower || el.includes(lower) || lower.includes(el);
-    });
-    if (!duplicate) parts.push(text);
-  });
+  if (!handels) return type;
+  if (!type) return handels;
 
-  return parts.join(' ');
+  const handelsLower = handels.toLowerCase();
+  const typeLower = type.toLowerCase();
+  if (handelsLower === typeLower || handelsLower.includes(typeLower) || typeLower.includes(handelsLower)) {
+    return handels;
+  }
+
+  return handels + ' ' + type;
 }
 
 export const SFARGE = {
