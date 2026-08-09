@@ -742,6 +742,34 @@ export function tilstandsrapportDelerChips(raw) {
   return chips;
 }
 
+export function tilstandsrapportNodvendigLabels(raw) {
+  const tr = normalizeBilTilstandsrapport(raw);
+  const labels = [];
+  if (tr.stylingDelerNodvendig) labels.push('Styling deler nødvendig');
+  if (tr.reparasjonsdelerNodvendig) labels.push('Reparasjonsdeler nødvendig');
+  if (tr.felglakkeringNodvendig) labels.push('Felglakkering nødvendig');
+  return labels;
+}
+
+export function bilHarTilstandsrapportNodvendig(bil) {
+  if (!bil || bil.archived || bil.status === 'Solgt') return false;
+  return tilstandsrapportNodvendigLabels(bil.tilstandsrapport).length > 0;
+}
+
+export function bilTilstandsrapportNodvendigRader(biler) {
+  const rows = [];
+  (biler || []).forEach(function (bil) {
+    if (!bilHarTilstandsrapportNodvendig(bil)) return;
+    tilstandsrapportNodvendigLabels(bil.tilstandsrapport).forEach(function (label) {
+      rows.push({ bil: bil, label: label });
+    });
+  });
+  return rows.sort(function (a, b) {
+    return String(a.bil.reg || '').localeCompare(String(b.bil.reg || ''), 'nb')
+      || String(a.label).localeCompare(String(b.label), 'nb');
+  });
+}
+
 export function bilManglerTilstandsrapport(bil) {
   if (!bil || bil.archived || bil.status === 'Solgt') return false;
   return normalizeBilTilstandsrapport(bil.tilstandsrapport).status === 'ikke_utfort';

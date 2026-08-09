@@ -40,7 +40,7 @@ import {
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
   buildMerkeOptions, resolveMerkeFromLists, formatBilFarge,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
-  tilstandsrapportDelerChips,
+  tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
   PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk,
@@ -1425,6 +1425,8 @@ function Dashboard({
   const nyeInnbytteListe = (innbytte || []).filter(function (i) { return i.status === 'Ny'; });
   const trMangler = biler.filter(bilManglerTilstandsrapport);
   const trAntall = trMangler.length;
+  const nodvendigRader = bilTilstandsrapportNodvendigRader(biler);
+  const nodvendigAntall = nodvendigRader.length;
   const innbytteColors = innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
 
   const nyeHenvendelserListe = buildNyeHenvendelserItems({
@@ -1505,6 +1507,14 @@ function Dashboard({
       val: trAntall,
       sub: drillSub('tilstandsrapport', trAntall),
       red: trAntall > 0
+    },
+    {
+      key: 'nodvendig',
+      ico: '⚠',
+      lbl: 'Nødvendig på bil',
+      val: nodvendigAntall,
+      sub: drillSub('nodvendig', nodvendigAntall),
+      red: nodvendigAntall > 0
     }
   ];
 
@@ -1650,6 +1660,42 @@ function Dashboard({
                     <td><Badge s={bil.status} colors={bilStatusFarger} /></td>
                     <td>{bil.ansvarlig || '—'}</td>
                     <td><span className="chip chip-red">Ikke utført</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (aktivDrilldown === 'nodvendig') {
+      return (
+        <div className="card table-cards dashboard-drill-panel">
+          <div className="card-h">
+            <span className="card-ht">Nødvendig på bil ({nodvendigAntall})</span>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
+          </div>
+          <table className="table-cards">
+            <thead>
+              <tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th><th>Nødvendig</th></tr>
+            </thead>
+            <tbody>
+              {nodvendigAntall === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen biler har markert nødvendig arbeid akkurat nå.</td></tr>
+              ) : nodvendigRader.map(function (row) {
+                const bil = row.bil;
+                return (
+                  <tr
+                    key={`${bil.id}-${row.label}`}
+                    className="dashboard-drill-row"
+                    onClick={function () { setModal({ t: 'visBil', d: bil }); }}
+                  >
+                    <td><strong>{bil.reg}</strong></td>
+                    <td>{bil.merke} {bil.modell} · {bil.aar || '—'}</td>
+                    <td><Badge s={bil.status} colors={bilStatusFarger} /></td>
+                    <td>{bil.ansvarlig || '—'}</td>
+                    <td><span className="chip chip-red">{row.label}</span></td>
                   </tr>
                 );
               })}
