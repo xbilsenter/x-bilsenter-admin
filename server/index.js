@@ -87,7 +87,7 @@ const {
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
 const { canDeleteBil, resolveRoleKey, permissionDefsWithModulLabels } = require('./db-shared');
-const { readChassisWithOpenAI } = require('./chassis-vision');
+const { readChassisWithOpenAI, getOpenAiApiKey } = require('./chassis-vision');
 
 const {
   lookupVehicleFull,
@@ -2775,7 +2775,7 @@ app.post('/api/kjoretoy/scan-chassis', requireAuth, upload.single('image'), asyn
     return res.status(400).json({ ok: false, error: 'Bilde mangler.' });
   }
 
-  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  const apiKey = getOpenAiApiKey();
   if (!apiKey) {
     return res.status(501).json({
       ok: false,

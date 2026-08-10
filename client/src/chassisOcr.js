@@ -333,6 +333,8 @@ export async function readChassisFromImage(croppedBlob, scanRemote) {
     throw new Error('Ugyldig bildeutsnitt.');
   }
 
+  let visionWarning = '';
+
   if (typeof scanRemote === 'function') {
     try {
       const remote = await scanRemote(croppedBlob);
@@ -341,13 +343,22 @@ export async function readChassisFromImage(croppedBlob, scanRemote) {
         return {
           candidates: remote.candidates,
           best: best?.value || remote.best || '',
-          engine: remote.engine || 'openai'
+          engine: remote.engine || 'openai',
+          visionWarning: ''
         };
       }
     } catch (err) {
-      if (err?.status && err.status !== 501) throw err;
+      if (err?.code === 'VISION_AUTH' || err?.status === 401) {
+        visionWarning = err.message || 'OpenAI-nøkkelen er ugyldig. Sjekk OPENAI_API_KEY i Vercel.';
+      } else if (err?.status !== 501 && err?.code !== 'NO_VISION') {
+        visionWarning = 'AI-visjon feilet. Prøver lokal OCR i stedet.';
+      }
     }
   }
 
-  return readChassisLocally(croppedBlob);
+  const local = await readChassisLocally(croppedBlob);
+  return {
+    ...local,
+    visionWarning
+  };
 }

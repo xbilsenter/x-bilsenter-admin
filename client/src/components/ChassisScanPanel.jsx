@@ -17,6 +17,7 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState('');
   const [ocrEngine, setOcrEngine] = useState('');
+  const [visionWarning, setVisionWarning] = useState('');
   const [chassis, setChassis] = useState('');
   const [candidates, setCandidates] = useState([]);
 
@@ -33,6 +34,7 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
     setShowCrop(false);
     setOcrError('');
     setOcrEngine('');
+    setVisionWarning('');
     setCandidates([]);
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -66,6 +68,7 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
       setCandidates(list);
       setChassis(result.best || '');
       setOcrEngine(result.engine || 'local');
+      setVisionWarning(result.visionWarning || '');
       if (!result.best) {
         setOcrError('Fant ikke tydelig chassisnummer i utsnittet. Juster rammen tettere rundt nummeret, eller skriv inn manuelt.');
         setShowCrop(true);
@@ -132,10 +135,18 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
         <div className="chassis-scan__error">{ocrError}</div>
       )}
 
-      {ocrEngine && !ocrLoading && candidates.length > 0 && (
+      {visionWarning && !ocrLoading && (
+        <div className="chassis-scan__error">{visionWarning}</div>
+      )}
+
+      {ocrEngine && !ocrLoading && candidates.length > 0 && !visionWarning && (
         <div className="chassis-scan__engine">
           {ocrEngine === 'openai' ? 'Lest med AI-visjon' : 'Lest lokalt – kontroller nummeret'}
         </div>
+      )}
+
+      {ocrEngine === 'local' && visionWarning && !ocrLoading && candidates.length > 0 && (
+        <div className="chassis-scan__engine">Lokal OCR brukt som reserve</div>
       )}
 
       <div className="lookup-row" style={{ marginTop: 12 }}>

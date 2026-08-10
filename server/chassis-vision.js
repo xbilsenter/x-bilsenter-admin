@@ -2,6 +2,17 @@
 
 const { normalizeUnderstellsnummer } = require('./vegvesen');
 
+function sanitizeOpenAiApiKey(raw) {
+  let key = String(raw || '').trim();
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith('\'') && key.endsWith('\''))) {
+    key = key.slice(1, -1).trim();
+  }
+  if (/^OPENAI_API_KEY=/i.test(key)) {
+    key = key.replace(/^OPENAI_API_KEY=/i, '').trim();
+  }
+  return key;
+}
+
 function parseVisionJson(content) {
   if (!content) return null;
   try {
@@ -72,7 +83,11 @@ async function readChassisWithOpenAI(imageBuffer, mimeType, apiKey) {
 
   if (!response.ok) {
     const errText = await response.text().catch(function () { return ''; });
-    const error = new Error('Vision-OCR feilet (' + response.status + ').');
+    let message = 'Vision-OCR feilet (' + response.status + ').';
+    if (response.status === 401) {
+      message = 'OpenAI avviste API-nøkkelen (401). Sjekk at OPENAI_API_KEY i Vercel er en gyldig nøkkel som starter med sk-, uten anførselstegn.';
+    }
+    const error = new Error(message);
     error.code = response.status === 401 ? 'VISION_AUTH' : 'VISION_ERROR';
     error.detail = errText.slice(0, 240);
     throw error;
@@ -100,10 +115,16 @@ async function readChassisWithOpenAI(imageBuffer, mimeType, apiKey) {
 }
 
 function isVisionConfigured() {
-  return !!String(process.env.OPENAI_API_KEY || '').trim();
+  return !!sanitizeOpenAiApiKey(process.env.OPENAI_API_KEY);
+}
+
+function getOpenAiApiKey() {
+  return sanitizeOpenAiApiKey(process.env.OPENAI_API_KEY);
 }
 
 module.exports = {
   isVisionConfigured,
+  getOpenAiApiKey,
+  sanitizeOpenAiApiKey,
   readChassisWithOpenAI
 };
