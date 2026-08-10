@@ -807,6 +807,25 @@ export function bilTilstandsrapportNodvendigRader(biler) {
   });
 }
 
+export const TILSTANDSRAPPORT_NODVENDIG_TYPER = [
+  'Styling deler nødvendig',
+  'Reparasjonsdeler nødvendig',
+  'Felglakkering nødvendig',
+  'Lakkering nødvendig',
+  'Lakkstift/lakkboks nødvendig',
+  'Bulkoppretting nødvendig'
+];
+
+export function bilTilstandsrapportNodvendigFilterOptions(biler) {
+  const counts = {};
+  bilTilstandsrapportNodvendigRader(biler).forEach(function (row) {
+    counts[row.label] = (counts[row.label] || 0) + 1;
+  });
+  return TILSTANDSRAPPORT_NODVENDIG_TYPER
+    .filter(function (label) { return counts[label] > 0; })
+    .map(function (label) { return { label: label, count: counts[label] }; });
+}
+
 export function bilManglerTilstandsrapport(bil) {
   if (!bil || bil.archived || bil.status === 'Solgt') return false;
   return normalizeBilTilstandsrapport(bil.tilstandsrapport).status === 'ikke_utfort';

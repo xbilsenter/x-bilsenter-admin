@@ -45,7 +45,7 @@ import {
   mergeAutosysOverstyrtIntoSvvData, buildAutosysBilFelt,
   parseNumberInput, numberInputDisplay, numberInputForSave, kmInputDisplay, kmInputForSave, normalizeKmValue, BIL_NUMERIC_FIELDS,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
-  tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader,
+  tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader, bilTilstandsrapportNodvendigFilterOptions,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
   PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk,
@@ -1421,6 +1421,7 @@ function Dashboard({
   currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger
 }) {
   const [aktivDrilldown, setAktivDrilldown] = useState(null);
+  const [nodvendigFilter, setNodvendigFilter] = useState('Alle');
   const iDagEvt = kal.filter(k => k.dato === IDAG).sort((a, b) => a.tid.localeCompare(b.tid));
   const lagerBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status !== 'Solgt'; });
   const reserverteBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status === 'Reservert'; });
@@ -1429,6 +1430,13 @@ function Dashboard({
   const trAntall = trMangler.length;
   const nodvendigRader = bilTilstandsrapportNodvendigRader(biler);
   const nodvendigAntall = nodvendigRader.length;
+  const nodvendigFilterOptions = useMemo(function () {
+    return bilTilstandsrapportNodvendigFilterOptions(biler);
+  }, [biler]);
+  const filtrerteNodvendigRader = useMemo(function () {
+    if (nodvendigFilter === 'Alle') return nodvendigRader;
+    return nodvendigRader.filter(function (row) { return row.label === nodvendigFilter; });
+  }, [nodvendigRader, nodvendigFilter]);
   const innbytteColors = innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
 
   const nyeHenvendelserListe = buildNyeHenvendelserItems({
@@ -1490,7 +1498,11 @@ function Dashboard({
   };
 
   const toggleDrilldown = function (key) {
-    setAktivDrilldown(function (prev) { return prev === key ? null : key; });
+    setAktivDrilldown(function (prev) {
+      const next = prev === key ? null : key;
+      if (key === 'nodvendig') setNodvendigFilter('Alle');
+      return next;
+    });
   };
 
   const drillSub = function (key, count) {
@@ -1675,9 +1687,35 @@ function Dashboard({
       return (
         <div className="card table-cards dashboard-drill-panel">
           <div className="card-h">
-            <span className="card-ht">Nødvendig på bil ({nodvendigAntall})</span>
+            <span className="card-ht">
+              Nødvendig på bil ({filtrerteNodvendigRader.length}
+              {nodvendigFilter !== 'Alle' ? ` · ${nodvendigFilter}` : ''})
+            </span>
             <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('biler'); }}>Gå til biler →</button>
           </div>
+          {nodvendigAntall > 0 && nodvendigFilterOptions.length > 0 && (
+            <div className="henv-filters dashboard-nodvendig-filters">
+              <button
+                type="button"
+                className={`henv-filter btn btn-sm ${nodvendigFilter === 'Alle' ? 'btn-p' : 'btn-g'}`}
+                onClick={function () { setNodvendigFilter('Alle'); }}
+              >
+                Alle ({nodvendigAntall})
+              </button>
+              {nodvendigFilterOptions.map(function (opt) {
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    className={`henv-filter btn btn-sm ${nodvendigFilter === opt.label ? 'btn-p' : 'btn-g'}`}
+                    onClick={function () { setNodvendigFilter(opt.label); }}
+                  >
+                    {opt.label} ({opt.count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <table className="table-cards">
             <thead>
               <tr><th>Reg.nr</th><th>Bil</th><th>Status</th><th>Ansvarlig</th><th>Nødvendig</th></tr>
@@ -1685,7 +1723,9 @@ function Dashboard({
             <tbody>
               {nodvendigAntall === 0 ? (
                 <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen biler har markert nødvendig arbeid akkurat nå.</td></tr>
-              ) : nodvendigRader.map(function (row) {
+              ) : filtrerteNodvendigRader.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen treff for «{nodvendigFilter}».</td></tr>
+              ) : filtrerteNodvendigRader.map(function (row) {
                 const bil = row.bil;
                 return (
                   <tr
