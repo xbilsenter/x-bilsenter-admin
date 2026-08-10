@@ -1068,6 +1068,19 @@ function saveInnstillinger(partial) {
   return getInnstillinger();
 }
 
+function getLister() {
+  const settings = getInnstillinger();
+  return {
+    ansatte: settings.ansatte,
+    merker: settings.merker,
+    bilStatuser: settings.bilStatuser,
+    henvStatuser: settings.henvStatuser,
+    innbytteStatuser: settings.innbytteStatuser,
+    kalTyper: settings.kalTyper,
+    modulOppsett: settings.modulOppsett
+  };
+}
+
 function seedIfEmpty() {
   const count = db.prepare('SELECT COUNT(*) AS c FROM biler').get().c;
   if (count > 0) return;
@@ -1605,6 +1618,7 @@ module.exports = {
   mapEpost,
   formatDate,
   getInnstillinger,
+  getLister,
   saveInnstillinger,
   syncAllBilerSjekklisterFromMal,
   getMailKontoer,

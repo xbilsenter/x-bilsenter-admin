@@ -212,6 +212,16 @@ function normalizeModulOppsett(list) {
   return result;
 }
 
+function permissionDefsWithModulLabels(modulOppsett) {
+  const labelById = {};
+  normalizeModulOppsett(modulOppsett).forEach(function (mod) {
+    labelById[mod.id] = mod.label;
+  });
+  return PERMISSION_DEFS.map(function (perm) {
+    return { id: perm.id, label: labelById[perm.id] || perm.label };
+  });
+}
+
 function normalizeVedlikeholdModus(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const melding = String(src.melding || DEFAULT_VEDLIKEHOLD.melding).trim()
@@ -632,6 +642,7 @@ module.exports = {
   resolveRoleTemplate,
   canDeleteBil,
   normalizeModulOppsett,
+  permissionDefsWithModulLabels,
   normalizeVedlikeholdModus,
   normalizeBilStatusFarger,
   normalizeHenvStatusFarger,

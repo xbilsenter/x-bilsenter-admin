@@ -86,7 +86,7 @@ const {
   normalizeBilArsprovekjennemerke,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
-const { canDeleteBil, resolveRoleKey } = require('./db-shared');
+const { canDeleteBil, resolveRoleKey, permissionDefsWithModulLabels } = require('./db-shared');
 
 const {
   lookupVehicleFull,
@@ -521,10 +521,11 @@ app.patch('/api/me/password', requireAuth, async function (req, res) {
 });
 
 // ─── Brukere ───
-app.get('/api/brukere/meta', requireAuth, requirePermission('brukere'), function (_req, res) {
+app.get('/api/brukere/meta', requireAuth, requirePermission('brukere'), async function (_req, res) {
+  const settings = await getInnstillinger();
   res.json({
     ok: true,
-    permissions: getPermissionDefs(),
+    permissions: permissionDefsWithModulLabels(settings.modulOppsett),
     roleTemplates: getRoleTemplates()
   });
 });

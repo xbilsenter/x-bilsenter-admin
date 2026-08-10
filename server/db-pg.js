@@ -944,7 +944,8 @@ async function getLister() {
     henvStatusFarger: settings.henvStatusFarger,
     innbytteStatuser: settings.innbytteStatuser,
     innbytteStatusFarger: settings.innbytteStatusFarger,
-    kalTyper: settings.kalTyper
+    kalTyper: settings.kalTyper,
+    modulOppsett: settings.modulOppsett
   };
 }
 
