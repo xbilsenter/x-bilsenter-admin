@@ -317,6 +317,25 @@ export function lookupKjoretoyByUnderstell(understellsnummer) {
   return request(`/kjoretoy?understellsnummer=${value}`);
 }
 
+export async function scanChassisImage(blob) {
+  const token = getToken();
+  const form = new FormData();
+  form.append('image', blob, 'chassis.jpg');
+  const res = await fetch(`${BASE}/kjoretoy/scan-chassis`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form
+  });
+  const data = await res.json().catch(function () { return {}; });
+  if (!res.ok) {
+    const err = new Error(data.error || 'Vision-OCR feilet.');
+    err.status = res.status;
+    err.code = data.code;
+    throw err;
+  }
+  return data;
+}
+
 export function lookupOmregistreringsavgift(regnr, dato) {
   const reg = encodeURIComponent(String(regnr).trim().toUpperCase());
   const params = new URLSearchParams({ regnr: reg });

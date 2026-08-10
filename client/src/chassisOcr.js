@@ -27,12 +27,6 @@ const OCR_CONFUSABLES = {
   Z: ['2']
 };
 
-const OCR_PASS_CONFIGS = [
-  { name: 'line', psm: '7' },
-  { name: 'block', psm: '6' },
-  { name: 'sparse', psm: '11' }
-];
-
 function isStrictVinChar(ch, index) {
   if (!ch || !/[A-Z0-9]/.test(ch)) return false;
   if (/[IOQ]/.test(ch)) return false;
@@ -68,59 +62,50 @@ export function hasValidVinChecksum(value) {
   return vin[8] === expected;
 }
 
-function looksLikeChassis(value) {
-  const text = normalizeChassisInput(value);
-  if (text.length < 11 || text.length > 17) return false;
-  for (let i = 0; i < text.length; i += 1) {
-    if (!isStrictVinChar(text[i], Math.min(i, 8))) return false;
-  }
-  return true;
-}
-
 function generateOcrVariants(value) {
   const text = normalizeChassisInput(value);
-  if (!text) return [];
+  if (!text || text.length !== 17) return [text].filter(Boolean);
 
   const results = new Set([text]);
   const queue = [text];
-  const maxVariants = 48;
-
-  while (queue.length && results.size < maxVariants) {
+  while (queue.length && results.size < 24) {
     const current = queue.shift();
     for (let i = 0; i < current.length; i += 1) {
-      const ch = current[i];
-      const replacements = OCR_CONFUSABLES[ch] || [];
+      const replacements = OCR_CONFUSABLES[current[i]] || [];
       replacements.forEach(function (nextCh) {
         const next = current.slice(0, i) + nextCh + current.slice(i + 1);
         if (results.has(next)) return;
         results.add(next);
-        if (results.size < maxVariants) queue.push(next);
+        queue.push(next);
       });
     }
   }
-
   return Array.from(results);
 }
 
 function addCandidate(map, value, meta) {
   const text = normalizeChassisInput(value);
-  if (!looksLikeChassis(text)) return;
+  if (text.length < 11 || text.length > 17) return;
+
+  let allowed = false;
+  if (text.length === 17 && (isValidVinFormat(text) || hasValidVinChecksum(text))) allowed = true;
+  if (meta.exactToken && text.length >= 11) allowed = true;
+  if (!allowed) return;
 
   const existing = map.get(text) || {
     value: text,
     score: 0,
     validVin: false,
     validChecksum: false,
-    sources: new Set(),
-    ocrConfidence: 0
+    confidence: 0,
+    source: meta.source || 'ocr'
   };
 
   existing.score += meta.score || 0;
   existing.validVin = existing.validVin || isValidVinFormat(text);
   existing.validChecksum = existing.validChecksum || hasValidVinChecksum(text);
-  if (meta.source) existing.sources.add(meta.source);
-  if (meta.confidence > existing.ocrConfidence) existing.ocrConfidence = meta.confidence;
-
+  existing.confidence = Math.max(existing.confidence || 0, Number(meta.confidence) || 0);
+  if (meta.source) existing.source = meta.source;
   map.set(text, existing);
 }
 
@@ -128,43 +113,49 @@ function extractFromChunk(map, chunk, meta) {
   const raw = String(chunk || '').toUpperCase();
   if (!raw) return;
 
-  addCandidate(map, raw.replace(/[^A-Z0-9]/g, ''), meta);
-
-  const compact = raw.replace(/[^A-Z0-9]/g, '');
-  for (let len = 17; len >= 11; len -= 1) {
-    for (let i = 0; i <= compact.length - len; i += 1) {
-      const slice = compact.slice(i, i + len);
-      addCandidate(map, slice, meta);
-      generateOcrVariants(slice).forEach(function (variant) {
-        addCandidate(map, variant, { ...meta, score: (meta.score || 0) + 4 });
+  raw.split(/[^A-Z0-9]+/).filter(Boolean).forEach(function (token) {
+    addCandidate(map, token, { ...meta, exactToken: true });
+    if (token.length === 17) {
+      generateOcrVariants(token).forEach(function (variant) {
+        addCandidate(map, variant, { ...meta, exactToken: true, score: (meta.score || 0) + 20 });
       });
     }
-  }
-
-  raw.split(/\s+/).forEach(function (part) {
-    addCandidate(map, part, meta);
-    generateOcrVariants(part).forEach(function (variant) {
-      addCandidate(map, variant, { ...meta, score: (meta.score || 0) + 4 });
-    });
   });
 
-  const formatted = raw.match(/\b[A-HJ-NPR-Z0-9]{3}\s?[A-HJ-NPR-Z0-9]{5,6}\s?[A-HJ-NPR-Z0-9]{5,8}\b/g);
-  (formatted || []).forEach(function (match) {
-    addCandidate(map, match, { ...meta, score: (meta.score || 0) + 40 });
+  const compact = raw.replace(/[^A-Z0-9]/g, '');
+  for (let i = 0; i <= compact.length - 17; i += 1) {
+    const slice = compact.slice(i, i + 17);
+    if (!isValidVinFormat(slice) && !hasValidVinChecksum(slice)) continue;
+    addCandidate(map, slice, { ...meta, score: (meta.score || 0) + 40 });
+    generateOcrVariants(slice).forEach(function (variant) {
+      addCandidate(map, variant, { ...meta, score: (meta.score || 0) + 35 });
+    });
+  }
+}
+
+function finalizeCandidates(map) {
+  return Array.from(map.values()).map(function (item) {
+    let score = item.score;
+    if (item.validChecksum) score += 1500;
+    else if (item.validVin) score += 700;
+    if (item.confidence >= 85) score += 60;
+    return { ...item, score };
+  }).sort(function (a, b) {
+    return b.score - a.score || b.value.length - a.value.length || a.value.localeCompare(b.value);
   });
 }
 
 export function extractChassisCandidatesFromOcr(data, sourceName) {
   const map = new Map();
-  const baseMeta = { source: sourceName || 'ocr' };
+  const base = { source: sourceName || 'ocr' };
 
-  extractFromChunk(map, data?.text || '', { ...baseMeta, score: 10, confidence: Number(data?.confidence) || 0 });
+  extractFromChunk(map, data?.text || '', { ...base, score: 10, confidence: Number(data?.confidence) || 0 });
 
   (data?.lines || []).forEach(function (line) {
     extractFromChunk(map, line.text || '', {
-      ...baseMeta,
+      ...base,
       source: `${sourceName || 'ocr'}:line`,
-      score: 28,
+      score: 40,
       confidence: Number(line.confidence) || 0
     });
   });
@@ -172,9 +163,9 @@ export function extractChassisCandidatesFromOcr(data, sourceName) {
   (data?.words || []).forEach(function (word) {
     const confidence = Number(word.confidence) || 0;
     extractFromChunk(map, word.text || '', {
-      ...baseMeta,
+      ...base,
       source: `${sourceName || 'ocr'}:word`,
-      score: confidence >= 80 ? 55 : confidence >= 60 ? 35 : 18,
+      score: confidence >= 80 ? 70 : 30,
       confidence
     });
   });
@@ -182,45 +173,9 @@ export function extractChassisCandidatesFromOcr(data, sourceName) {
   return finalizeCandidates(map);
 }
 
-export function extractChassisCandidates(text) {
-  const map = new Map();
-  extractFromChunk(map, text, { source: 'text', score: 10, confidence: 0 });
-  return finalizeCandidates(map);
-}
-
-function finalizeCandidates(map) {
-  const ranked = Array.from(map.values()).map(function (item) {
-    let score = item.score;
-
-    if (item.validChecksum) score += 1200;
-    else if (item.validVin) score += 650;
-    else if (item.value.length === 17) score += 180;
-    else if (item.value.length === 11) score += 40;
-
-    if (item.ocrConfidence >= 85) score += 80;
-    else if (item.ocrConfidence >= 70) score += 40;
-
-    if (/^[A-HJ-NPR-Z0-9]{3}[A-HJ-NPR-Z0-9]{14}$/.test(item.value)) score += 30;
-    if (/[IOQ]/.test(item.value)) score -= 120;
-
-    return {
-      value: item.value,
-      score,
-      validVin: item.validVin,
-      validChecksum: item.validChecksum,
-      confidence: Math.round(item.ocrConfidence),
-      sources: Array.from(item.sources)
-    };
-  }).sort(function (a, b) {
-    return b.score - a.score || b.value.length - a.value.length || a.value.localeCompare(b.value);
-  });
-
-  return ranked;
-}
-
-function loadImageElement(file) {
+function loadImageElement(blob) {
   return new Promise(function (resolve, reject) {
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = function () {
       URL.revokeObjectURL(url);
@@ -235,7 +190,7 @@ function loadImageElement(file) {
 }
 
 function renderCanvas(img, transform) {
-  const targetWidth = Math.min(Math.max(img.width * 2, 1600), 3200);
+  const targetWidth = Math.min(Math.max(img.width * 2, 2200), 3600);
   const scale = targetWidth / img.width;
   const width = Math.round(img.width * scale);
   const height = Math.round(img.height * scale);
@@ -243,6 +198,7 @@ function renderCanvas(img, transform) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(img, 0, 0, width, height);
   transform(ctx, width, height);
   return canvas;
@@ -291,100 +247,107 @@ function invert(data) {
   }
 }
 
-async function buildImageVariants(file) {
-  const img = await loadImageElement(file);
-  const variants = [];
-
-  variants.push(renderCanvas(img, function (ctx, width, height) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    toGray(imageData.data);
-    stretchContrast(imageData.data);
-    ctx.putImageData(imageData, 0, 0);
-  }));
-
-  variants.push(renderCanvas(img, function (ctx, width, height) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    toGray(imageData.data);
-    stretchContrast(imageData.data);
-    threshold(imageData.data, 150);
-    ctx.putImageData(imageData, 0, 0);
-  }));
-
-  variants.push(renderCanvas(img, function (ctx, width, height) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    toGray(imageData.data);
-    stretchContrast(imageData.data);
-    invert(imageData.data);
-    threshold(imageData.data, 140);
-    ctx.putImageData(imageData, 0, 0);
-  }));
-
-  return variants;
+async function buildImageVariants(blob) {
+  const img = await loadImageElement(blob);
+  return [
+    renderCanvas(img, function (ctx, width, height) {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      toGray(imageData.data);
+      stretchContrast(imageData.data);
+      ctx.putImageData(imageData, 0, 0);
+    }),
+    renderCanvas(img, function (ctx, width, height) {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      toGray(imageData.data);
+      stretchContrast(imageData.data);
+      threshold(imageData.data, 145);
+      ctx.putImageData(imageData, 0, 0);
+    }),
+    renderCanvas(img, function (ctx, width, height) {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      toGray(imageData.data);
+      stretchContrast(imageData.data);
+      invert(imageData.data);
+      threshold(imageData.data, 140);
+      ctx.putImageData(imageData, 0, 0);
+    })
+  ];
 }
 
-async function recognizeVariant(worker, image, configName, psm) {
+async function recognizeLocal(worker, image, label) {
   await worker.setParameters({
-    tessedit_pageseg_mode: psm,
+    tessedit_pageseg_mode: '7',
     tessedit_char_whitelist: 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789'
   });
   const result = await worker.recognize(image);
-  return extractChassisCandidatesFromOcr(result?.data || {}, `${configName}:${psm}`);
+  return extractChassisCandidatesFromOcr(result?.data || {}, label);
 }
 
-function mergeCandidateLists(lists) {
-  const map = new Map();
-  lists.forEach(function (list) {
-    (list || []).forEach(function (item) {
-      const existing = map.get(item.value);
-      if (!existing) {
-        map.set(item.value, { ...item, hits: 1 });
-        return;
-      }
-      existing.hits += 1;
-      existing.score += Math.round(item.score * 0.2) + 25;
-      existing.validVin = existing.validVin || item.validVin;
-      existing.validChecksum = existing.validChecksum || item.validChecksum;
-      existing.confidence = Math.max(existing.confidence || 0, item.confidence || 0);
-    });
-  });
-
-  return Array.from(map.values()).sort(function (a, b) {
-    return b.score - a.score || b.value.length - a.value.length || a.value.localeCompare(b.value);
-  });
+function pickBestCandidate(candidates) {
+  return candidates.find(function (item) { return item.validChecksum; })
+    || candidates.find(function (item) { return item.validVin && item.confidence >= 85; })
+    || candidates.find(function (item) { return item.validVin; })
+    || null;
 }
 
-export async function readChassisFromImage(file) {
-  if (!(file instanceof Blob)) {
-    throw new Error('Ugyldig bildefil.');
-  }
-
+async function readChassisLocally(croppedBlob) {
   const { createWorker } = await import('tesseract.js');
-  const worker = await createWorker('eng', 1, {
-    logger: function () { /* stille */ }
-  });
-
+  const worker = await createWorker('eng', 1, { logger: function () {} });
   try {
-    const variants = await buildImageVariants(file);
-    const collected = [];
-
+    const variants = await buildImageVariants(croppedBlob);
+    const lists = [];
     for (let i = 0; i < variants.length; i += 1) {
-      for (let j = 0; j < OCR_PASS_CONFIGS.length; j += 1) {
-        const cfg = OCR_PASS_CONFIGS[j];
-        const found = await recognizeVariant(worker, variants[i], `v${i + 1}-${cfg.name}`, cfg.psm);
-        collected.push(found);
-      }
+      lists.push(await recognizeLocal(worker, variants[i], `local:v${i + 1}`));
     }
 
-    const candidates = mergeCandidateLists(collected);
-    const best = candidates[0] || null;
+    const map = new Map();
+    lists.forEach(function (list) {
+      (list || []).forEach(function (item) {
+        const existing = map.get(item.value);
+        if (!existing) map.set(item.value, { ...item });
+        else {
+          existing.score += item.score + 20;
+          existing.confidence = Math.max(existing.confidence || 0, item.confidence || 0);
+          existing.validVin = existing.validVin || item.validVin;
+          existing.validChecksum = existing.validChecksum || item.validChecksum;
+        }
+      });
+    });
 
+    const candidates = Array.from(map.values()).sort(function (a, b) {
+      return b.score - a.score || b.value.length - a.value.length;
+    });
+    const best = pickBestCandidate(candidates);
     return {
-      text: '',
       candidates,
       best: best?.value || '',
-      bestMeta: best || null
+      engine: 'local'
     };
   } finally {
     await worker.terminate();
   }
+}
+
+export async function readChassisFromImage(croppedBlob, scanRemote) {
+  if (!(croppedBlob instanceof Blob)) {
+    throw new Error('Ugyldig bildeutsnitt.');
+  }
+
+  if (typeof scanRemote === 'function') {
+    try {
+      const remote = await scanRemote(croppedBlob);
+      if (remote?.candidates?.length) {
+        const best = pickBestCandidate(remote.candidates) || remote.candidates[0];
+        return {
+          candidates: remote.candidates,
+          best: best?.value || remote.best || '',
+          engine: remote.engine || 'openai'
+        };
+      }
+    } catch (err) {
+      if (err?.status && err.status !== 501) throw err;
+    }
+  }
+
+  return readChassisLocally(croppedBlob);
 }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { scanChassisImage } from '../api.js';
 import { normalizeChassisInput, readChassisFromImage } from '../chassisOcr.js';
+import ChassisCropEditor from './ChassisCropEditor.jsx';
 
 function candidateLabel(item) {
   if (item.validChecksum) return 'Gyldig VIN';
@@ -9,9 +11,12 @@ function candidateLabel(item) {
 
 export default function ChassisScanPanel({ onLookup, loading, disabled }) {
   const fileRef = useRef(null);
+  const [sourceFile, setSourceFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [showCrop, setShowCrop] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState('');
+  const [ocrEngine, setOcrEngine] = useState('');
   const [chassis, setChassis] = useState('');
   const [candidates, setCandidates] = useState([]);
 
@@ -21,41 +26,25 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
     };
   }, [previewUrl]);
 
-  const resetImage = function () {
+  const resetAll = function () {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setSourceFile(null);
     setPreviewUrl('');
+    setShowCrop(false);
     setOcrError('');
+    setOcrEngine('');
     setCandidates([]);
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const processFile = async function (file) {
-    if (!file) return;
-    resetImage();
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    setOcrLoading(true);
-    setOcrError('');
-    try {
-      const result = await readChassisFromImage(file);
-      const list = result.candidates || [];
-      setCandidates(list);
-      setChassis(result.best || '');
-      if (!result.best) {
-        setOcrError('Fant ikke tydelig chassisnummer i bildet. Prøv nærbilde med god belysning, eller skriv inn manuelt.');
-      }
-    } catch (err) {
-      setOcrError(err.message || 'Kunne ikke lese chassisnummer fra bildet.');
-      setChassis('');
-      setCandidates([]);
-    } finally {
-      setOcrLoading(false);
-    }
-  };
-
   const onFileChange = function (e) {
     const file = e.target.files?.[0];
-    if (file) processFile(file);
+    if (!file) return;
+    resetAll();
+    setSourceFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setShowCrop(true);
+    setChassis('');
   };
 
   const openPicker = function (capture) {
@@ -63,6 +52,30 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
     if (capture) fileRef.current.setAttribute('capture', 'environment');
     else fileRef.current.removeAttribute('capture');
     fileRef.current.click();
+  };
+
+  const runOcr = async function (croppedBlob) {
+    setShowCrop(false);
+    setOcrLoading(true);
+    setOcrError('');
+    setCandidates([]);
+    setChassis('');
+    try {
+      const result = await readChassisFromImage(croppedBlob, scanChassisImage);
+      const list = result.candidates || [];
+      setCandidates(list);
+      setChassis(result.best || '');
+      setOcrEngine(result.engine || 'local');
+      if (!result.best) {
+        setOcrError('Fant ikke tydelig chassisnummer i utsnittet. Juster rammen tettere rundt nummeret, eller skriv inn manuelt.');
+        setShowCrop(true);
+      }
+    } catch (err) {
+      setOcrError(err.message || 'Kunne ikke lese chassisnummer fra bildet.');
+      setShowCrop(true);
+    } finally {
+      setOcrLoading(false);
+    }
   };
 
   const slaOpp = function () {
@@ -90,25 +103,39 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
         <button type="button" className="btn btn-g btn-sm" onClick={() => openPicker(false)} disabled={busy}>
           Last opp bilde
         </button>
-        {previewUrl && (
-          <button type="button" className="btn btn-g btn-sm" onClick={resetImage} disabled={busy}>
-            Fjern bilde
+        {sourceFile && (
+          <button type="button" className="btn btn-g btn-sm" onClick={resetAll} disabled={busy}>
+            Nullstill
           </button>
         )}
       </div>
 
-      {previewUrl && (
+      {showCrop && sourceFile && (
+        <ChassisCropEditor
+          file={sourceFile}
+          onConfirm={runOcr}
+          onCancel={resetAll}
+        />
+      )}
+
+      {!showCrop && previewUrl && (
         <div className="chassis-scan__preview">
           <img src={previewUrl} alt="Chassisnummer" />
         </div>
       )}
 
       {ocrLoading && (
-        <div className="chassis-scan__status">Analyserer bildet og leter etter chassisnummer…</div>
+        <div className="chassis-scan__status">Leser chassisnummer fra utsnittet…</div>
       )}
 
       {ocrError && !ocrLoading && (
         <div className="chassis-scan__error">{ocrError}</div>
+      )}
+
+      {ocrEngine && !ocrLoading && candidates.length > 0 && (
+        <div className="chassis-scan__engine">
+          {ocrEngine === 'openai' ? 'Lest med AI-visjon' : 'Lest lokalt – kontroller nummeret'}
+        </div>
       )}
 
       <div className="lookup-row" style={{ marginTop: 12 }}>
@@ -135,9 +162,9 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
 
       {candidates.length > 0 && (
         <div className="chassis-scan__candidates">
-          <div className="fl">{candidates.length > 1 ? 'Mulige chassisnummer i bildet' : 'Funnet chassisnummer'}</div>
+          <div className="fl">Mulige chassisnummer</div>
           <div className="chassis-scan__candidate-list">
-            {candidates.slice(0, 6).map(function (item) {
+            {candidates.slice(0, 4).map(function (item) {
               return (
                 <button
                   key={item.value}
@@ -158,7 +185,7 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
       )}
 
       <div className="chassis-scan__hint">
-        Systemet leter aktivt etter VIN/chassisnummer i bildet og prioriterer 17-tegns kombinasjoner med gyldig VIN-kontrollsiffer.
+        Marker kun området med chassisnummer før lesing. Systemet foreslår bare VIN-lignende kombinasjoner – ikke annen tekst fra bildet.
       </div>
     </div>
   );

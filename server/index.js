@@ -87,6 +87,7 @@ const {
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
 const { canDeleteBil, resolveRoleKey, permissionDefsWithModulLabels } = require('./db-shared');
+const { readChassisWithOpenAI } = require('./chassis-vision');
 
 const {
   lookupVehicleFull,
@@ -2737,7 +2738,6 @@ app.patch('/api/innstillinger', requireAuth, requirePermission('innstillinger'),
   res.json({ ok: true, settings, biler });
 });
 
-// ─── Vegvesen ───
 app.get('/api/kjoretoy', requireAuth, async function (req, res) {
   const regnr = req.query.regnr || req.query.reg;
   const understellsnummer = req.query.understellsnummer || req.query.chassis || req.query.vin;
@@ -2766,6 +2766,36 @@ app.get('/api/kjoretoy', requireAuth, async function (req, res) {
       ok: false,
       error: err.message,
       code: err.code || 'UPSTREAM_ERROR'
+    });
+  }
+});
+
+app.post('/api/kjoretoy/scan-chassis', requireAuth, upload.single('image'), async function (req, res) {
+  if (!req.file) {
+    return res.status(400).json({ ok: false, error: 'Bilde mangler.' });
+  }
+
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) {
+    return res.status(501).json({
+      ok: false,
+      error: 'AI-visjon er ikke konfigurert på serveren.',
+      code: 'NO_VISION'
+    });
+  }
+
+  try {
+    const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+    if (!buffer) {
+      return res.status(400).json({ ok: false, error: 'Kunne ikke lese bildefil.' });
+    }
+    const result = await readChassisWithOpenAI(buffer, req.file.mimetype || 'image/jpeg', apiKey);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(err.code === 'VISION_AUTH' ? 401 : 502).json({
+      ok: false,
+      error: err.message || 'Vision-OCR feilet.',
+      code: err.code || 'VISION_ERROR'
     });
   }
 });
