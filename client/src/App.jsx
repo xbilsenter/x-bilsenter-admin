@@ -8457,19 +8457,6 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
           </div>
         </div>
       )}
-
-      {biler.some(b => b.svvData) && (
-        <div style={{ marginTop: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--t4)', marginBottom: 10 }}>
-            Biler verifisert via Vegvesen
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {biler.filter(b => b.svvData).map(b => (
-              <span key={b.id} className="chip chip-green">{b.reg} – {b.merke} {b.modell}</span>
-            ))}
-          </div>
-        </div>
-      )}
     </>
   );
 }
