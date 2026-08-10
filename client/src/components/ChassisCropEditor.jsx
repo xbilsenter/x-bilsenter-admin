@@ -90,7 +90,7 @@ export default function ChassisCropEditor({ file, onConfirm, onCancel }) {
     const sy = Math.round(crop.y * img.naturalHeight);
     const sw = Math.max(1, Math.round(crop.w * img.naturalWidth));
     const sh = Math.max(1, Math.round(crop.h * img.naturalHeight));
-    const scale = Math.max(2, 2800 / sw);
+    const scale = Math.max(2.5, 3600 / sw);
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(sw * scale);
