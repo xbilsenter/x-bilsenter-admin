@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { normalizeChassisInput, readChassisFromImage } from '../chassisOcr.js';
 
+function candidateLabel(item) {
+  if (item.validChecksum) return 'Gyldig VIN';
+  if (item.validVin) return '17 tegn';
+  return `${item.value.length} tegn`;
+}
+
 export default function ChassisScanPanel({ onLookup, loading, disabled }) {
   const fileRef = useRef(null);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -32,10 +38,11 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
     setOcrError('');
     try {
       const result = await readChassisFromImage(file);
-      setCandidates(result.candidates || []);
+      const list = result.candidates || [];
+      setCandidates(list);
       setChassis(result.best || '');
       if (!result.best) {
-        setOcrError('Fant ikke chassisnummer i bildet. Skriv inn manuelt eller prøv et tydeligere bilde.');
+        setOcrError('Fant ikke tydelig chassisnummer i bildet. Prøv nærbilde med god belysning, eller skriv inn manuelt.');
       }
     } catch (err) {
       setOcrError(err.message || 'Kunne ikke lese chassisnummer fra bildet.');
@@ -97,7 +104,7 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
       )}
 
       {ocrLoading && (
-        <div className="chassis-scan__status">Leser chassisnummer fra bildet…</div>
+        <div className="chassis-scan__status">Analyserer bildet og leter etter chassisnummer…</div>
       )}
 
       {ocrError && !ocrLoading && (
@@ -126,20 +133,23 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
         </button>
       </div>
 
-      {candidates.length > 1 && (
+      {candidates.length > 0 && (
         <div className="chassis-scan__candidates">
-          <div className="fl">Andre treff i bildet</div>
+          <div className="fl">{candidates.length > 1 ? 'Mulige chassisnummer i bildet' : 'Funnet chassisnummer'}</div>
           <div className="chassis-scan__candidate-list">
-            {candidates.slice(0, 4).map(function (item) {
+            {candidates.slice(0, 6).map(function (item) {
               return (
                 <button
-                  key={item}
+                  key={item.value}
                   type="button"
-                  className={`btn btn-g btn-xs ${chassis === item ? 'btn-p' : ''}`}
-                  onClick={function () { setChassis(item); }}
+                  className={`chassis-scan__candidate ${chassis === item.value ? 'is-active' : ''}`}
+                  onClick={function () { setChassis(item.value); }}
                   disabled={busy}
                 >
-                  {item}
+                  <span className="chassis-scan__candidate-value">{item.value}</span>
+                  <span className={`chassis-scan__candidate-tag ${item.validChecksum ? 'is-valid' : ''}`}>
+                    {candidateLabel(item)}
+                  </span>
                 </button>
               );
             })}
@@ -148,7 +158,7 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
       )}
 
       <div className="chassis-scan__hint">
-        Ta bilde av understellsnummer/chassisnummer på bilen. Kontroller nummeret før oppslag.
+        Systemet leter aktivt etter VIN/chassisnummer i bildet og prioriterer 17-tegns kombinasjoner med gyldig VIN-kontrollsiffer.
       </div>
     </div>
   );

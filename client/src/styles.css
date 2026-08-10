@@ -618,7 +618,12 @@ select option{background:var(--s1);}
 .chassis-scan__status,.chassis-scan__hint{font-size:11px;color:var(--t3);margin-top:10px;line-height:1.5;}
 .chassis-scan__error{font-size:11px;color:var(--red);margin-top:10px;line-height:1.5;background:var(--redl);padding:8px 12px;border-radius:7px;}
 .chassis-scan__candidates{margin-top:12px;}
-.chassis-scan__candidate-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+.chassis-scan__candidate-list{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+.chassis-scan__candidate{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:10px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;color:var(--t1);cursor:pointer;text-align:left;}
+.chassis-scan__candidate.is-active{border-color:var(--p);background:rgba(26,115,232,.08);}
+.chassis-scan__candidate-value{font-family:monospace;font-size:13px;font-weight:800;letter-spacing:1px;word-break:break-all;}
+.chassis-scan__candidate-tag{font-size:10px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;}
+.chassis-scan__candidate-tag.is-valid{color:var(--green);}
 .lookup-row{display:flex;gap:10px;align-items:flex-end;}
 .lookup-row__field{flex:1;min-width:0;}
 .card-h-actions{display:flex;gap:8px;flex-wrap:wrap;}
