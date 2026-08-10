@@ -41,6 +41,7 @@ const {
   countNyeInnkommendeEpost,
   listNyeInnkommendeEpost,
   listUlestEpost,
+  listUlestEpostPreview,
   getEpostUtkastList,
   getEpostUtkastById,
   countEpostUtkast,
@@ -116,6 +117,7 @@ const {
 const { createPreviewToken, PREVIEW_TTL_MS } = require('./preview-access');
 const { getSiteOrigin } = require('./site-origin');
 const { runMailSyncCron } = require('./cron-mail-sync');
+const { getDashboardCache, setDashboardCache } = require('./dashboard-cache');
 const {
   UPLOADS_DIR,
   isRemoteStorageEnabled,
@@ -145,6 +147,23 @@ async function mapEpostRowsWithVedlegg(rows) {
   return rows.map(function (row) {
     return mapEpost(row, byEpostId[row.id] || []);
   });
+}
+
+function mapEpostPreviewRows(rows) {
+  return (rows || []).map(function (row) {
+    const mapped = mapEpost(row, []);
+    mapped.innhold = '';
+    mapped.innholdHtml = '';
+    return mapped;
+  });
+}
+
+async function waitForDbReady(maxMs) {
+  const timeoutMs = Number(maxMs || 8000);
+  await Promise.race([
+    dbReady,
+    new Promise(function (resolve) { setTimeout(resolve, timeoutMs); })
+  ]);
 }
 
 async function getEpostRowById(id) {
@@ -669,63 +688,66 @@ app.post('/api/drift/finn-refresh', requireAuth, requirePermission('innstillinge
 });
 
 app.get('/api/dashboard', requireAuth, async function (_req, res) {
-  const idag = new Date().toISOString().slice(0, 10);
-  const [
-    nyeHenvRow,
-    nyeInnbytteRow,
-    nyeSelgBilRow,
-    paaLagerRow,
-    reservertRow,
-    iDagKalRow,
-    biler,
-    ulestEpost,
-    nyeInnkommendeEpost,
-    nyeInnkommendeEpostRows,
-    ulestEpostRows,
-    totaltKunderRow
-  ] = await Promise.all([
-    prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
-    prepare("SELECT COUNT(*) AS c FROM innbytte WHERE status = 'Ny'").get(),
-    prepare("SELECT COUNT(*) AS c FROM selg_bil WHERE status = 'Ny'").get(),
-    prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status NOT IN ('Solgt')").get(),
-    prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status = 'Reservert'").get(),
-    prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
-    prepare('SELECT status, sjekkliste, sjekklister FROM biler WHERE archived = 0 AND status NOT IN (\'Solgt\')').all(),
-    countUlestEpost(),
-    countNyeInnkommendeEpost(),
-    listNyeInnkommendeEpost(50),
-    listUlestEpost(50),
-    prepare('SELECT COUNT(*) AS c FROM kunder').get()
-  ]);
+  const cached = getDashboardCache();
+  if (cached) {
+    return res.json(cached);
+  }
 
-  const nyeInnkommendeEpostListe = await mapEpostRowsWithVedlegg(nyeInnkommendeEpostRows || []);
-  const ulestEpostListe = await mapEpostRowsWithVedlegg(ulestEpostRows || []);
+  try {
+    await waitForDbReady(8000);
 
-  let aapneOppgaver = 0;
-  biler.forEach(function (b) {
-    try {
-      const list = getAktivSjekklisteFromRow(b, parseBilSjekklisterObject(b));
-      aapneOppgaver += list.filter(function (x) { return x.obligatorisk && !x.f; }).length;
-    } catch (_e) { /* ignore */ }
-  });
+    const idag = new Date().toISOString().slice(0, 10);
+    const [
+      nyeHenvRow,
+      nyeInnbytteRow,
+      nyeSelgBilRow,
+      paaLagerRow,
+      reservertRow,
+      iDagKalRow,
+      ulestEpost,
+      nyeInnkommendeEpost,
+      ulestEpostRows,
+      totaltKunderRow
+    ] = await Promise.all([
+      prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
+      prepare("SELECT COUNT(*) AS c FROM innbytte WHERE status = 'Ny'").get(),
+      prepare("SELECT COUNT(*) AS c FROM selg_bil WHERE status = 'Ny'").get(),
+      prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status NOT IN ('Solgt')").get(),
+      prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status = 'Reservert'").get(),
+      prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
+      countUlestEpost(),
+      countNyeInnkommendeEpost(),
+      listUlestEpostPreview(25),
+      prepare('SELECT COUNT(*) AS c FROM kunder').get()
+    ]);
 
-  res.json({
-    ok: true,
-    stats: {
-      nyeHenv: Number(nyeHenvRow.c) || 0,
-      nyeInnbytte: Number(nyeInnbytteRow.c) || 0,
-      nyeSelgBil: Number(nyeSelgBilRow.c) || 0,
-      paaLager: Number(paaLagerRow.c) || 0,
-      reservert: Number(reservertRow.c) || 0,
-      iDagKal: Number(iDagKalRow.c) || 0,
-      aapneOppgaver,
-      ulestEpost: Number(ulestEpost) || 0,
-      nyeInnkommendeEpost: Number(nyeInnkommendeEpost) || 0,
-      nyeInnkommendeEpostListe,
-      ulestEpostListe,
-      totaltKunder: Number(totaltKunderRow.c) || 0
-    }
-  });
+    const ulestEpostListe = mapEpostPreviewRows(ulestEpostRows || []);
+
+    const payload = {
+      ok: true,
+      stats: {
+        nyeHenv: Number(nyeHenvRow.c) || 0,
+        nyeInnbytte: Number(nyeInnbytteRow.c) || 0,
+        nyeSelgBil: Number(nyeSelgBilRow.c) || 0,
+        paaLager: Number(paaLagerRow.c) || 0,
+        reservert: Number(reservertRow.c) || 0,
+        iDagKal: Number(iDagKalRow.c) || 0,
+        ulestEpost: Number(ulestEpost) || 0,
+        nyeInnkommendeEpost: Number(nyeInnkommendeEpost) || 0,
+        ulestEpostListe,
+        totaltKunder: Number(totaltKunderRow.c) || 0
+      }
+    };
+
+    setDashboardCache(payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('GET /api/dashboard feilet:', err.message);
+    res.status(503).json({
+      ok: false,
+      error: 'Dashboard utilgjengelig midlertidig. Prøv igjen om litt.'
+    });
+  }
 });
 
 // ─── Offentlig (nettside) ───

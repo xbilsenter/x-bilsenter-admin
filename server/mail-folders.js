@@ -183,6 +183,9 @@ async function ensureMailFoldersSchema() {
       ALTER TABLE public.eposter ADD COLUMN IF NOT EXISTS slettet BOOLEAN NOT NULL DEFAULT FALSE;
       CREATE INDEX IF NOT EXISTS idx_eposter_mappe ON public.eposter (mappe_id, mottatt_dato DESC);
       CREATE INDEX IF NOT EXISTS idx_eposter_thread ON public.eposter (konto_id, thread_id);
+      CREATE INDEX IF NOT EXISTS idx_eposter_inn_ulest_dashboard
+        ON public.eposter (mottatt_dato DESC, id DESC)
+        WHERE retning = 'inn' AND lest = false AND slettet = false;
     `);
     return;
   }
