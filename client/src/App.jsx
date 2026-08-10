@@ -2571,6 +2571,22 @@ function BilTilstandsrapportSeksjon({ tilstandsrapport, onChange }) {
             />
             Bulkoppretting utført
           </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.chromeDeleteNodvendig}
+              onChange={function (e) { patch({ chromeDeleteNodvendig: e.target.checked }); }}
+            />
+            Chrome delete nødvendig
+          </label>
+          <label className="tilstandsrapport-check">
+            <input
+              type="checkbox"
+              checked={tr.chromeDeleteUtfort}
+              onChange={function (e) { patch({ chromeDeleteUtfort: e.target.checked }); }}
+            />
+            Chrome delete utført
+          </label>
         </div>
       </div>
     </div>

@@ -731,7 +731,9 @@ export const DEFAULT_BIL_TILSTANDSRAPPORT = {
   lakkstiftLakkboksNodvendig: false,
   lakkstiftLakkboksUtfort: false,
   bulkopprettingNodvendig: false,
-  bulkopprettingUtfort: false
+  bulkopprettingUtfort: false,
+  chromeDeleteNodvendig: false,
+  chromeDeleteUtfort: false
 };
 
 export function normalizeBilTilstandsrapport(raw) {
@@ -754,7 +756,9 @@ export function normalizeBilTilstandsrapport(raw) {
     lakkstiftLakkboksNodvendig: !!o.lakkstiftLakkboksNodvendig,
     lakkstiftLakkboksUtfort: !!o.lakkstiftLakkboksUtfort,
     bulkopprettingNodvendig: !!o.bulkopprettingNodvendig,
-    bulkopprettingUtfort: !!o.bulkopprettingUtfort
+    bulkopprettingUtfort: !!o.bulkopprettingUtfort,
+    chromeDeleteNodvendig: !!o.chromeDeleteNodvendig,
+    chromeDeleteUtfort: !!o.chromeDeleteUtfort
   };
 }
 
@@ -773,6 +777,8 @@ export function tilstandsrapportDelerChips(raw) {
   if (tr.lakkstiftLakkboksUtfort) chips.push({ label: 'Lakkstift/lakkboks utført', tone: 'green' });
   if (tr.bulkopprettingNodvendig) chips.push({ label: 'Bulkoppretting nødvendig', tone: 'red' });
   if (tr.bulkopprettingUtfort) chips.push({ label: 'Bulkoppretting utført', tone: 'green' });
+  if (tr.chromeDeleteNodvendig) chips.push({ label: 'Chrome delete nødvendig', tone: 'red' });
+  if (tr.chromeDeleteUtfort) chips.push({ label: 'Chrome delete utført', tone: 'green' });
   return chips;
 }
 
@@ -785,6 +791,7 @@ export function tilstandsrapportNodvendigLabels(raw) {
   if (tr.lakkeringNodvendig) labels.push('Lakkering nødvendig');
   if (tr.lakkstiftLakkboksNodvendig) labels.push('Lakkstift/lakkboks nødvendig');
   if (tr.bulkopprettingNodvendig) labels.push('Bulkoppretting nødvendig');
+  if (tr.chromeDeleteNodvendig) labels.push('Chrome delete nødvendig');
   return labels;
 }
 
@@ -813,7 +820,8 @@ export const TILSTANDSRAPPORT_NODVENDIG_TYPER = [
   'Felglakkering nødvendig',
   'Lakkering nødvendig',
   'Lakkstift/lakkboks nødvendig',
-  'Bulkoppretting nødvendig'
+  'Bulkoppretting nødvendig',
+  'Chrome delete nødvendig'
 ];
 
 export function bilTilstandsrapportNodvendigFilterOptions(biler) {
