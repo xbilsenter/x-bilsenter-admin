@@ -1088,6 +1088,23 @@ export function parseNumberInput(raw) {
   return Number.isFinite(n) ? n : '';
 }
 
+export function normalizeKmValue(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return n;
+}
+
+export function kmInputDisplay(value) {
+  const km = normalizeKmValue(value);
+  return km === '' ? '' : km;
+}
+
+export function kmInputForSave(value) {
+  const km = normalizeKmValue(value);
+  return km === '' ? 0 : km;
+}
+
 export function numberInputDisplay(value) {
   if (value === '' || value === null || value === undefined) return '';
   return value;

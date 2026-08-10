@@ -43,7 +43,7 @@ import {
   buildFullBilModellFromVehicle,
   BIL_AUTOSYS_FELTER, getBilAutosysOverstyrt, markBilAutosysOverstyrt,
   mergeAutosysOverstyrtIntoSvvData, buildAutosysBilFelt,
-  parseNumberInput, numberInputDisplay, numberInputForSave, BIL_NUMERIC_FIELDS,
+  parseNumberInput, numberInputDisplay, numberInputForSave, kmInputDisplay, kmInputForSave, normalizeKmValue, BIL_NUMERIC_FIELDS,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
@@ -178,7 +178,13 @@ function svvFarge(c) {
 
 function fmtKm(km) {
   const n = Number(km);
-  return Number.isFinite(n) ? n.toLocaleString('nb-NO') : String(km || '—');
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return n.toLocaleString('nb-NO');
+}
+
+function fmtKmLabel(km) {
+  const formatted = fmtKm(km);
+  return formatted ? `${formatted} km` : '';
 }
 
 function matchesBilRef(ref, reg) {
@@ -423,7 +429,12 @@ export default function App() {
     try {
       await Promise.all([
         safeLoad(getBiler, (b) => setBiler((b.items || []).map(function (item) {
-          return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
+          return {
+            ...item,
+            id: normalizeBilId(item.id),
+            sortOrder: Number(item.sortOrder ?? 0),
+            km: normalizeKmValue(item.km)
+          };
         }))),
         safeLoad(getLister, (l) => {
           if (l.lists) {
@@ -2010,7 +2021,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
       >
         <div className="bil-reg">{bil.reg}</div>
         <div className="bil-name">{bil.merke} {bil.modell}</div>
-        <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge)}</div>
+        <div className="bil-sub">{bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · {formatBilFarge(bil.farge)}</div>
         {sisteSjekk ? (
           <div className="bil-card__siste-sjekk" title="Siste fullførte sjekkliste-punkt">
             {sisteSjekk}
@@ -2061,7 +2072,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
             <div className="bil-reg">{bil.reg}</div>
             <div className="bil-name">{bil.merke} {bil.modell}</div>
           </div>
-          <div className="bil-pipeline-meta">{bil.aar} · {fmtKm(bil.km)} km · {formatBilFarge(bil.farge) || '—'}</div>
+          <div className="bil-pipeline-meta">{bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · {formatBilFarge(bil.farge) || '—'}</div>
           <div className="bil-pipeline-prog">
             {sisteSjekk ? (
               <div className="bil-pipeline-siste-sjekk" title="Siste fullførte sjekkliste-punkt">
@@ -2236,7 +2247,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
                     </div>
                     <div className="bil-name">{bil.merke} {bil.modell}</div>
                     <div className="bil-sub">
-                      {bil.aar} · {fmtKm(bil.km)} km · {bil.status}
+                      {bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · {bil.status}
                       {(bil.dokumenter || []).length > 0 ? ` · ${bil.dokumenter.length} dokument${bil.dokumenter.length === 1 ? '' : 'er'}` : ''}
                     </div>
                   </div>
@@ -2278,7 +2289,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
                       <Badge s={bil.status} />
                     </div>
                     <div className="bil-name">{bil.merke} {bil.modell}</div>
-                    <div className="bil-sub">{bil.aar} · {fmtKm(bil.km)} km · Arkivert {archivedLabel}</div>
+                    <div className="bil-sub">{bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · Arkivert {archivedLabel}</div>
                   </div>
                   <div className="bil-arkiv-actions">
                     <button type="button" className="btn btn-g btn-sm" onClick={() => openBil(bil)}>Åpne</button>
@@ -3051,7 +3062,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                 </div>
                 <div>
                   <div className="fl">Kilometerstand</div>
-                  <input type="number" value={numberInputDisplay(bil.km)} onChange={e => oppdater('km', parseNumberInput(e.target.value))} />
+                  <input type="number" value={kmInputDisplay(bil.km)} onChange={e => oppdater('km', parseNumberInput(e.target.value))} />
                 </div>
               </div>
               <div className="gap">
@@ -3391,7 +3402,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
   const [f, setF] = useState(function () {
     const status = lists.bilStatuser[0] || 'Innkjøpt';
     return {
-      reg: '', merke: initialMerkeOptions.includes('Annet') ? 'Annet' : (initialMerkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: 0, innkjop: 0, salg: 0,
+      reg: '', merke: initialMerkeOptions.includes('Annet') ? 'Annet' : (initialMerkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: '', innkjop: 0, salg: 0,
       farge: '', status, ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
       euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null,
       ...initBilSjekklister(status, lists.bilSjekklister)
@@ -3524,7 +3535,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
         </div>
         <div className="form-row3 gap">
           <div><div className="fl">Årsmodell</div><input type="number" value={numberInputDisplay(f.aar)} onChange={e => s('aar', parseNumberInput(e.target.value))} /></div>
-          <div><div className="fl">Kilometerstand</div><input type="number" value={numberInputDisplay(f.km)} onChange={e => s('km', parseNumberInput(e.target.value))} /></div>
+          <div><div className="fl">Kilometerstand</div><input type="number" value={kmInputDisplay(f.km)} onChange={e => s('km', parseNumberInput(e.target.value))} placeholder="" /></div>
           <div><div className="fl">Status</div><select value={f.status} onChange={e => handleStatusChange(e.target.value)}>{lists.bilStatuser.map(x => <option key={x}>{x}</option>)}</select></div>
         </div>
         {sjekkliste.length > 0 && (
@@ -3566,7 +3577,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
           <button type="button" className="btn btn-p" onClick={() => f.reg && f.modell && onSave({
             ...f,
             aar: numberInputForSave(f.aar),
-            km: numberInputForSave(f.km),
+            km: kmInputForSave(f.km),
             innkjop: numberInputForSave(f.innkjop),
             salg: numberInputForSave(f.salg),
             tilstandsrapport: normalizeBilTilstandsrapport(f.tilstandsrapport),
@@ -6411,7 +6422,7 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{inn.navn}</div>
               <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>
-                {inn.merke} {inn.modell} {inn.aar} · {fmtKm(inn.km)} km · {inn.reg}
+                {inn.merke} {inn.modell} {inn.aar}{fmtKmLabel(inn.km) ? ` · ${fmtKmLabel(inn.km)}` : ''} · {inn.reg}
               </div>
             </div>
             <div className="inb-card__actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -6483,7 +6494,7 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{inn.navn}</div>
               <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>
-                {inn.merke} {inn.modell} {inn.aar} · {fmtKm(inn.km)} km · {inn.reg}
+                {inn.merke} {inn.modell} {inn.aar}{fmtKmLabel(inn.km) ? ` · ${fmtKmLabel(inn.km)}` : ''} · {inn.reg}
               </div>
             </div>
             <div className="inb-card__actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -6617,7 +6628,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
               Oppkjøp · {inn.merke} {inn.modell} {inn.aar}
             </div>
             <div className="inb-modal__meta">
-              {inn.navn} · {inn.reg} · {fmtKm(inn.km)} km · mottatt {inn.dato}
+              {inn.navn} · {inn.reg}{fmtKmLabel(inn.km) ? ` · ${fmtKmLabel(inn.km)}` : ''} · mottatt {inn.dato}
             </div>
           </div>
           <Badge s={inn.status} colors={statusColors} />
@@ -6974,7 +6985,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
               Innbytte · {inn.merke} {inn.modell} {inn.aar}
             </div>
             <div className="inb-modal__meta">
-              {inn.navn} · {inn.reg} · {fmtKm(inn.km)} km · mottatt {inn.dato}
+              {inn.navn} · {inn.reg}{fmtKmLabel(inn.km) ? ` · ${fmtKmLabel(inn.km)}` : ''} · mottatt {inn.dato}
             </div>
           </div>
           <Badge s={inn.status} colors={innbytteColors} />
@@ -8272,7 +8283,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
       merke: fullMerke ? resolveMerkeFromLists(fullMerke, merkeOptions) : 'Ukjent',
       modell: fullModell || 'Ukjent',
       aar: Number(v.arsmodell) || 0,
-      km: 0,
+      km: '',
       innkjop: 0,
       salg: 0,
       farge: v.farge || 'Ukjent',

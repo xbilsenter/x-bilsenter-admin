@@ -44,7 +44,8 @@ const {
   normalizeBilArsprovekjennemerke,
   normalizeMerkerList,
   nyeInnkommendeEpostSince,
-  epostThreadKeySql
+  epostThreadKeySql,
+  normalizeKmField
 } = require('./db-shared');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
@@ -986,7 +987,7 @@ function mapInnbytte(row) {
     merke: row.merke,
     modell: row.modell,
     aar: row.arsmodell,
-    km: row.kilometerstand ? Number(row.kilometerstand) || row.kilometerstand : 0,
+    km: normalizeKmField(row.kilometerstand ? Number(row.kilometerstand) || row.kilometerstand : row.kilometerstand),
     tilstand: row.servicehistorikk || '—',
     servicehistorikk: row.servicehistorikk || '',
     sisteService: row.siste_service || '',
@@ -1020,7 +1021,7 @@ function mapSelgBil(row) {
     merke: row.merke,
     modell: row.modell,
     aar: row.arsmodell,
-    km: row.kilometerstand ? Number(row.kilometerstand) || row.kilometerstand : 0,
+    km: normalizeKmField(row.kilometerstand ? Number(row.kilometerstand) || row.kilometerstand : row.kilometerstand),
     tilstand: row.servicehistorikk || '—',
     servicehistorikk: row.servicehistorikk || '',
     sisteService: row.siste_service || '',
@@ -1064,7 +1065,7 @@ function mapBil(row, kundeIds, malPerStatus) {
     merke: row.merke,
     modell: row.modell,
     aar: row.aar,
-    km: row.km,
+    km: normalizeKmField(row.km),
     innkjop: row.innkjop,
     salg: row.salg,
     farge: formatSvvFargeNavn(row.farge) || '',

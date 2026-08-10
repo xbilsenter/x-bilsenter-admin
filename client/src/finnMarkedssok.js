@@ -19,7 +19,8 @@ export function canFinnMarkedsSok(inn) {
 
 export function fmtKm(km) {
   const n = Number(km);
-  return Number.isFinite(n) ? n.toLocaleString('nb-NO') : String(km || '—');
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return n.toLocaleString('nb-NO');
 }
 
 export function finnMarkedsSokFilterText(inn, kmSlack = FINN_KM_SLACK) {

@@ -518,6 +518,13 @@ function jsonStringify(value) {
   return JSON.stringify(value);
 }
 
+function normalizeKmField(value) {
+  if (value == null || value === '') return '';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return n;
+}
+
 const DEFAULT_BIL_TILSTANDSRAPPORT = {
   medfolger: false,
   nybilgaranti: false,
@@ -650,5 +657,6 @@ module.exports = {
   nyeInnkommendeEpostSince,
   epostThreadKeySql,
   DEFAULT_TILBUD_EPOST_MALER,
-  normalizeTilbudEpostMaler
+  normalizeTilbudEpostMaler,
+  normalizeKmField
 };
