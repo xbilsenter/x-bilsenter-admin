@@ -2792,7 +2792,7 @@ app.post('/api/kjoretoy/scan-chassis', requireAuth, upload.single('image'), asyn
     const result = await readChassisWithOpenAI(buffer, req.file.mimetype || 'image/jpeg', apiKey);
     res.json({ ok: true, ...result });
   } catch (err) {
-    res.status(err.code === 'VISION_AUTH' ? 401 : 502).json({
+    res.status(502).json({
       ok: false,
       error: err.message || 'Vision-OCR feilet.',
       code: err.code || 'VISION_ERROR'

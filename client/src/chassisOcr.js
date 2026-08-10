@@ -349,9 +349,11 @@ export async function readChassisFromImage(croppedBlob, scanRemote) {
       }
     } catch (err) {
       if (err?.code === 'VISION_AUTH' || err?.status === 401) {
-        visionWarning = err.message || 'OpenAI-nøkkelen er ugyldig. Sjekk OPENAI_API_KEY i Vercel.';
+        visionWarning = 'AI-visjon: ugyldig OpenAI-nøkkel i Vercel. Bruker lokal OCR.';
+      } else if (err?.code === 'VISION_QUOTA' || err?.status === 429) {
+        visionWarning = 'AI-visjon: OpenAI-kontoen har ingen credits. Legg til betaling på platform.openai.com/settings/billing. Bruker lokal OCR.';
       } else if (err?.status !== 501 && err?.code !== 'NO_VISION') {
-        visionWarning = 'AI-visjon feilet. Prøver lokal OCR i stedet.';
+        visionWarning = (err.message || 'AI-visjon feilet.') + ' Bruker lokal OCR.';
       }
     }
   }

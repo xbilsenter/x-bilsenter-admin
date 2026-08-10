@@ -69,8 +69,10 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
       setChassis(result.best || '');
       setOcrEngine(result.engine || 'local');
       setVisionWarning(result.visionWarning || '');
-      if (!result.best) {
+      if (!result.best && !result.visionWarning) {
         setOcrError('Fant ikke tydelig chassisnummer i utsnittet. Juster rammen tettere rundt nummeret, eller skriv inn manuelt.');
+        setShowCrop(true);
+      } else if (!result.best && result.visionWarning) {
         setShowCrop(true);
       }
     } catch (err) {
@@ -136,7 +138,7 @@ export default function ChassisScanPanel({ onLookup, loading, disabled }) {
       )}
 
       {visionWarning && !ocrLoading && (
-        <div className="chassis-scan__error">{visionWarning}</div>
+        <div className="chassis-scan__warn">{visionWarning}</div>
       )}
 
       {ocrEngine && !ocrLoading && candidates.length > 0 && !visionWarning && (

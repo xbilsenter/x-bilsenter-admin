@@ -10,7 +10,7 @@ function sanitizeOpenAiApiKey(raw) {
   if (/^OPENAI_API_KEY=/i.test(key)) {
     key = key.replace(/^OPENAI_API_KEY=/i, '').trim();
   }
-  return key;
+  return key.replace(/\s+/g, '');
 }
 
 function parseVisionJson(content) {
@@ -83,12 +83,28 @@ async function readChassisWithOpenAI(imageBuffer, mimeType, apiKey) {
 
   if (!response.ok) {
     const errText = await response.text().catch(function () { return ''; });
+    let openAiMessage = '';
+    try {
+      openAiMessage = JSON.parse(errText)?.error?.message || '';
+    } catch {
+      openAiMessage = errText.slice(0, 200);
+    }
+
     let message = 'Vision-OCR feilet (' + response.status + ').';
     if (response.status === 401) {
-      message = 'OpenAI avviste API-nøkkelen (401). Sjekk at OPENAI_API_KEY i Vercel er en gyldig nøkkel som starter med sk-, uten anførselstegn.';
+      message = 'OpenAI avviste API-nøkkelen. Sjekk OPENAI_API_KEY i Vercel (kun sk-... uten anførselstegn).';
+    } else if (response.status === 429) {
+      message = 'OpenAI-kontoen har ingen credits igjen. Legg til betaling på platform.openai.com/settings/billing.';
+    } else if (openAiMessage) {
+      message = openAiMessage;
     }
+
     const error = new Error(message);
-    error.code = response.status === 401 ? 'VISION_AUTH' : 'VISION_ERROR';
+    error.code = response.status === 401
+      ? 'VISION_AUTH'
+      : response.status === 429
+        ? 'VISION_QUOTA'
+        : 'VISION_ERROR';
     error.detail = errText.slice(0, 240);
     throw error;
   }

@@ -625,6 +625,7 @@ select option{background:var(--s1);}
 .chassis-scan__candidate-tag{font-size:10px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;}
 .chassis-scan__candidate-tag.is-valid{color:var(--green);}
 .chassis-scan__engine{font-size:11px;color:var(--green);margin-top:10px;}
+.chassis-scan__warn{font-size:11px;color:#b7791f;margin-top:10px;line-height:1.5;background:rgba(214,158,46,.12);padding:8px 12px;border-radius:7px;}
 .chassis-crop{margin-top:12px;}
 .chassis-crop__hint{font-size:11px;color:var(--t3);line-height:1.5;margin-bottom:10px;}
 .chassis-crop__stage{position:relative;max-width:520px;border:1px solid var(--b1);border-radius:10px;overflow:hidden;background:#000;touch-action:none;}
