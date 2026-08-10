@@ -90,6 +90,7 @@ const { canDeleteBil, resolveRoleKey, permissionDefsWithModulLabels } = require(
 
 const {
   lookupVehicleFull,
+  lookupVehicleFullByUnderstell,
   nesteEuKontrollIso,
   resolveVehicleFromStoredSvvData,
   toIsoDateFromNorwegian
@@ -2739,17 +2740,24 @@ app.patch('/api/innstillinger', requireAuth, requirePermission('innstillinger'),
 // ─── Vegvesen ───
 app.get('/api/kjoretoy', requireAuth, async function (req, res) {
   const regnr = req.query.regnr || req.query.reg;
-  if (!regnr) return res.status(400).json({ ok: false, error: 'Registreringsnummer mangler.' });
-
+  const understellsnummer = req.query.understellsnummer || req.query.chassis || req.query.vin;
   const apiKey = process.env.VEGVESEN_API_KEY || '';
 
   try {
-    const result = await lookupVehicleFull(regnr, apiKey);
+    let result;
+    if (understellsnummer) {
+      result = await lookupVehicleFullByUnderstell(understellsnummer, apiKey);
+    } else if (regnr) {
+      result = await lookupVehicleFull(regnr, apiKey);
+    } else {
+      return res.status(400).json({ ok: false, error: 'Registreringsnummer eller understellsnummer mangler.' });
+    }
     res.json({ ok: true, vehicle: result.parsed, raw: result.raw, sections: result.sections });
   } catch (err) {
     const statusMap = {
       MISSING_API_KEY: 400,
       INVALID_REGNR: 400,
+      INVALID_UNDERSTELL: 400,
       NOT_FOUND: 404,
       FORBIDDEN: 403,
       UPSTREAM_ERROR: 502

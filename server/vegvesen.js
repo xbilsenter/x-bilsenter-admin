@@ -703,31 +703,40 @@ function sectionsFromParsed(parsed) {
   }).filter(function (s) { return s.fields.length > 0; });
 }
 
-async function fetchFromVegvesen(url, kjennemerke, apiKey) {
+async function fetchFromVegvesen(url, paramName, paramValue, apiKey) {
   const endpoint = new URL(url);
-  endpoint.searchParams.set('kjennemerke', kjennemerke);
+  endpoint.searchParams.set(paramName, paramValue);
   return fetch(endpoint.toString(), {
     headers: { Accept: 'application/json', 'SVV-Authorization': 'Apikey ' + apiKey }
   });
 }
 
-async function lookupVehicleFull(regNrInput, apiKey) {
+function normalizeUnderstellsnummer(value) {
+  return String(value || '').toUpperCase().replace(/\s/g, '').replace(/[^A-Z0-9]/g, '');
+}
+
+async function lookupVehicleFullByParam(paramName, paramValue, options) {
+  const apiKey = options.apiKey;
+  const notFoundMessage = options.notFoundMessage;
+  const invalidMessage = options.invalidMessage;
+  const invalidCode = options.invalidCode;
+
   if (!apiKey) {
     const error = new Error('Vegvesen API-nøkkel er ikke konfigurert på serveren.');
     error.code = 'MISSING_API_KEY';
     throw error;
   }
 
-  const kjennemerke = normalizeRegNr(regNrInput);
-  if (!kjennemerke || kjennemerke.length < 4) {
-    const error = new Error('Ugyldig registreringsnummer');
-    error.code = 'INVALID_REGNR';
+  const normalized = String(paramValue || '').trim();
+  if (!normalized) {
+    const error = new Error(invalidMessage);
+    error.code = invalidCode;
     throw error;
   }
 
-  let response = await fetchFromVegvesen(VEGVESEN_URL, kjennemerke, apiKey);
+  let response = await fetchFromVegvesen(VEGVESEN_URL, paramName, normalized, apiKey);
   if (response.status === 404 || response.status === 204) {
-    response = await fetchFromVegvesen(ATLAS_URL, kjennemerke, apiKey);
+    response = await fetchFromVegvesen(ATLAS_URL, paramName, normalized, apiKey);
   }
 
   if (response.status === 403) {
@@ -737,7 +746,7 @@ async function lookupVehicleFull(regNrInput, apiKey) {
   }
 
   if (response.status === 404 || response.status === 204) {
-    const error = new Error('Fant ingen bil med dette registreringsnummeret');
+    const error = new Error(notFoundMessage);
     error.code = 'NOT_FOUND';
     throw error;
   }
@@ -750,7 +759,7 @@ async function lookupVehicleFull(regNrInput, apiKey) {
 
   const rawBody = await response.text();
   if (!rawBody.trim()) {
-    const error = new Error('Fant ingen bil med dette registreringsnummeret');
+    const error = new Error(notFoundMessage);
     error.code = 'NOT_FOUND';
     throw error;
   }
@@ -759,17 +768,55 @@ async function lookupVehicleFull(regNrInput, apiKey) {
   const rawVehicle = getVehicleEntry(data);
   const parsed = parseVehicle(data);
 
-  if (!parsed || (!parsed.merke && !parsed.modell && !parsed.regNr)) {
-    const error = new Error('Fant ingen bil med dette registreringsnummeret');
+  if (!parsed || (!parsed.merke && !parsed.modell && !parsed.regNr && !parsed.understell)) {
+    const error = new Error(notFoundMessage);
     error.code = 'NOT_FOUND';
     throw error;
   }
 
-  parsed.regNr = parsed.regNr || kjennemerke;
+  if (paramName === 'kjennemerke') {
+    parsed.regNr = parsed.regNr || normalized;
+  }
+  if (paramName === 'understellsnummer' && !parsed.understell) {
+    parsed.understell = normalized;
+  }
+
   let sections = buildDisplaySections(rawVehicle, parsed);
   if (!sections.length) sections = sectionsFromParsed(parsed);
 
   return { parsed: parsed, raw: rawVehicle, sections: sections };
+}
+
+async function lookupVehicleFull(regNrInput, apiKey) {
+  const kjennemerke = normalizeRegNr(regNrInput);
+  if (!kjennemerke || kjennemerke.length < 4) {
+    const error = new Error('Ugyldig registreringsnummer');
+    error.code = 'INVALID_REGNR';
+    throw error;
+  }
+
+  return lookupVehicleFullByParam('kjennemerke', kjennemerke, {
+    apiKey,
+    invalidMessage: 'Ugyldig registreringsnummer',
+    invalidCode: 'INVALID_REGNR',
+    notFoundMessage: 'Fant ingen bil med dette registreringsnummeret'
+  });
+}
+
+async function lookupVehicleFullByUnderstell(understellInput, apiKey) {
+  const understellsnummer = normalizeUnderstellsnummer(understellInput);
+  if (!understellsnummer || understellsnummer.length < 5) {
+    const error = new Error('Ugyldig understellsnummer');
+    error.code = 'INVALID_UNDERSTELL';
+    throw error;
+  }
+
+  return lookupVehicleFullByParam('understellsnummer', understellsnummer, {
+    apiKey,
+    invalidMessage: 'Ugyldig understellsnummer',
+    invalidCode: 'INVALID_UNDERSTELL',
+    notFoundMessage: 'Fant ingen bil med dette understellsnummeret'
+  });
 }
 
 async function lookupVehicle(regNrInput, apiKey) {
@@ -780,7 +827,9 @@ async function lookupVehicle(regNrInput, apiKey) {
 module.exports = {
   lookupVehicle,
   lookupVehicleFull,
+  lookupVehicleFullByUnderstell,
   normalizeRegNr,
+  normalizeUnderstellsnummer,
   parseVehicle,
   normalizeHandelsbetegnelse,
   buildDisplaySections,

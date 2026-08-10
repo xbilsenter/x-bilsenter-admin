@@ -312,6 +312,11 @@ export function lookupKjoretoy(regnr) {
   return request(`/kjoretoy?regnr=${reg}`);
 }
 
+export function lookupKjoretoyByUnderstell(understellsnummer) {
+  const value = encodeURIComponent(String(understellsnummer).trim().toUpperCase());
+  return request(`/kjoretoy?understellsnummer=${value}`);
+}
+
 export function lookupOmregistreringsavgift(regnr, dato) {
   const reg = encodeURIComponent(String(regnr).trim().toUpperCase());
   const params = new URLSearchParams({ regnr: reg });

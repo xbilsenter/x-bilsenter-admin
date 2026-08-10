@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useIsMobile from './useIsMobile.js';
 import Login from './components/Login.jsx';
 import InnkjopskalkyleView from './components/InnkjopskalkyleView.jsx';
+import ChassisScanPanel from './components/ChassisScanPanel.jsx';
 import {
   buildInnbytteTilbudMelding,
   buildInnbytteVisningMelding,
@@ -61,7 +62,7 @@ import {
   getBiler, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
   getKalender, postKalender, patchKalender, deleteKalender,
   getInnkjopskalkyle,
-  lookupKjoretoy, getInnstillinger, getLister, patchInnstillinger,
+  lookupKjoretoy, lookupKjoretoyByUnderstell, getInnstillinger, getLister, patchInnstillinger,
   getInnboks, getInnboksMapper, createInnboksMappe, flyttEpost, deleteEpost, downloadEpostVedlegg,
   getMailStatus,
   syncInnboks, patchEpost, sendEpostMultipart, getEpostUtkast, getEpostUtkastById, saveEpostUtkast, deleteEpostUtkast, opprettHenvFraEpost,
@@ -8303,28 +8304,41 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
   const [rawData, setRawData] = useState(null);
   const [feil, setFeil] = useState('');
 
-  const slaOpp = async () => {
-    const regnr = reg.trim().toUpperCase().replace(/\s/g, '');
-    if (!regnr || regnr.length < 5) {
-      setFeil('Skriv inn et gyldig registreringsnummer.');
-      return;
-    }
+  const applyLookupResult = function (data) {
+    setResultat(data.vehicle);
+    const apiSections = Array.isArray(data.sections) ? data.sections : [];
+    setSections(apiSections.length ? apiSections : buildSvvSectionsFromVehicle(data.vehicle));
+    setRawData(data.raw || null);
+    if (data.vehicle?.regNr) setReg(data.vehicle.regNr);
+  };
+
+  const runLookup = async function (loader) {
     setLaster(true);
     setFeil('');
     setResultat(null);
     setSections([]);
     setRawData(null);
     try {
-      const data = await lookupKjoretoy(regnr);
-      setResultat(data.vehicle);
-      const apiSections = Array.isArray(data.sections) ? data.sections : [];
-      setSections(apiSections.length ? apiSections : buildSvvSectionsFromVehicle(data.vehicle));
-      setRawData(data.raw || null);
+      const data = await loader();
+      applyLookupResult(data);
     } catch (err) {
       setFeil(err.message || 'Oppslag feilet.');
     } finally {
       setLaster(false);
     }
+  };
+
+  const slaOpp = function () {
+    const regnr = reg.trim().toUpperCase().replace(/\s/g, '');
+    if (!regnr || regnr.length < 5) {
+      setFeil('Skriv inn et gyldig registreringsnummer.');
+      return;
+    }
+    runLookup(function () { return lookupKjoretoy(regnr); });
+  };
+
+  const slaOppChassis = function (understellsnummer) {
+    runLookup(function () { return lookupKjoretoyByUnderstell(understellsnummer); });
   };
 
   const leggTilBil = async () => {
@@ -8348,6 +8362,7 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
       frist: '',
       notater: '',
       euKontroll: normalizeEuKontrollDato(v.nesteEuKontroll) || '',
+      chassisnr: v.understell || '',
       tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT },
       ...initBilSjekklister(startStatus, lists.bilSjekklister),
       logg: [{
@@ -8401,13 +8416,25 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
               {laster ? <><span className="spin" /> Søker...</> : '🔍 Slå opp'}
             </button>
           </div>
-          {feil && (
-            <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8, background: 'var(--redl)', padding: '8px 12px', borderRadius: 7 }}>
-              {feil}
-            </div>
-          )}
         </div>
       </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-h"><span className="card-ht">Oppslag via chassisnummer</span></div>
+        <div style={{ padding: 16 }}>
+          <ChassisScanPanel
+            onLookup={slaOppChassis}
+            loading={laster}
+            disabled={false}
+          />
+        </div>
+      </div>
+
+      {feil && (
+        <div style={{ color: 'var(--red)', fontSize: 12, marginBottom: 16, background: 'var(--redl)', padding: '8px 12px', borderRadius: 7 }}>
+          {feil}
+        </div>
+      )}
 
       {resultat && (
         <div className="card">
