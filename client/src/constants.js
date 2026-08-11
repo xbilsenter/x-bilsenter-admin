@@ -1145,6 +1145,9 @@ export function numberInputForSave(value) {
 
 export const BIL_NUMERIC_FIELDS = new Set(['aar', 'km', 'innkjop', 'salg']);
 
+/** Tekstfelt på bilkort som lagres med debounce for å unngå tapte tegn ved raske PATCH-kall. */
+export const BIL_DEBOUNCED_TEXT_FIELDS = new Set(['modell', 'notater', 'utstyr', 'farge', 'finnKode']);
+
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
   const inn = Number(innkjop) || 0;

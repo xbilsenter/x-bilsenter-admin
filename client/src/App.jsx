@@ -44,7 +44,7 @@ import {
   buildFullBilModellFromVehicle,
   BIL_AUTOSYS_FELTER, getBilAutosysOverstyrt, markBilAutosysOverstyrt,
   mergeAutosysOverstyrtIntoSvvData, buildAutosysBilFelt,
-  parseNumberInput, numberInputDisplay, numberInputForSave, kmInputDisplay, kmInputForSave, normalizeKmValue, BIL_NUMERIC_FIELDS,
+  parseNumberInput, numberInputDisplay, numberInputForSave, kmInputDisplay, kmInputForSave, normalizeKmValue, BIL_NUMERIC_FIELDS, BIL_DEBOUNCED_TEXT_FIELDS,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader, bilTilstandsrapportNodvendigFilterOptions,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
@@ -2741,8 +2741,32 @@ function mergeBilAfterAutosysSave(prevBil, saved) {
   BIL_AUTOSYS_FELTER.forEach(function (key) {
     if (o[key]) next[key] = prevBil[key];
   });
+  BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
+    next[key] = prevBil[key];
+  });
   next.svvData = mergeAutosysOverstyrtIntoSvvData(saved.svvData, o);
   return next;
+}
+
+function filterAutosysPatchByOverstyrt(patch, localUpdate, overstyrt) {
+  const o = overstyrt || {};
+  const nextPatch = { ...(patch || {}) };
+  const nextLocal = { ...(localUpdate || {}) };
+  BIL_AUTOSYS_FELTER.forEach(function (key) {
+    if (!o[key]) return;
+    delete nextPatch[key];
+    delete nextLocal[key];
+  });
+  return { patch: nextPatch, localUpdate: nextLocal };
+}
+
+function mergeBilServerItem(prevBil, saved) {
+  if (!saved) return prevBil;
+  const next = { ...saved };
+  BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
+    next[key] = prevBil[key];
+  });
+  return mergeBilAfterAutosysSave(prevBil, next);
 }
 
 async function hentAutosysPayload(reg, lists, prevBil, overstyrt) {
@@ -2766,8 +2790,64 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
   const uploadRef = useRef(null);
   const bilRef = useRef(bil);
   const autosysOverstyrtRef = useRef(autosysOverstyrt);
+  const saveChainRef = useRef(Promise.resolve());
+  const debounceTimerRef = useRef(null);
+  const pendingPatchRef = useRef({});
   bilRef.current = bil;
   autosysOverstyrtRef.current = autosysOverstyrt;
+
+  const enqueueSave = useCallback(function (patch, msg) {
+    const id = bilRef.current?.id;
+    if (!id || !patch || !Object.keys(patch).length) return saveChainRef.current;
+    saveChainRef.current = saveChainRef.current
+      .catch(function () {})
+      .then(function () { return updateBil(id, patch, msg); });
+    return saveChainRef.current;
+  }, [updateBil]);
+
+  const flushTextSave = useCallback(function (msg) {
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = null;
+    const toSend = pendingPatchRef.current;
+    pendingPatchRef.current = {};
+    if (!Object.keys(toSend).length) return saveChainRef.current;
+    return enqueueSave(toSend, msg);
+  }, [enqueueSave]);
+
+  const saveImmediate = useCallback(function (patch, msg) {
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = null;
+    const pending = pendingPatchRef.current;
+    pendingPatchRef.current = {};
+    return enqueueSave({ ...pending, ...patch }, msg);
+  }, [enqueueSave]);
+
+  const queueTextSave = useCallback(function (patch, msg) {
+    pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(function () {
+      debounceTimerRef.current = null;
+      const toSend = pendingPatchRef.current;
+      pendingPatchRef.current = {};
+      if (Object.keys(toSend).length) enqueueSave(toSend, msg);
+    }, 450);
+  }, [enqueueSave]);
+
+  const handleClose = useCallback(function () {
+    flushTextSave().finally(function () { onClose(); });
+  }, [flushTextSave, onClose]);
+
+  useEffect(function () {
+    return function () {
+      clearTimeout(debounceTimerRef.current);
+      const toSend = pendingPatchRef.current;
+      pendingPatchRef.current = {};
+      const id = bilRef.current?.id;
+      if (id && Object.keys(toSend).length) {
+        enqueueSave(toSend);
+      }
+    };
+  }, [enqueueSave]);
 
   useEffect(function () {
     setBil(data);
@@ -2782,15 +2862,16 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     const currentOverstyrt = autosysOverstyrtRef.current;
     const reg = normalizeBilReg(currentBil.reg);
     const result = await hentAutosysPayload(reg, lists, currentBil, currentOverstyrt);
+    const filtered = filterAutosysPatchByOverstyrt(result.patch, result.localUpdate, autosysOverstyrtRef.current);
     const nextOverstyrt = result.overstyrt || {};
     autosysOverstyrtRef.current = nextOverstyrt;
     setAutosysOverstyrt(nextOverstyrt);
     setBil(function (prev) {
-      const next = applyAutosysLocalUpdate(prev, result.localUpdate, nextOverstyrt);
+      const next = applyAutosysLocalUpdate(prev, filtered.localUpdate, nextOverstyrt);
       bilRef.current = next;
       return next;
     });
-    const saved = await updateBil(currentBil.id, result.patch, options?.silent ? undefined : 'Autosys-data oppdatert ✓');
+    const saved = await saveImmediate(filtered.patch, options?.silent ? undefined : 'Autosys-data oppdatert ✓');
     if (saved) {
       setBil(function (prev) {
         const next = mergeBilAfterAutosysSave(prev, saved);
@@ -2801,7 +2882,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
       setAutosysOverstyrt(getBilAutosysOverstyrt(saved));
     }
     return result.parsed;
-  }, [lists, updateBil]);
+  }, [lists, saveImmediate]);
 
   useEffect(function () {
     const reg = normalizeBilReg(data.reg);
@@ -2811,15 +2892,16 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     let cancelled = false;
     hentAutosysPayload(reg, lists, bilRef.current, autosysOverstyrtRef.current).then(async function (result) {
       if (cancelled) return;
+      const filtered = filterAutosysPatchByOverstyrt(result.patch, result.localUpdate, autosysOverstyrtRef.current);
       const nextOverstyrt = result.overstyrt || {};
       autosysOverstyrtRef.current = nextOverstyrt;
       setAutosysOverstyrt(nextOverstyrt);
       setBil(function (prev) {
-        const next = applyAutosysLocalUpdate(prev, result.localUpdate, nextOverstyrt);
+        const next = applyAutosysLocalUpdate(prev, filtered.localUpdate, nextOverstyrt);
         bilRef.current = next;
         return next;
       });
-      const saved = await updateBil(data.id, result.patch);
+      const saved = await saveImmediate(filtered.patch);
       if (!cancelled && saved) {
         setBil(function (prev) {
           const next = mergeBilAfterAutosysSave(prev, saved);
@@ -2832,7 +2914,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     }).catch(function () { /* stille bakgrunnshenting */ });
 
     return function () { cancelled = true; };
-  }, [data.id, data.reg, data.svvData, lists, updateBil]);
+  }, [data.id, data.reg, data.svvData, lists, saveImmediate]);
 
   const docCount = (bil.dokumenter || []).length;
   const bilTabs = [
@@ -2853,7 +2935,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     if (item.type === 'kontaktskjema') setModal({ t: 'visHenv', d: item.data });
     else if (item.type === 'innbytte') setModal({ t: 'visInb', d: item.data });
     else if (item.type === 'epost') {
-      onClose();
+      handleClose();
       setInnboksOpenEpost(item.data);
       setTab('innboks');
     }
@@ -2870,7 +2952,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
       setBil(function (prev) {
         if (v === prev.status) return prev;
         const next = withStatusChange(prev, v, lists.bilSjekklister);
-        updateBil(prev.id, next, msg);
+        saveImmediate(next, msg);
         return { ...prev, ...next };
       });
       return;
@@ -2878,7 +2960,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     if (k === 'sjekkliste') {
       setBil(function (prev) {
         const next = withSjekklisteUpdate(prev, v);
-        updateBil(prev.id, { sjekklister: next.sjekklister, sjekkliste: next.sjekkliste }, msg);
+        saveImmediate({ sjekklister: next.sjekklister, sjekkliste: next.sjekkliste }, msg);
         return { ...prev, ...next };
       });
       return;
@@ -2907,7 +2989,11 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
         patch.svvData = mergeAutosysOverstyrtIntoSvvData(prev.svvData, nextOverstyrt);
       }
 
-      updateBil(prev.id, patch, msg);
+      if (BIL_DEBOUNCED_TEXT_FIELDS.has(k)) {
+        queueTextSave(patch, msg);
+      } else {
+        saveImmediate(patch, msg);
+      }
       const next = {
         ...prev,
         [k]: stored,
@@ -2922,7 +3008,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     setBil(function (prev) {
       const local = { ...normalizeBilOkonomi(prev.okonomi), ...patch };
       const forSave = normalizeBilOkonomi(local);
-      updateBil(prev.id, { okonomi: forSave }, msg || 'Økonomi oppdatert ✓');
+      saveImmediate({ okonomi: forSave }, msg || 'Økonomi oppdatert ✓');
       return { ...prev, okonomi: local };
     });
   };
@@ -2945,8 +3031,12 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     try {
       const res = await uploadBilDokumenter(bil.id, files);
       if (res.item) {
-        setBil(res.item);
-        updateBil(bil.id, { dokumenter: res.item.dokumenter }, 'Dokumenter lastet opp ✓');
+        setBil(function (prev) {
+          const next = mergeBilServerItem(prev, res.item);
+          bilRef.current = next;
+          return next;
+        });
+        saveImmediate({ dokumenter: res.item.dokumenter }, 'Dokumenter lastet opp ✓');
       }
     } catch (err) {
       visTost(err.message || 'Kunne ikke laste opp filer ✗');
@@ -2980,25 +3070,28 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
     oppdater('status', nextStatus, `Flyttet til ${nextStatus} ✓`);
   };
 
-  const arkiver = () => {
+  const arkiver = async function () {
     if (!window.confirm(`Arkivere ${bil.reg}? Bilen fjernes fra lageroversikten, men kan gjenopprettes fra arkiv.`)) return;
-    updateBil(bil.id, {
+    await flushTextSave();
+    await updateBil(bil.id, {
       archived: true,
       logg: [...(bil.logg || []), bilLoggEntry('Arkivert fra lager')]
     }, 'Arkivert ✓');
     onClose();
   };
 
-  const gjenopprett = () => {
-    updateBil(bil.id, {
+  const gjenopprett = async function () {
+    await flushTextSave();
+    await updateBil(bil.id, {
       archived: false,
       logg: [...(bil.logg || []), bilLoggEntry('Gjenopprettet fra arkiv')]
     }, 'Gjenopprettet til lager ✓');
     onClose();
   };
 
-  const slettBilPermanent = async () => {
+  const slettBilPermanent = async function () {
     if (!deleteBil) return;
+    await flushTextSave();
     const ok = await deleteBil(bil);
     if (ok) onClose();
   };
@@ -3305,8 +3398,8 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
         </div>
 
         <div className="modal-footer bil-modal__footer">
-          <button type="button" className="btn btn-p" onClick={onClose}>Lagre & lukk</button>
-          <button type="button" className="btn btn-g" onClick={onClose}>Avbryt</button>
+          <button type="button" className="btn btn-p" onClick={handleClose}>Lagre & lukk</button>
+          <button type="button" className="btn btn-g" onClick={handleClose}>Avbryt</button>
           {kanSletteBil && (
             <button type="button" className="btn btn-red bil-modal__slett-btn" onClick={slettBilPermanent}>
               Slett bil
