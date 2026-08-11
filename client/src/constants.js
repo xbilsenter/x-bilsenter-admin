@@ -1381,10 +1381,26 @@ export function normalizeModulOppsett(list) {
   });
 
   defaults.forEach(function (item) {
-    if (!result.some(function (row) { return row.id === item.id; })) {
-      result.push(byId[item.id] || { ...item });
+    if (result.some(function (row) { return row.id === item.id; })) return;
+    let insertAt = result.length;
+    const defaultIndex = defaults.findIndex(function (d) { return d.id === item.id; });
+    for (let i = defaultIndex + 1; i < defaults.length; i += 1) {
+      const laterPos = result.findIndex(function (row) { return row.id === defaults[i].id; });
+      if (laterPos !== -1) {
+        insertAt = laterPos;
+        break;
+      }
     }
+    result.splice(insertAt, 0, byId[item.id] || { ...item });
   });
+
+  const trIdx = result.findIndex(function (row) { return row.id === 'timeregistrering'; });
+  const innIdx = result.findIndex(function (row) { return row.id === 'innstillinger'; });
+  if (trIdx !== -1 && innIdx !== -1 && trIdx > innIdx) {
+    const tr = result.splice(trIdx, 1)[0];
+    const newInnIdx = result.findIndex(function (row) { return row.id === 'innstillinger'; });
+    result.splice(newInnIdx, 0, tr);
+  }
 
   result.forEach(function (item) {
     if (item.id === 'henvendelser' && item.label === 'Henvendelser') {

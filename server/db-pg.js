@@ -241,6 +241,21 @@ async function ensureTimeregistreringSchema() {
   `);
 }
 
+async function ensureModulOppsettOrder() {
+  const row = await prepare("SELECT value FROM innstillinger WHERE key = 'modul_oppsett'").get();
+  if (!row) return;
+  const current = parseJson(row.value, []);
+  const normalized = normalizeModulOppsett(current);
+  const next = JSON.stringify(normalized);
+  if (next !== row.value) {
+    await prepare(`
+      UPDATE innstillinger
+      SET value = @value, updated_at = NOW()
+      WHERE key = 'modul_oppsett'
+    `).run({ value: next });
+  }
+}
+
 const dbReady = withInitTimeout(
   ensureMailFoldersSchema()
     .then(function () { return ensureSelgBilSchema(); })
@@ -249,6 +264,7 @@ const dbReady = withInitTimeout(
     .then(function () { return ensureBilSlettingerSchema(); })
     .then(function () { return ensureTimeregistreringSchema(); })
     .then(function () { return ensureInnstillingDefaults(); })
+    .then(function () { return ensureModulOppsettOrder(); })
     .then(function () { return syncPostgresSequences(); })
     .then(function () { return ensureDefaultAdminUser(); }),
   Number(process.env.DB_INIT_TIMEOUT_MS || 15000)

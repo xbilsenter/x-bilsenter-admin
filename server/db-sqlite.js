@@ -270,10 +270,26 @@ function normalizeModulOppsett(list) {
   });
 
   defaults.forEach(function (item) {
-    if (!result.some(function (row) { return row.id === item.id; })) {
-      result.push(byId[item.id] || { ...item });
+    if (result.some(function (row) { return row.id === item.id; })) return;
+    let insertAt = result.length;
+    const defaultIndex = defaults.findIndex(function (d) { return d.id === item.id; });
+    for (let i = defaultIndex + 1; i < defaults.length; i += 1) {
+      const laterPos = result.findIndex(function (row) { return row.id === defaults[i].id; });
+      if (laterPos !== -1) {
+        insertAt = laterPos;
+        break;
+      }
     }
+    result.splice(insertAt, 0, byId[item.id] || { ...item });
   });
+
+  const trIdx = result.findIndex(function (row) { return row.id === 'timeregistrering'; });
+  const innIdx = result.findIndex(function (row) { return row.id === 'innstillinger'; });
+  if (trIdx !== -1 && innIdx !== -1 && trIdx > innIdx) {
+    const tr = result.splice(trIdx, 1)[0];
+    const newInnIdx = result.findIndex(function (row) { return row.id === 'innstillinger'; });
+    result.splice(newInnIdx, 0, tr);
+  }
 
   return result;
 }
@@ -344,6 +360,17 @@ function migrateModulOppsett() {
     `).run({
       value: JSON.stringify(DEFAULT_INNSTILLINGER.modulOppsett)
     });
+    return;
+  }
+  const current = parseJson(row.value, []);
+  const normalized = normalizeModulOppsett(current);
+  const next = JSON.stringify(normalized);
+  if (next !== row.value) {
+    db.prepare(`
+      UPDATE innstillinger
+      SET value = @value, updated_at = datetime('now')
+      WHERE key = 'modul_oppsett'
+    `).run({ value: next });
   }
 }
 
