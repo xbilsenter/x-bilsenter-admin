@@ -85,6 +85,108 @@ const EMPTY_MANUAL = {
   pauser: []
 };
 
+function newPause() {
+  return {
+    id: `p${Date.now()}`,
+    start: '12:00',
+    slutt: '12:30',
+    type: 'pause',
+    notat: ''
+  };
+}
+
+function normalizePauserList(list) {
+  return (Array.isArray(list) ? list : []).map(function (item, idx) {
+    return {
+      id: item?.id || `p${idx + 1}`,
+      start: String(item?.start || '').slice(0, 5),
+      slutt: String(item?.slutt || '').slice(0, 5),
+      type: item?.type || 'pause',
+      notat: String(item?.notat || '')
+    };
+  });
+}
+
+function PauseEditor({ pauser, onChange, allowOpenEnd }) {
+  const list = normalizePauserList(pauser);
+
+  const update = function (idx, field, value) {
+    onChange(list.map(function (p, i) {
+      if (i !== idx) return p;
+      return { ...p, [field]: value };
+    }));
+  };
+
+  const add = function () {
+    onChange([...list, newPause()]);
+  };
+
+  const remove = function (idx) {
+    onChange(list.filter(function (_, i) { return i !== idx; }));
+  };
+
+  return (
+    <div className="timereg-pauser">
+      <div className="timereg-pauser-hd">
+        <div className="fl">Pauser</div>
+        <button type="button" className="btn btn-g btn-sm" onClick={add}>+ Legg til pause</button>
+      </div>
+      {!list.length && (
+        <div className="timereg-pauser-empty">Ingen pauser. Legg til hvis det var pause under arbeidsdagen.</div>
+      )}
+      {list.map(function (p, idx) {
+        return (
+          <div key={p.id || idx} className="timereg-pause-row">
+            <div>
+              <div className="fl">Fra</div>
+              <input type="time" value={p.start} onChange={function (e) { update(idx, 'start', e.target.value); }} />
+            </div>
+            <div>
+              <div className="fl">Til</div>
+              <input
+                type="time"
+                value={p.slutt || ''}
+                onChange={function (e) { update(idx, 'slutt', e.target.value); }}
+                placeholder={allowOpenEnd ? 'Pågår' : ''}
+              />
+            </div>
+            <div>
+              <div className="fl">Type</div>
+              <select value={p.type || 'pause'} onChange={function (e) { update(idx, 'type', e.target.value); }}>
+                <option value="pause">Pause</option>
+                <option value="lunsj">Lunsj</option>
+                <option value="annet">Annet</option>
+              </select>
+            </div>
+            <div className="timereg-pause-notat">
+              <div className="fl">Notat</div>
+              <input
+                type="text"
+                value={p.notat || ''}
+                placeholder="Valgfritt"
+                onChange={function (e) { update(idx, 'notat', e.target.value); }}
+              />
+            </div>
+            <button type="button" className="btn btn-g btn-sm timereg-pause-remove" onClick={function () { remove(idx); }} title="Fjern pause">
+              ×
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function pauseSummary(item) {
+  const pauser = item?.pauser || [];
+  if (!pauser.length) return '—';
+  return pauser.map(function (p) {
+    const span = p.slutt ? `${p.start}–${p.slutt}` : `${p.start}–…`;
+    const type = p.type && p.type !== 'pause' ? ` (${p.type})` : '';
+    return span + type;
+  }).join(', ');
+}
+
 export default function TimeregistreringView({ currentUser, visTost }) {
   const isMobile = useIsMobile();
   const [now, setNow] = useState(function () { return klokke(); });
@@ -190,14 +292,17 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     if (!editItem) return;
     setBusy(true);
     try {
-      await patchTimeregistrering(editItem.id, {
-        dato: editItem.dato,
-        startTid: editItem.startTid,
-        sluttTid: editItem.sluttTid,
-        notat: editItem.notat,
-        pauser: editItem.pauser,
-        status: editItem.status
-      });
+      const body = editItem.kunPauser
+        ? { pauser: editItem.pauser }
+        : {
+          dato: editItem.dato,
+          startTid: editItem.startTid,
+          sluttTid: editItem.sluttTid,
+          notat: editItem.notat,
+          pauser: editItem.pauser,
+          status: editItem.status
+        };
+      await patchTimeregistrering(editItem.id, body);
       visTost('Registrering oppdatert ✓');
       setEditItem(null);
       await reload();
@@ -222,7 +327,23 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     }
   };
 
+  const openPauseEdit = function (item) {
+    setEditItem({
+      ...item,
+      pauser: normalizePauserList(item.pauser),
+      kunPauser: item.status === 'aktiv' || item.status === 'pause'
+    });
+  };
+
   const visLonn = (currentUser?.timelonn > 0 || kanSeAlle) && oppsummering?.lonnKr > 0;
+
+  const kanRedigere = function (item) {
+    if (item.status === 'fullfort' || item.status === 'godkjent' || kanSeAlle) return true;
+    if ((item.status === 'aktiv' || item.status === 'pause') && Number(item.userId) === Number(currentUser?.id)) {
+      return true;
+    }
+    return false;
+  };
 
   return (
     <div className="timereg">
@@ -298,6 +419,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                   Inn: {aktiv.startTid}
                   {aktiv.stats?.pauseDisplay && aktiv.stats.pauseMin > 0 ? ` · Pause: ${aktiv.stats.pauseDisplay}` : ''}
                 </div>
+                <button type="button" className="btn btn-g btn-sm" disabled={busy} onClick={function () { openPauseEdit(aktiv); }}>
+                  Rediger pauser
+                </button>
               </>
             ) : (
               <>
@@ -390,31 +514,29 @@ export default function TimeregistreringView({ currentUser, visTost }) {
               </thead>
               <tbody>
                 {items.map(function (item) {
-                  const pauserTxt = (item.pauser || []).length
-                    ? item.stats?.pauseDisplay || '—'
-                    : '—';
+                  const pauserTxt = pauseSummary(item);
                   return (
                     <tr key={item.id}>
                       <td>{fmtDato(item.dato)}</td>
                       <td><span className={`timereg-status-pill ${statusClass(item.status)}`}>{statusLabel(item.status)}</span></td>
                       <td>{item.startTid || '—'}</td>
                       <td>{item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—')}</td>
-                      <td>{pauserTxt}</td>
+                      <td className="timereg-notat" title={pauserTxt}>{pauserTxt}</td>
                       <td><strong>{item.stats?.display || '—'}</strong></td>
                       {visLonn && <td>{item.stats?.lonnKr ? nok(item.stats.lonnKr) : '—'}</td>}
                       <td className="timereg-notat">{item.notat || '—'}</td>
                       <td className="timereg-row-actions">
-                        {(item.status === 'fullfort' || item.status === 'godkjent' || kanSeAlle) && (
+                        {kanRedigere(item) && (
                           <>
-                            <button type="button" className="btn btn-g btn-sm" onClick={function () {
-                              setEditItem({ ...item, pauser: [...(item.pauser || [])] });
-                            }}>
+                            <button type="button" className="btn btn-g btn-sm" onClick={function () { openPauseEdit(item); }}>
                               Rediger
                             </button>
                             {' '}
-                            <button type="button" className="btn btn-g btn-sm" disabled={busy} onClick={function () { slett(item.id); }}>
-                              Slett
-                            </button>
+                            {(item.status === 'fullfort' || item.status === 'godkjent' || kanSeAlle) && (
+                              <button type="button" className="btn btn-g btn-sm" disabled={busy} onClick={function () { slett(item.id); }}>
+                                Slett
+                              </button>
+                            )}
                           </>
                         )}
                       </td>
@@ -450,6 +572,12 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                 </div>
               </div>
               <div style={{ marginTop: 12 }}>
+                <PauseEditor
+                  pauser={manual.pauser}
+                  onChange={function (next) { setManual({ ...manual, pauser: next }); }}
+                />
+              </div>
+              <div style={{ marginTop: 12 }}>
                 <div className="fl">Notat (valgfritt)</div>
                 <textarea rows={3} value={manual.notat} onChange={function (e) { setManual({ ...manual, notat: e.target.value }); }} placeholder="F.eks. ekstra vask, verksted..." />
               </div>
@@ -466,25 +594,39 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         <div className="modal-overlay" onClick={function () { if (!busy) setEditItem(null); }}>
           <div className="modal timereg-modal" onClick={function (e) { e.stopPropagation(); }}>
             <div className="modal-h">
-              <strong>Rediger registrering</strong>
+              <strong>{editItem.kunPauser ? 'Rediger pauser' : 'Rediger registrering'}</strong>
               <button type="button" className="modal-x" onClick={function () { setEditItem(null); }}>×</button>
             </div>
             <div className="modal-b">
-              <div className="form-row gap">
-                <div>
-                  <div className="fl">Dato</div>
-                  <input type="date" value={editItem.dato} onChange={function (e) { setEditItem({ ...editItem, dato: e.target.value }); }} />
+              {!editItem.kunPauser && (
+                <div className="form-row gap">
+                  <div>
+                    <div className="fl">Dato</div>
+                    <input type="date" value={editItem.dato} onChange={function (e) { setEditItem({ ...editItem, dato: e.target.value }); }} />
+                  </div>
+                  <div>
+                    <div className="fl">Start</div>
+                    <input type="time" value={editItem.startTid} onChange={function (e) { setEditItem({ ...editItem, startTid: e.target.value }); }} />
+                  </div>
+                  <div>
+                    <div className="fl">Slutt</div>
+                    <input type="time" value={editItem.sluttTid || ''} onChange={function (e) { setEditItem({ ...editItem, sluttTid: e.target.value }); }} />
+                  </div>
                 </div>
-                <div>
-                  <div className="fl">Start</div>
-                  <input type="time" value={editItem.startTid} onChange={function (e) { setEditItem({ ...editItem, startTid: e.target.value }); }} />
+              )}
+              {editItem.kunPauser && (
+                <div className="timereg-pauser-hint">
+                  Juster pauser for dagens arbeidsøkt. Inn- og utstempling endres via klokken.
                 </div>
-                <div>
-                  <div className="fl">Slutt</div>
-                  <input type="time" value={editItem.sluttTid || ''} onChange={function (e) { setEditItem({ ...editItem, sluttTid: e.target.value }); }} />
-                </div>
+              )}
+              <div style={{ marginTop: 12 }}>
+                <PauseEditor
+                  pauser={editItem.pauser}
+                  allowOpenEnd={editItem.kunPauser}
+                  onChange={function (next) { setEditItem({ ...editItem, pauser: next }); }}
+                />
               </div>
-              {kanSeAlle && (
+              {!editItem.kunPauser && kanSeAlle && (
                 <div style={{ marginTop: 12 }}>
                   <div className="fl">Status</div>
                   <select value={editItem.status} onChange={function (e) { setEditItem({ ...editItem, status: e.target.value }); }}>
@@ -493,10 +635,12 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                   </select>
                 </div>
               )}
-              <div style={{ marginTop: 12 }}>
-                <div className="fl">Notat</div>
-                <textarea rows={3} value={editItem.notat || ''} onChange={function (e) { setEditItem({ ...editItem, notat: e.target.value }); }} />
-              </div>
+              {!editItem.kunPauser && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="fl">Notat</div>
+                  <textarea rows={3} value={editItem.notat || ''} onChange={function (e) { setEditItem({ ...editItem, notat: e.target.value }); }} />
+                </div>
+              )}
             </div>
             <div className="modal-f">
               <button type="button" className="btn btn-g" onClick={function () { setEditItem(null); }}>Avbryt</button>

@@ -2927,16 +2927,36 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
 
   const body = req.body || {};
   const isAdmin = canViewAllTimereg(req.user);
-  if ((row.status === 'aktiv' || row.status === 'pause') && !isAdmin) {
-    return res.status(400).json({ ok: false, error: 'Kan ikke redigere aktiv registrering. Stemple ut først.' });
+  const isOwner = Number(row.user_id) === Number(req.user.sub);
+  const isActive = row.status === 'aktiv' || row.status === 'pause';
+  const onlyPauseEdit = body.pauser != null
+    && body.dato == null
+    && body.startTid == null
+    && body.start_tid == null
+    && body.sluttTid == null
+    && body.slutt_tid == null
+    && body.status == null
+    && body.notat == null;
+
+  if (isActive && !isAdmin) {
+    if (!isOwner) {
+      return res.status(403).json({ ok: false, error: 'Ingen tilgang.' });
+    }
+    if (!onlyPauseEdit) {
+      return res.status(400).json({ ok: false, error: 'Kan kun redigere pauser på aktiv registrering. Stemple ut for å endre resten.' });
+    }
   }
 
-  const dato = body.dato != null ? String(body.dato).slice(0, 10) : row.dato;
-  const startTid = body.startTid != null ? String(body.startTid).slice(0, 5) : row.start_tid;
-  const sluttTid = body.sluttTid != null ? String(body.sluttTid).slice(0, 5) : row.slutt_tid;
+  const dato = (onlyPauseEdit || (isActive && !isAdmin)) ? row.dato : (body.dato != null ? String(body.dato).slice(0, 10) : row.dato);
+  const startTid = (onlyPauseEdit || (isActive && !isAdmin)) ? row.start_tid : (body.startTid != null ? String(body.startTid).slice(0, 5) : row.start_tid);
+  const sluttTid = (onlyPauseEdit || (isActive && !isAdmin)) ? row.slutt_tid : (body.sluttTid != null ? String(body.sluttTid).slice(0, 5) : row.slutt_tid);
   const pauser = body.pauser != null ? parsePauser(body.pauser) : parsePauser(row.pauser);
-  const notat = body.notat != null ? String(body.notat) : row.notat;
-  const status = isAdmin && body.status ? String(body.status) : row.status;
+  const notat = (onlyPauseEdit || (isActive && !isAdmin)) ? row.notat : (body.notat != null ? String(body.notat) : row.notat);
+  let status = isAdmin && body.status ? String(body.status) : row.status;
+  if (isActive && isOwner && body.pauser != null) {
+    const hasOpenPause = pauser.some(function (p) { return p.start && !p.slutt; });
+    status = hasOpenPause ? 'pause' : 'aktiv';
+  }
   const timelonn = body.timelonn != null
     ? Math.max(0, Math.round(Number(body.timelonn) || 0))
     : Number(row.timelonn) || 0;
