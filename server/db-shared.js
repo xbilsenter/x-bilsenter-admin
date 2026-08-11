@@ -177,6 +177,13 @@ function canDeleteBil(user) {
   return resolveRoleKey(user.role) === 'Innkjøpssjef';
 }
 
+function canAddBil(user) {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  const role = resolveRoleKey(user.role);
+  return role === 'Daglig leder' || role === 'Innkjøpssjef' || role === 'Selger';
+}
+
 function normalizeModulOppsett(list) {
   const defaults = DEFAULT_INNSTILLINGER.modulOppsett;
   const defaultById = {};
@@ -659,6 +666,7 @@ module.exports = {
   resolveRoleKey,
   resolveRoleTemplate,
   canDeleteBil,
+  canAddBil,
   normalizeModulOppsett,
   permissionDefsWithModulLabels,
   normalizeVedlikeholdModus,

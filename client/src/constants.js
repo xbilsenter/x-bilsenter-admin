@@ -652,6 +652,13 @@ export function canDeleteBil(user) {
   return resolveRoleKey(user.role) === 'Innkjøpssjef';
 }
 
+export function canAddBil(user) {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  const role = resolveRoleKey(user.role);
+  return role === 'Daglig leder' || role === 'Innkjøpssjef' || role === 'Selger';
+}
+
 export const KALKYLE_AUKSJON_PLATTFORMER = [
   'Rebil',
   'AYVENS',

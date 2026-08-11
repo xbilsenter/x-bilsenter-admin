@@ -86,7 +86,7 @@ const {
   normalizeBilArsprovekjennemerke,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
-const { canDeleteBil, resolveRoleKey, permissionDefsWithModulLabels } = require('./db-shared');
+const { canDeleteBil, canAddBil, resolveRoleKey, permissionDefsWithModulLabels } = require('./db-shared');
 const {
   nowOsloDate,
   nowOsloTime,
@@ -2073,6 +2073,10 @@ app.post('/api/biler/reorder', requireAuth, async function (req, res) {
 });
 
 app.post('/api/biler', requireAuth, async function (req, res) {
+  if (!canAddBil(req.user)) {
+    return res.status(403).json({ ok: false, error: 'Kun daglig leder, innkjøpssjef og selgere kan legge til biler i lager.' });
+  }
+
   const b = req.body || {};
   if (!b.reg || !b.modell) {
     return res.status(400).json({ ok: false, error: 'Reg.nr og modell er påkrevd.' });

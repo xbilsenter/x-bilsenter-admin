@@ -22,7 +22,7 @@ import {
   openFinnMarkedsSok
 } from './finnMarkedssok.js';
 import {
-  DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, canDeleteBil, displayRole,
+  DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, canDeleteBil, canAddBil, displayRole,
   canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch,
   normalizeHenvStatusFarger, normalizeBilStatusFarger, DEFAULT_HENV_STATUS_FARGER,
   DEFAULT_INNBYTTE_STATUS_FARGER, normalizeInnbytteStatusFarger,
@@ -1034,6 +1034,7 @@ export default function App() {
               refreshStats={refreshStats}
               lists={lists}
               setTab={setTab}
+              currentUser={user}
             />
           )}
           {tab === 'innstillinger' && (
@@ -1118,7 +1119,7 @@ export default function App() {
           currentUser={user}
         />
       )}
-      {modal?.t === 'nyBil' && (
+      {modal?.t === 'nyBil' && canAddBil(user) && (
         <NyBilModal
           onClose={() => setModal(null)}
           lists={lists}
@@ -1931,6 +1932,7 @@ function BilSlettelogPanel() {
 }
 
 function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser }) {
+  const kanLeggeTilBil = canAddBil(currentUser);
   const [mFilter, setMFilter] = useState('Alle');
   const [sFilter, setSFilter] = useState('Alle');
   const [search, setSearch] = useState('');
@@ -2197,7 +2199,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
         </div>
       )}
       <div className="bil-sticky-bar">
-        {section === 'lager' && (
+        {section === 'lager' && kanLeggeTilBil && (
           <button type="button" className="btn btn-p bil-add-btn" onClick={() => setModal({ t: 'nyBil' })}>+ Legg til bil</button>
         )}
         <div className="bil-toolbar">
@@ -2354,7 +2356,9 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
         )
       ) : aktiveBiler.length === 0 ? (
         <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--t3)' }}>
-          Ingen biler i lager ennå. Legg til via <strong>+ Legg til bil</strong> eller importer fra <strong>Vegvesen-oppslag</strong>.
+          {kanLeggeTilBil
+            ? <>Ingen biler i lager ennå. Legg til via <strong>+ Legg til bil</strong> eller importer fra <strong>Vegvesen-oppslag</strong>.</>
+            : 'Ingen biler i lager ennå.'}
         </div>
       ) : vis.length === 0 ? (
         <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--t3)' }}>
@@ -8409,7 +8413,8 @@ function KjoretoyAutosysPanel({ regnr, active }) {
   );
 }
 
-function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab }) {
+function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab, currentUser }) {
+  const kanLeggeTilBil = canAddBil(currentUser);
   const [reg, setReg] = useState('');
   const [laster, setLaster] = useState(false);
   const [resultat, setResultat] = useState(null);
@@ -8553,7 +8558,9 @@ function VegvesenView({ biler, setBiler, visTost, refreshStats, lists, setTab })
         <div className="card">
           <div className="card-h">
             <span className="card-ht">Kjøretøydata · {sections.reduce(function (n, s) { return n + s.fields.length; }, 0)} felt</span>
-            <button type="button" className="btn btn-p btn-sm" onClick={leggTilBil}>+ Legg til i lager</button>
+            {kanLeggeTilBil && (
+              <button type="button" className="btn btn-p btn-sm" onClick={leggTilBil}>+ Legg til i lager</button>
+            )}
           </div>
           <div style={{ padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
