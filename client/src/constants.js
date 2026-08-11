@@ -542,6 +542,7 @@ export const TAB_PERMISSIONS = {
   kalender: 'kalender',
   innkjopskalkyle: 'innkjopskalkyle',
   oppgaver: 'oppgaver',
+  timeregistrering: 'timeregistrering',
   vegvesen: 'vegvesen',
   innstillinger: 'innstillinger'
 };
@@ -1337,6 +1338,7 @@ export const MODUL_ICONS = {
   kalender: '📅',
   innkjopskalkyle: '🧮',
   oppgaver: '☑',
+  timeregistrering: '⏱',
   vegvesen: '🔍',
   innstillinger: '⚙'
 };
@@ -1352,6 +1354,7 @@ export const DEFAULT_MODUL_OPPSATT = [
   { id: 'kalender', label: 'Kalender' },
   { id: 'innkjopskalkyle', label: 'Innkjøpskalkyle' },
   { id: 'oppgaver', label: 'Oppgaver' },
+  { id: 'timeregistrering', label: 'Timeregistrering' },
   { id: 'vegvesen', label: 'Vegvesen-oppslag' },
   { id: 'innstillinger', label: 'Innstillinger' }
 ];

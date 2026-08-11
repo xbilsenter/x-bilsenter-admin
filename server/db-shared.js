@@ -111,6 +111,7 @@ const DEFAULT_INNSTILLINGER = {
     { id: 'kalender', label: 'Kalender' },
     { id: 'innkjopskalkyle', label: 'Innkjøpskalkyle' },
     { id: 'oppgaver', label: 'Oppgaver' },
+    { id: 'timeregistrering', label: 'Timeregistrering' },
     { id: 'vegvesen', label: 'Vegvesen-oppslag' },
     { id: 'innstillinger', label: 'Innstillinger' }
   ],
@@ -139,6 +140,7 @@ const PERMISSION_DEFS = [
   { id: 'kalender', label: 'Kalender' },
   { id: 'innkjopskalkyle', label: 'Innkjøpskalkyle' },
   { id: 'oppgaver', label: 'Oppgaver' },
+  { id: 'timeregistrering', label: 'Timeregistrering' },
   { id: 'vegvesen', label: 'Vegvesen-oppslag' },
   { id: 'innstillinger', label: 'Innstillinger' },
   { id: 'brukere', label: 'Brukerstyring' }
@@ -150,8 +152,8 @@ const ROLE_TEMPLATES = {
   'Daglig leder': ALL_PERMISSION_IDS,
   Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
   Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
-  Klargjører: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
-  Verksted: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
+  Klargjører: ['dashboard', 'biler', 'oppgaver', 'timeregistrering', 'vegvesen'],
+  Verksted: ['dashboard', 'biler', 'oppgaver', 'timeregistrering', 'vegvesen'],
   'Kun leser': ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'kalender']
 };
 

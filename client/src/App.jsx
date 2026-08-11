@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useIsMobile from './useIsMobile.js';
 import Login from './components/Login.jsx';
 import InnkjopskalkyleView from './components/InnkjopskalkyleView.jsx';
+import TimeregistreringView from './components/TimeregistreringView.jsx';
 import ChassisScanPanel from './components/ChassisScanPanel.jsx';
 import {
   buildInnbytteTilbudMelding,
@@ -1021,6 +1022,9 @@ export default function App() {
           )}
           {tab === 'oppgaver' && (
             <OppgaverView biler={biler} updateBil={updateBil} visTost={visTost} />
+          )}
+          {tab === 'timeregistrering' && (
+            <TimeregistreringView currentUser={user} visTost={visTost} />
           )}
           {tab === 'vegvesen' && (
             <VegvesenView
@@ -9071,7 +9075,8 @@ const EMPTY_BRUKER = {
   role: 'Selger',
   permissions: [],
   aktiv: true,
-  isAdmin: false
+  isAdmin: false,
+  timelonn: 0
 };
 
 function BrukereSection({ currentUser, visTost }) {
@@ -9142,7 +9147,8 @@ function BrukereSection({ currentUser, visTost }) {
     role: displayRole(b.role),
     permissions: [...(b.permissions || [])],
     aktiv: b.aktiv,
-    isAdmin: !!b.isAdmin
+    isAdmin: !!b.isAdmin,
+    timelonn: Number(b.timelonn) || 0
   });
 
   const lagre = async () => {
@@ -9164,7 +9170,8 @@ function BrukereSection({ currentUser, visTost }) {
         role: form.role,
         permissions: form.permissions,
         aktiv: form.aktiv,
-        isAdmin: form.isAdmin
+        isAdmin: form.isAdmin,
+        timelonn: Math.max(0, Math.round(Number(form.timelonn) || 0))
       };
       if (form.password?.trim()) body.password = form.password.trim();
 
@@ -9291,6 +9298,17 @@ function BrukereSection({ currentUser, visTost }) {
                     return <option key={role} value={role}>{role}</option>;
                   })}
                 </select>
+              </div>
+              <div>
+                <div className="fl">Timelønn (kr/time)</div>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.timelonn}
+                  onChange={e => setForm({ ...form, timelonn: e.target.value })}
+                  placeholder="0"
+                />
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, paddingBottom: 2 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>

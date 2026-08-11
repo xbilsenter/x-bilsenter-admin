@@ -565,6 +565,66 @@ export function deleteBruker(id) {
   return request(`/brukere/${id}`, { method: 'DELETE' });
 }
 
+export function getTimeregistrering(params = {}) {
+  const q = new URLSearchParams();
+  if (params.fra) q.set('fra', params.fra);
+  if (params.til) q.set('til', params.til);
+  if (params.userId) q.set('userId', String(params.userId));
+  const qs = q.toString();
+  return request(`/timeregistrering${qs ? `?${qs}` : ''}`);
+}
+
+export function getTimeregistreringAktiv(userId) {
+  const q = userId ? `?userId=${encodeURIComponent(String(userId))}` : '';
+  return request(`/timeregistrering/aktiv${q}`);
+}
+
+export function getTimeregistreringOppsummering(params = {}) {
+  const q = new URLSearchParams();
+  if (params.fra) q.set('fra', params.fra);
+  if (params.til) q.set('til', params.til);
+  if (params.userId) q.set('userId', String(params.userId));
+  const qs = q.toString();
+  return request(`/timeregistrering/oppsummering${qs ? `?${qs}` : ''}`);
+}
+
+export function stempleInnTimereg() {
+  return request('/timeregistrering/stemple-in', { method: 'POST' });
+}
+
+export function stempleUtTimereg() {
+  return request('/timeregistrering/stemple-ut', { method: 'POST' });
+}
+
+export function startPauseTimereg(body = {}) {
+  return request('/timeregistrering/pause/start', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function sluttPauseTimereg() {
+  return request('/timeregistrering/pause/slutt', { method: 'POST' });
+}
+
+export function postTimeregistrering(body) {
+  return request('/timeregistrering', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function patchTimeregistrering(id, body) {
+  return request(`/timeregistrering/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteTimeregistrering(id) {
+  return request(`/timeregistrering/${id}`, { method: 'DELETE' });
+}
+
 export async function uploadSignatureImage(file) {
   const token = localStorage.getItem(TOKEN_KEY);
   const form = new FormData();

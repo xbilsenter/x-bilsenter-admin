@@ -218,6 +218,33 @@ function initDb() {
   migrateInnkjopskalkyleUpdatedBy();
   migrateBilSchemaExtensions();
   migrateBilSlettinger();
+  migrateTimeregistrering();
+}
+
+function migrateTimeregistrering() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS timeregistrering (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      bruker_navn TEXT NOT NULL DEFAULT '',
+      dato TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'fullfort',
+      start_tid TEXT NOT NULL DEFAULT '',
+      slutt_tid TEXT DEFAULT '',
+      pauser TEXT NOT NULL DEFAULT '[]',
+      notat TEXT DEFAULT '',
+      timelonn INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_timeregistrering_user_dato ON timeregistrering (user_id, dato DESC);
+    CREATE INDEX IF NOT EXISTS idx_timeregistrering_dato ON timeregistrering (dato DESC);
+  `);
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN timelonn INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    /* column exists */
+  }
 }
 
 function normalizeModulOppsett(list) {
@@ -998,6 +1025,7 @@ const DEFAULT_INNSTILLINGER = {
     { id: 'selgbil', label: 'Selg bil' },
     { id: 'kalender', label: 'Kalender' },
     { id: 'oppgaver', label: 'Oppgaver' },
+    { id: 'timeregistrering', label: 'Timeregistrering' },
     { id: 'vegvesen', label: 'Vegvesen-oppslag' },
     { id: 'innstillinger', label: 'Innstillinger' }
   ]
@@ -1350,6 +1378,7 @@ const PERMISSION_DEFS = [
   { id: 'kalender', label: 'Kalender' },
   { id: 'innkjopskalkyle', label: 'Innkjøpskalkyle' },
   { id: 'oppgaver', label: 'Oppgaver' },
+  { id: 'timeregistrering', label: 'Timeregistrering' },
   { id: 'vegvesen', label: 'Vegvesen-oppslag' },
   { id: 'innstillinger', label: 'Innstillinger' },
   { id: 'brukere', label: 'Brukerstyring' }
@@ -1361,8 +1390,8 @@ const ROLE_TEMPLATES = {
   'Daglig leder': ALL_PERMISSION_IDS,
   Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
   Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
-  Klargjører: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
-  Verksted: ['dashboard', 'biler', 'oppgaver', 'vegvesen'],
+  Klargjører: ['dashboard', 'biler', 'oppgaver', 'timeregistrering', 'vegvesen'],
+  Verksted: ['dashboard', 'biler', 'oppgaver', 'timeregistrering', 'vegvesen'],
   'Kun leser': ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'kalender']
 };
 
@@ -1431,6 +1460,7 @@ function mapUser(row, includeHash) {
     permissions: parseJson(row.permissions, []),
     aktiv: !!row.aktiv,
     isAdmin: !!row.is_admin,
+    timelonn: Number(row.timelonn) || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1453,7 +1483,7 @@ function getUserByUsername(username, includeHash) {
 
 function getUsers() {
   return db.prepare(`
-    SELECT id, username, name, email, role, permissions, aktiv, is_admin, created_at, updated_at
+    SELECT id, username, name, email, role, permissions, aktiv, is_admin, timelonn, created_at, updated_at
     FROM users
     ORDER BY name COLLATE NOCASE ASC, id ASC
   `).all().map(function (row) { return mapUser(row); }).filter(Boolean);
@@ -1485,8 +1515,8 @@ function createUser(data, passwordHash) {
   const isAdmin = resolveRoleKey(role) === 'Daglig leder' ? true : !!data.isAdmin;
 
   const info = db.prepare(`
-    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin)
-    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin)
+    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin, timelonn)
+    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin, @timelonn)
   `).run({
     username,
     password_hash: passwordHash,
@@ -1495,7 +1525,8 @@ function createUser(data, passwordHash) {
     role,
     permissions: JSON.stringify(permissions),
     aktiv: data.aktiv === false ? 0 : 1,
-    is_admin: isAdmin ? 1 : 0
+    is_admin: isAdmin ? 1 : 0,
+    timelonn: Math.max(0, Math.round(Number(data.timelonn) || 0))
   });
 
   return getUserById(info.lastInsertRowid);
@@ -1544,6 +1575,7 @@ function updateUser(id, data, passwordHash) {
       permissions = COALESCE(@permissions, permissions),
       aktiv = COALESCE(@aktiv, aktiv),
       is_admin = COALESCE(@is_admin, is_admin),
+      timelonn = COALESCE(@timelonn, timelonn),
       updated_at = datetime('now')
     WHERE id = @id
   `).run({
@@ -1555,7 +1587,8 @@ function updateUser(id, data, passwordHash) {
     role: data.role != null ? String(data.role).trim() : null,
     permissions,
     aktiv: data.aktiv == null ? null : (data.aktiv ? 1 : 0),
-    is_admin: isAdminValue
+    is_admin: isAdminValue,
+    timelonn: data.timelonn == null ? null : Math.max(0, Math.round(Number(data.timelonn) || 0))
   });
 
   return getUserById(id);

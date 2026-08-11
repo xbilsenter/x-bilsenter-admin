@@ -79,7 +79,8 @@ const SERIAL_TABLES = [
   'epost_maler',
   'mail_mapper',
   'epost_vedlegg',
-  'kunder'
+  'kunder',
+  'timeregistrering'
 ];
 
 async function syncPostgresSequences() {
@@ -218,12 +219,35 @@ async function ensureBilSlettingerSchema() {
   `);
 }
 
+async function ensureTimeregistreringSchema() {
+  await execAsync(`
+    CREATE TABLE IF NOT EXISTS public.timeregistrering (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+      bruker_navn TEXT NOT NULL DEFAULT '',
+      dato TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'fullfort',
+      start_tid TEXT NOT NULL DEFAULT '',
+      slutt_tid TEXT DEFAULT '',
+      pauser JSONB NOT NULL DEFAULT '[]'::jsonb,
+      notat TEXT DEFAULT '',
+      timelonn INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_timeregistrering_user_dato ON public.timeregistrering (user_id, dato DESC);
+    CREATE INDEX IF NOT EXISTS idx_timeregistrering_dato ON public.timeregistrering (dato DESC);
+    ALTER TABLE public.users ADD COLUMN IF NOT EXISTS timelonn INTEGER NOT NULL DEFAULT 0;
+  `);
+}
+
 const dbReady = withInitTimeout(
   ensureMailFoldersSchema()
     .then(function () { return ensureSelgBilSchema(); })
     .then(function () { return ensureInnkjopskalkyleSchema(); })
     .then(function () { return ensureBilSchemaExtensions(); })
     .then(function () { return ensureBilSlettingerSchema(); })
+    .then(function () { return ensureTimeregistreringSchema(); })
     .then(function () { return ensureInnstillingDefaults(); })
     .then(function () { return syncPostgresSequences(); })
     .then(function () { return ensureDefaultAdminUser(); }),
@@ -1198,6 +1222,7 @@ function mapUser(row, includeHash) {
     permissions: parseJson(row.permissions, []),
     aktiv: !!row.aktiv,
     isAdmin: !!row.is_admin,
+    timelonn: Number(row.timelonn) || 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1219,7 +1244,7 @@ async function getUserByUsername(username, includeHash) {
 
 async function getUsers() {
   const rows = await prepare(`
-    SELECT id, username, name, email, role, permissions, aktiv, is_admin, created_at, updated_at
+    SELECT id, username, name, email, role, permissions, aktiv, is_admin, timelonn, created_at, updated_at
     FROM users
     ORDER BY lower(name) ASC, id ASC
   `).all();
@@ -1248,8 +1273,8 @@ async function createUser(data, passwordHash) {
   const isAdmin = resolveRoleKey(role) === 'Daglig leder' ? true : !!data.isAdmin;
 
   const info = await prepare(`
-    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin)
-    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin)
+    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin, timelonn)
+    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin, @timelonn)
   `).run({
     username,
     password_hash: passwordHash,
@@ -1258,7 +1283,8 @@ async function createUser(data, passwordHash) {
     role,
     permissions: JSON.stringify(permissions),
     aktiv: data.aktiv === false ? 0 : 1,
-    is_admin: isAdmin ? 1 : 0
+    is_admin: isAdmin ? 1 : 0,
+    timelonn: Math.max(0, Math.round(Number(data.timelonn) || 0))
   });
 
   return getUserById(info.lastInsertRowid);
@@ -1307,6 +1333,7 @@ async function updateUser(id, data, passwordHash) {
       permissions = COALESCE(@permissions, permissions),
       aktiv = COALESCE(@aktiv, aktiv),
       is_admin = COALESCE(@is_admin, is_admin),
+      timelonn = COALESCE(@timelonn, timelonn),
       updated_at = datetime('now')
     WHERE id = @id
   `).run({
@@ -1318,7 +1345,8 @@ async function updateUser(id, data, passwordHash) {
     role: data.role != null ? String(data.role).trim() : null,
     permissions,
     aktiv: data.aktiv == null ? null : (data.aktiv ? 1 : 0),
-    is_admin: isAdminValue
+    is_admin: isAdminValue,
+    timelonn: data.timelonn == null ? null : Math.max(0, Math.round(Number(data.timelonn) || 0))
   });
 
   return getUserById(id);

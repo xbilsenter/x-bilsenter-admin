@@ -87,6 +87,16 @@ const {
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
 const { canDeleteBil, resolveRoleKey, permissionDefsWithModulLabels } = require('./db-shared');
+const {
+  nowOsloDate,
+  nowOsloTime,
+  parsePauser,
+  calcTimeregStats,
+  mapTimeregistreringRow,
+  weekStartIso,
+  addDaysIso,
+  canViewAllTimereg
+} = require('./timeregistrering-shared');
 const { readChassisWithOpenAI, getOpenAiApiKey } = require('./chassis-vision');
 
 const {
@@ -352,8 +362,35 @@ function formatUserResponse(user) {
     role: user.role,
     permissions: user.permissions || [],
     isAdmin: !!user.isAdmin,
-    aktiv: user.aktiv !== false
+    aktiv: user.aktiv !== false,
+    timelonn: Number(user.timelonn) || 0
   };
+}
+
+function mapTimeregLive(row) {
+  const item = mapTimeregistreringRow(row);
+  if (!item) return null;
+  if (item.status === 'aktiv' || item.status === 'pause') {
+    item.stats = calcTimeregStats(item, nowOsloTime());
+  }
+  return item;
+}
+
+function resolveTimeregUserId(req, queryUserId) {
+  const selfId = Number(req.user.sub);
+  const requested = Number(queryUserId);
+  if (requested && canViewAllTimereg(req.user)) return requested;
+  return selfId;
+}
+
+async function getTimeregRow(id) {
+  return prepare('SELECT * FROM timeregistrering WHERE id = ?').get(Number(id));
+}
+
+async function assertTimeregAccess(req, row) {
+  if (!row) return false;
+  if (Number(row.user_id) === Number(req.user.sub)) return true;
+  return canViewAllTimereg(req.user);
 }
 
 async function getAnsvarligNavn(req) {
@@ -2665,6 +2702,282 @@ app.delete('/api/innkjopskalkyle/:id', requireAuth, requirePermission('innkjopsk
   const existing = await prepare('SELECT id FROM innkjopskalkyle WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ ok: false, error: 'Kalkyle ikke funnet.' });
   await prepare('DELETE FROM innkjopskalkyle WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+// ─── Timeregistrering ───
+app.get('/api/timeregistrering', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const userId = resolveTimeregUserId(req, req.query.userId);
+  const fra = String(req.query.fra || weekStartIso(nowOsloDate())).slice(0, 10);
+  const til = String(req.query.til || addDaysIso(fra, 6)).slice(0, 10);
+  const rows = await prepare(`
+    SELECT * FROM timeregistrering
+    WHERE user_id = ? AND dato >= ? AND dato <= ?
+    ORDER BY dato DESC, start_tid DESC, id DESC
+  `).all(userId, fra, til);
+  res.json({ ok: true, items: rows.map(mapTimeregLive).filter(Boolean), fra, til, userId });
+});
+
+app.get('/api/timeregistrering/aktiv', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const userId = resolveTimeregUserId(req, req.query.userId);
+  const row = await prepare(`
+    SELECT * FROM timeregistrering
+    WHERE user_id = ? AND status IN ('aktiv', 'pause')
+    ORDER BY id DESC
+    LIMIT 1
+  `).get(userId);
+  res.json({ ok: true, item: row ? mapTimeregLive(row) : null });
+});
+
+app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const userId = resolveTimeregUserId(req, req.query.userId);
+  const fra = String(req.query.fra || weekStartIso(nowOsloDate())).slice(0, 10);
+  const til = String(req.query.til || addDaysIso(fra, 6)).slice(0, 10);
+  const rows = await prepare(`
+    SELECT * FROM timeregistrering
+    WHERE user_id = ? AND dato >= ? AND dato <= ?
+    ORDER BY dato ASC, start_tid ASC
+  `).all(userId, fra, til);
+
+  let nettoMin = 0;
+  let pauseMin = 0;
+  let lonnKr = 0;
+  let dager = 0;
+  const perDag = {};
+
+  rows.forEach(function (row) {
+    const item = mapTimeregLive(row);
+    if (!item || item.status === 'aktiv' || item.status === 'pause') return;
+    nettoMin += item.stats.nettoMin;
+    pauseMin += item.stats.pauseMin;
+    lonnKr += item.stats.lonnKr;
+    dager += 1;
+    perDag[item.dato] = (perDag[item.dato] || 0) + item.stats.nettoMin;
+  });
+
+  res.json({
+    ok: true,
+    fra,
+    til,
+    userId,
+    oppsummering: {
+      dager,
+      nettoMin,
+      pauseMin,
+      timer: Math.round((nettoMin / 60) * 100) / 100,
+      lonnKr
+    },
+    perDag
+  });
+});
+
+app.post('/api/timeregistrering/stemple-in', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const userId = Number(req.user.sub);
+  const user = await getUserById(userId);
+  if (!user) return res.status(401).json({ ok: false, error: 'Bruker ikke funnet.' });
+
+  const aktiv = await prepare(`
+    SELECT id FROM timeregistrering WHERE user_id = ? AND status IN ('aktiv', 'pause') LIMIT 1
+  `).get(userId);
+  if (aktiv) return res.status(400).json({ ok: false, error: 'Du er allerede stemplet inn.' });
+
+  const dato = nowOsloDate();
+  const startTid = nowOsloTime();
+  const info = await prepare(`
+    INSERT INTO timeregistrering (user_id, bruker_navn, dato, status, start_tid, pauser, timelonn)
+    VALUES (@user_id, @bruker_navn, @dato, 'aktiv', @start_tid, '[]', @timelonn)
+  `).run({
+    user_id: userId,
+    bruker_navn: user.name || user.username,
+    dato,
+    start_tid: startTid,
+    timelonn: Math.max(0, Math.round(Number(user.timelonn) || 0))
+  });
+
+  const row = await getTimeregRow(info.lastInsertRowid);
+  res.status(201).json({ ok: true, item: mapTimeregLive(row) });
+});
+
+app.post('/api/timeregistrering/stemple-ut', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const userId = Number(req.user.sub);
+  const row = await prepare(`
+    SELECT * FROM timeregistrering WHERE user_id = ? AND status IN ('aktiv', 'pause') ORDER BY id DESC LIMIT 1
+  `).get(userId);
+  if (!row) return res.status(400).json({ ok: false, error: 'Ingen aktiv registrering å stemple ut fra.' });
+
+  const sluttTid = nowOsloTime();
+  let pauser = parsePauser(row.pauser);
+  if (row.status === 'pause') {
+    for (let i = pauser.length - 1; i >= 0; i -= 1) {
+      if (pauser[i].start && !pauser[i].slutt) {
+        pauser[i].slutt = sluttTid;
+        break;
+      }
+    }
+  }
+
+  await prepare(`
+    UPDATE timeregistrering SET
+      status = 'fullfort',
+      slutt_tid = @slutt_tid,
+      pauser = @pauser,
+      updated_at = datetime('now')
+    WHERE id = @id
+  `).run({
+    id: row.id,
+    slutt_tid: sluttTid,
+    pauser: JSON.stringify(pauser)
+  });
+
+  const fresh = await getTimeregRow(row.id);
+  res.json({ ok: true, item: mapTimeregLive(fresh) });
+});
+
+app.post('/api/timeregistrering/pause/start', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const userId = Number(req.user.sub);
+  const row = await prepare(`
+    SELECT * FROM timeregistrering WHERE user_id = ? AND status = 'aktiv' ORDER BY id DESC LIMIT 1
+  `).get(userId);
+  if (!row) return res.status(400).json({ ok: false, error: 'Du må være stemplet inn for å starte pause.' });
+
+  const pauser = parsePauser(row.pauser);
+  pauser.push({
+    id: `p${Date.now()}`,
+    start: nowOsloTime(),
+    slutt: '',
+    type: req.body?.type || 'pause',
+    notat: String(req.body?.notat || '')
+  });
+
+  await prepare(`
+    UPDATE timeregistrering SET status = 'pause', pauser = @pauser, updated_at = datetime('now') WHERE id = @id
+  `).run({ id: row.id, pauser: JSON.stringify(pauser) });
+
+  const fresh = await getTimeregRow(row.id);
+  res.json({ ok: true, item: mapTimeregLive(fresh) });
+});
+
+app.post('/api/timeregistrering/pause/slutt', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const userId = Number(req.user.sub);
+  const row = await prepare(`
+    SELECT * FROM timeregistrering WHERE user_id = ? AND status = 'pause' ORDER BY id DESC LIMIT 1
+  `).get(userId);
+  if (!row) return res.status(400).json({ ok: false, error: 'Ingen aktiv pause å avslutte.' });
+
+  const slutt = nowOsloTime();
+  const pauser = parsePauser(row.pauser);
+  for (let i = pauser.length - 1; i >= 0; i -= 1) {
+    if (pauser[i].start && !pauser[i].slutt) {
+      pauser[i].slutt = slutt;
+      break;
+    }
+  }
+
+  await prepare(`
+    UPDATE timeregistrering SET status = 'aktiv', pauser = @pauser, updated_at = datetime('now') WHERE id = @id
+  `).run({ id: row.id, pauser: JSON.stringify(pauser) });
+
+  const fresh = await getTimeregRow(row.id);
+  res.json({ ok: true, item: mapTimeregLive(fresh) });
+});
+
+app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const body = req.body || {};
+  const userId = body.userId && canViewAllTimereg(req.user) ? Number(body.userId) : Number(req.user.sub);
+  const user = await getUserById(userId);
+  if (!user) return res.status(400).json({ ok: false, error: 'Bruker ikke funnet.' });
+
+  const dato = String(body.dato || '').slice(0, 10);
+  const startTid = String(body.startTid || body.start_tid || '').slice(0, 5);
+  const sluttTid = String(body.sluttTid || body.slutt_tid || '').slice(0, 5);
+  if (!dato || !startTid || !sluttTid) {
+    return res.status(400).json({ ok: false, error: 'Dato, start og slutt er påkrevd.' });
+  }
+
+  const pauser = parsePauser(body.pauser);
+  const timelonn = body.timelonn != null
+    ? Math.max(0, Math.round(Number(body.timelonn) || 0))
+    : Math.max(0, Math.round(Number(user.timelonn) || 0));
+
+  const info = await prepare(`
+    INSERT INTO timeregistrering (user_id, bruker_navn, dato, status, start_tid, slutt_tid, pauser, notat, timelonn)
+    VALUES (@user_id, @bruker_navn, @dato, 'fullfort', @start_tid, @slutt_tid, @pauser, @notat, @timelonn)
+  `).run({
+    user_id: userId,
+    bruker_navn: user.name || user.username,
+    dato,
+    start_tid: startTid,
+    slutt_tid: sluttTid,
+    pauser: JSON.stringify(pauser),
+    notat: String(body.notat || ''),
+    timelonn
+  });
+
+  const row = await getTimeregRow(info.lastInsertRowid);
+  res.status(201).json({ ok: true, item: mapTimeregLive(row) });
+});
+
+app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await getTimeregRow(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Registrering ikke funnet.' });
+  if (!(await assertTimeregAccess(req, row))) {
+    return res.status(403).json({ ok: false, error: 'Ingen tilgang.' });
+  }
+
+  const body = req.body || {};
+  const isAdmin = canViewAllTimereg(req.user);
+  if ((row.status === 'aktiv' || row.status === 'pause') && !isAdmin) {
+    return res.status(400).json({ ok: false, error: 'Kan ikke redigere aktiv registrering. Stemple ut først.' });
+  }
+
+  const dato = body.dato != null ? String(body.dato).slice(0, 10) : row.dato;
+  const startTid = body.startTid != null ? String(body.startTid).slice(0, 5) : row.start_tid;
+  const sluttTid = body.sluttTid != null ? String(body.sluttTid).slice(0, 5) : row.slutt_tid;
+  const pauser = body.pauser != null ? parsePauser(body.pauser) : parsePauser(row.pauser);
+  const notat = body.notat != null ? String(body.notat) : row.notat;
+  const status = isAdmin && body.status ? String(body.status) : row.status;
+  const timelonn = body.timelonn != null
+    ? Math.max(0, Math.round(Number(body.timelonn) || 0))
+    : Number(row.timelonn) || 0;
+
+  await prepare(`
+    UPDATE timeregistrering SET
+      dato = @dato,
+      start_tid = @start_tid,
+      slutt_tid = @slutt_tid,
+      pauser = @pauser,
+      notat = @notat,
+      status = @status,
+      timelonn = @timelonn,
+      updated_at = datetime('now')
+    WHERE id = @id
+  `).run({
+    id,
+    dato,
+    start_tid: startTid,
+    slutt_tid: sluttTid,
+    pauser: JSON.stringify(pauser),
+    notat,
+    status,
+    timelonn
+  });
+
+  const fresh = await getTimeregRow(id);
+  res.json({ ok: true, item: mapTimeregLive(fresh) });
+});
+
+app.delete('/api/timeregistrering/:id', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  const id = Number(req.params.id);
+  const row = await getTimeregRow(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Registrering ikke funnet.' });
+  if (!(await assertTimeregAccess(req, row))) {
+    return res.status(403).json({ ok: false, error: 'Ingen tilgang.' });
+  }
+  if ((row.status === 'aktiv' || row.status === 'pause') && Number(row.user_id) !== Number(req.user.sub)) {
+    return res.status(400).json({ ok: false, error: 'Kan ikke slette aktiv registrering for annen bruker.' });
+  }
+  await prepare('DELETE FROM timeregistrering WHERE id = ?').run(id);
   res.json({ ok: true });
 });
 
