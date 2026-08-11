@@ -1247,13 +1247,41 @@ export function ansvarligSelectOptions(lists, currentValue) {
 }
 
 export function bilMatchesSearch(bil, query) {
-  const q = normalizeSearchQuery(query);
-  if (!q || !bil) return false;
+  const terms = extractSearchTerms(query);
+  if (!terms.length || !bil) return false;
 
-  const hay = bilSearchHaystack(bil);
-  const terms = q.split(/\s+/).filter(Boolean);
+  const fields = bilSearchFieldValues(bil);
+  const hay = fields.join(' ');
+  const hayCompact = hay.replace(/\s+/g, '');
+
   return terms.every(function (term) {
-    return hay.includes(term);
+    return searchTermMatches(term, fields, hay, hayCompact);
+  });
+}
+
+function extractSearchTerms(query) {
+  return normalizeSearchQuery(query)
+    .split(/[^a-z0-9æøå]+/i)
+    .map(function (term) { return term.trim(); })
+    .filter(Boolean);
+}
+
+function searchFieldWords(field) {
+  return String(field || '')
+    .split(/[^a-z0-9æøå]+/i)
+    .filter(Boolean);
+}
+
+function searchTermMatches(term, fields, hay, hayCompact) {
+  if (!term) return true;
+  if (hay.includes(term)) return true;
+  if (hayCompact.includes(term.replace(/\s+/g, ''))) return true;
+
+  return fields.some(function (field) {
+    if (field.includes(term)) return true;
+    return searchFieldWords(field).some(function (word) {
+      return word.includes(term) || term.includes(word);
+    });
   });
 }
 
@@ -1265,7 +1293,7 @@ function normalizeSearchQuery(value) {
     .trim();
 }
 
-function bilSearchHaystack(bil) {
+function bilSearchFieldValues(bil) {
   const tr = normalizeBilTilstandsrapport(bil.tilstandsrapport);
   const ap = normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke);
   return [
@@ -1295,8 +1323,7 @@ function bilSearchHaystack(bil) {
     ...(bil.logg || []).map(function (item) { return item.tekst; })
   ]
     .filter(function (value) { return value != null && value !== ''; })
-    .map(normalizeSearchQuery)
-    .join(' ');
+    .map(normalizeSearchQuery);
 }
 
 export const MODUL_ICONS = {
