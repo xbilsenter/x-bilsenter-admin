@@ -3143,10 +3143,6 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                 setModal={setModal}
                 onChange={function (ids) { oppdater('kundeIds', ids, 'Kunder oppdatert ✓'); }}
               />
-              <div className="gap">
-                <div className="fl">Notater</div>
-                <textarea rows={3} value={bil.notater || ''} onChange={e => oppdater('notater', e.target.value)} />
-              </div>
 
               <div className="modal-sec">Utvidet informasjon</div>
               <div className="gap">
@@ -3181,6 +3177,18 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
                   {!s.obligatorisk && <span className="chip chip-gray" style={{ fontSize: 9, marginLeft: 6 }}>Frivillig</span>}
                 </div>
               ))}
+
+              <div className="bil-modal__notater gap">
+                <div className="fl">Notater</div>
+                <textarea
+                  className="bil-modal__notater-field"
+                  rows={6}
+                  value={bil.notater || ''}
+                  onChange={e => oppdater('notater', e.target.value)}
+                  placeholder="Interne notater om bilen…"
+                />
+              </div>
+
               <div className="modal-sec" style={{ marginTop: 24 }}>Tilknyttet aktivitet</div>
               <div className="bil-links-stack">
                 <div>
