@@ -575,6 +575,22 @@ export default function App() {
     setInnstillinger(DEFAULT_INNSTILLINGER);
   };
 
+  const applyBilPatchLocal = useCallback(function (id, patch) {
+    setBiler(function (prev) {
+      return prev.map(function (b) {
+        if (b.id !== id) return b;
+        let next = { ...b, ...patch };
+        if (patch.status && patch.status !== b.status && patch.sjekklister == null) {
+          next = { ...next, ...withStatusChange(b, patch.status, innstillinger.bilSjekklister) };
+        }
+        if (patch.sjekklister) {
+          next.sjekkliste = getAktivSjekkliste({ ...next, status: next.status });
+        }
+        return next;
+      });
+    });
+  }, [innstillinger.bilSjekklister]);
+
   if (!user && !loading) return <Login onSuccess={handleLogin} />;
   if (loading) {
     return (
@@ -612,22 +628,6 @@ export default function App() {
 
   const TABS = buildModulTabs(innstillinger.modulOppsett, modulBadges, user);
   const activeTabLabel = TABS.find(function (t) { return t.id === tab; })?.lbl || 'CRM';
-
-  const applyBilPatchLocal = useCallback(function (id, patch) {
-    setBiler(function (prev) {
-      return prev.map(function (b) {
-        if (b.id !== id) return b;
-        let next = { ...b, ...patch };
-        if (patch.status && patch.status !== b.status && patch.sjekklister == null) {
-          next = { ...next, ...withStatusChange(b, patch.status, innstillinger.bilSjekklister) };
-        }
-        if (patch.sjekklister) {
-          next.sjekkliste = getAktivSjekkliste({ ...next, status: next.status });
-        }
-        return next;
-      });
-    });
-  }, [innstillinger.bilSjekklister]);
 
   const updateBil = async (id, patch, localMsg) => {
     applyBilPatchLocal(id, patch);
