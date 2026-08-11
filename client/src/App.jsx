@@ -613,18 +613,24 @@ export default function App() {
   const TABS = buildModulTabs(innstillinger.modulOppsett, modulBadges, user);
   const activeTabLabel = TABS.find(function (t) { return t.id === tab; })?.lbl || 'CRM';
 
+  const applyBilPatchLocal = useCallback(function (id, patch) {
+    setBiler(function (prev) {
+      return prev.map(function (b) {
+        if (b.id !== id) return b;
+        let next = { ...b, ...patch };
+        if (patch.status && patch.status !== b.status && patch.sjekklister == null) {
+          next = { ...next, ...withStatusChange(b, patch.status, innstillinger.bilSjekklister) };
+        }
+        if (patch.sjekklister) {
+          next.sjekkliste = getAktivSjekkliste({ ...next, status: next.status });
+        }
+        return next;
+      });
+    });
+  }, [innstillinger.bilSjekklister]);
+
   const updateBil = async (id, patch, localMsg) => {
-    setBiler(prev => prev.map(b => {
-      if (b.id !== id) return b;
-      let next = { ...b, ...patch };
-      if (patch.status && patch.status !== b.status && patch.sjekklister == null) {
-        next = { ...next, ...withStatusChange(b, patch.status, innstillinger.bilSjekklister) };
-      }
-      if (patch.sjekklister) {
-        next.sjekkliste = getAktivSjekkliste({ ...next, status: next.status });
-      }
-      return next;
-    }));
+    applyBilPatchLocal(id, patch);
     try {
       const res = await patchBil(id, patch);
       if (res.item) setBiler(prev => prev.map(b => b.id === id ? res.item : b));
@@ -1092,6 +1098,7 @@ export default function App() {
           data={modal.d}
           onClose={() => setModal(null)}
           updateBil={updateBil}
+          applyBilPatchLocal={applyBilPatchLocal}
           deleteBil={deleteBilItem}
           visTost={visTost}
           lists={lists}
@@ -2780,7 +2787,7 @@ async function hentAutosysPayload(reg, lists, prevBil, overstyrt) {
   return buildAutosysLagring(parsed, data.raw || null, lists, prevBil, overstyrt);
 }
 
-function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser }) {
+function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
   const [autosysOverstyrt, setAutosysOverstyrt] = useState(function () {
     return getBilAutosysOverstyrt(data);
@@ -2990,6 +2997,7 @@ function BilModal({ data, onClose, updateBil, deleteBil, visTost, lists, kal, he
       }
 
       if (BIL_DEBOUNCED_TEXT_FIELDS.has(k)) {
+        applyBilPatchLocal(prev.id, patch);
         queueTextSave(patch, msg);
       } else {
         saveImmediate(patch, msg);

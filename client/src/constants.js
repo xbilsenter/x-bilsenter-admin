@@ -1247,9 +1247,28 @@ export function ansvarligSelectOptions(lists, currentValue) {
 }
 
 export function bilMatchesSearch(bil, query) {
-  const q = String(query || '').trim().toLowerCase();
+  const q = normalizeSearchQuery(query);
   if (!q || !bil) return false;
-  const hay = [
+
+  const hay = bilSearchHaystack(bil);
+  const terms = q.split(/\s+/).filter(Boolean);
+  return terms.every(function (term) {
+    return hay.includes(term);
+  });
+}
+
+function normalizeSearchQuery(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function bilSearchHaystack(bil) {
+  const tr = normalizeBilTilstandsrapport(bil.tilstandsrapport);
+  const ap = normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke);
+  return [
     bil.reg,
     bil.merke,
     bil.modell,
@@ -1264,16 +1283,20 @@ export function bilMatchesSearch(bil, query) {
     bil.girkasse,
     bil.utstyr,
     bil.forsikring,
-    bil.tilstandsrapport?.status === 'utfort' ? 'tilstandsrapport utfort' : 'tilstandsrapport ikke utfort',
-    bil.tilstandsrapport?.medfolger ? 'medfolger' : '',
-    bil.tilstandsrapport?.nybilgaranti ? 'nybilgaranti' : '',
-    bil.arsprovekjennemerke?.skiltnummer,
-    bil.arsprovekjennemerke?.status,
+    tr.status === 'utfort' ? 'tilstandsrapport utfort' : 'tilstandsrapport ikke utfort',
+    tr.medfolger ? 'medfolger' : '',
+    tr.nybilgaranti ? 'nybilgaranti' : '',
+    ap.skiltnummer,
+    ap.status,
+    ap.notater,
     bil.archived ? 'arkiv' : 'lager',
     ...(bil.kommentarer || []).map(function (item) { return item.text; }),
-    ...(bil.dokumenter || []).map(function (item) { return item.name; })
-  ].filter(Boolean).join(' ').toLowerCase();
-  return q.split(/\s+/).every(function (term) { return hay.includes(term); });
+    ...(bil.dokumenter || []).map(function (item) { return item.name; }),
+    ...(bil.logg || []).map(function (item) { return item.tekst; })
+  ]
+    .filter(function (value) { return value != null && value !== ''; })
+    .map(normalizeSearchQuery)
+    .join(' ');
 }
 
 export const MODUL_ICONS = {
