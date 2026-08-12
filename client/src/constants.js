@@ -1270,8 +1270,14 @@ export function ansvarligSelectOptions(lists, currentValue) {
 }
 
 export function bilMatchesSearch(bil, query) {
+  if (!bil || !String(query || '').trim()) return false;
+
+  if (looksLikeRegnrQuery(query)) {
+    return bilMatchesRegSearch(bil, query);
+  }
+
   const terms = extractSearchTerms(query);
-  if (!terms.length || !bil) return false;
+  if (!terms.length) return false;
 
   const fields = bilSearchFieldValues(bil);
   const hay = fields.join(' ');
@@ -1280,6 +1286,22 @@ export function bilMatchesSearch(bil, query) {
   return terms.every(function (term) {
     return searchTermMatches(term, fields, hay, hayCompact);
   });
+}
+
+function looksLikeRegnrQuery(query) {
+  const compact = normalizeBilReg(query);
+  if (compact.length < 2) return false;
+  if (/^[A-ZÆØÅ]{2}\d{0,5}$/.test(compact)) return true;
+  if (/^[A-ZÆØÅ]{1,2}$/.test(compact)) return true;
+  if (/^\d{2,6}$/.test(compact)) return true;
+  return false;
+}
+
+function bilMatchesRegSearch(bil, query) {
+  const q = normalizeBilReg(query);
+  const reg = normalizeBilReg(bil.reg);
+  if (!q || !reg) return false;
+  return reg.includes(q);
 }
 
 function extractSearchTerms(query) {
@@ -1303,7 +1325,7 @@ function searchTermMatches(term, fields, hay, hayCompact) {
   return fields.some(function (field) {
     if (field.includes(term)) return true;
     return searchFieldWords(field).some(function (word) {
-      return word.includes(term) || term.includes(word);
+      return word.includes(term);
     });
   });
 }
