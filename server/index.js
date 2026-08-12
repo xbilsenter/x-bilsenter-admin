@@ -795,27 +795,18 @@ async function buildDashboardPayload() {
 
 app.get('/api/bootstrap', requireAuth, async function (req, res) {
   try {
-    const user = await getUserById(req.user.sub);
+    const [user, lists] = await Promise.all([
+      getUserById(req.user.sub),
+      getLister()
+    ]);
     if (!user || !user.aktiv) {
       return res.status(401).json({ ok: false, error: 'Ugyldig sesjon.' });
     }
 
-    const cachedDash = getDashboardCache();
-    const [lists, mailStatus, dashboard] = await Promise.all([
-      getLister(),
-      getMailStatus(),
-      cachedDash || buildDashboardPayload().then(function (payload) {
-        setDashboardCache(payload);
-        return payload;
-      })
-    ]);
-
     res.json({
       ok: true,
       user: formatUserResponse(user),
-      lists,
-      mailStatus,
-      stats: dashboard.stats || {}
+      lists
     });
   } catch (err) {
     console.error('GET /api/bootstrap feilet:', err.message);

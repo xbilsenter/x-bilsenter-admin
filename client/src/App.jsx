@@ -378,6 +378,37 @@ function bilMerker(biler) {
   })];
 }
 
+const SESSION_CACHE_KEY = 'xbilsenter_admin_session_cache';
+
+function readSessionCache() {
+  try {
+    const raw = localStorage.getItem(SESSION_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.user || !parsed?.lists) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCache(user, lists) {
+  if (!user || !lists) return;
+  try {
+    localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify({ user, lists }));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearSessionCache() {
+  try {
+    localStorage.removeItem(SESSION_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null);
@@ -441,6 +472,7 @@ export default function App() {
           };
         }))),
         safeLoad(getDashboard, (d) => setStats(d.stats || {})),
+        safeLoad(getMailStatus, (d) => setMailStatus(d.status || {})),
         safeLoad(getKunder, (k) => setKunder(k.items || [])),
         safeLoad(getHenvendelser, (h) => setHenv(h.items || [])),
         safeLoad(getInnbytte, (i) => setInnbytte(i.items || [])),
@@ -485,14 +517,30 @@ export default function App() {
     setUser(res.user);
     if (res.lists) {
       setInnstillinger(function (prev) { return { ...prev, ...res.lists }; });
+      writeSessionCache(res.user, res.lists);
     }
-    setMailStatus(res.mailStatus || {});
-    setStats(res.stats || {});
   }, []);
 
   const initSession = useCallback(async function () {
     if (!getToken()) {
       setCoreLoading(false);
+      return;
+    }
+
+    const cached = readSessionCache();
+    if (cached) {
+      setUser(cached.user);
+      setInnstillinger(function (prev) { return { ...prev, ...cached.lists }; });
+      setCoreLoading(false);
+      loadSecondaryData();
+      try {
+        const res = await getBootstrap();
+        applyBootstrap(res);
+      } catch {
+        logout();
+        setUser(null);
+        clearSessionCache();
+      }
       return;
     }
 
@@ -586,6 +634,7 @@ export default function App() {
 
   const handleLogout = () => {
     logout();
+    clearSessionCache();
     setUser(null);
     setMobileNavOpen(false);
     setBiler([]);
