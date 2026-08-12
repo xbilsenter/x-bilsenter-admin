@@ -56,8 +56,8 @@ import {
 } from './constants.js';
 import {
   getToken, logout,
-  getMe, changeMyPassword,
-  getDashboard, getNettsideDrift, getSitePreviewUrl, getVedlikehold, getHenvendelser, patchHenvendelse, deleteHenvendelse,
+  changeMyPassword,
+  getDashboard, getBootstrap, getNettsideDrift, getSitePreviewUrl, getVedlikehold, getHenvendelser, patchHenvendelse, deleteHenvendelse,
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
@@ -381,7 +381,8 @@ function bilMerker(biler) {
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(!!getToken());
+  const [coreLoading, setCoreLoading] = useState(!!getToken());
+  const [dataLoading, setDataLoading] = useState(false);
   const [tab, setTabState] = useState(getSavedTab);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const setTab = useCallback(function (next) {
@@ -416,8 +417,8 @@ export default function App() {
     } catch { /* ignore */ }
   }, []);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadSecondaryData = useCallback(async function () {
+    setDataLoading(true);
     let authError = null;
 
     async function safeLoad(loader, onSuccess) {
@@ -439,12 +440,23 @@ export default function App() {
             km: normalizeKmValue(item.km)
           };
         }))),
-        safeLoad(getLister, (l) => {
-          if (l.lists) {
-            setInnstillinger(function (prev) { return { ...prev, ...l.lists }; });
+        safeLoad(getDashboard, (d) => setStats(d.stats || {})),
+        safeLoad(getKunder, (k) => setKunder(k.items || [])),
+        safeLoad(getHenvendelser, (h) => setHenv(h.items || [])),
+        safeLoad(getInnbytte, (i) => setInnbytte(i.items || [])),
+        safeLoad(getSelgBil, (s) => setSelgBil(s.items || [])),
+        safeLoad(getKalender, (k) => setKal(k.items || [])),
+        safeLoad(getInnkjopskalkyle, (k) => setInnkjopskalkyle(k.items || [])),
+        safeLoad(getVedlikehold, (v) => {
+          if (v.vedlikeholdModus) {
+            setInnstillinger(function (prev) {
+              return { ...prev, vedlikeholdModus: v.vedlikeholdModus };
+            });
           }
         }),
-        safeLoad(getMailStatus, (d) => setMailStatus(d.status || {}))
+        safeLoad(getInnstillinger, (s) => {
+          if (s.settings) setInnstillinger(s.settings);
+        })
       ]);
     } catch {
       /* ignore */
@@ -453,36 +465,9 @@ export default function App() {
     if (authError) {
       logout();
       setUser(null);
-      setLoading(false);
-      return;
     }
 
-    setLoading(false);
-
-    await Promise.all([
-      safeLoad(getDashboard, (d) => setStats(d.stats || {})),
-      safeLoad(getKunder, (k) => setKunder(k.items || [])),
-      safeLoad(getHenvendelser, (h) => setHenv(h.items || [])),
-      safeLoad(getInnbytte, (i) => setInnbytte(i.items || [])),
-      safeLoad(getSelgBil, (s) => setSelgBil(s.items || [])),
-      safeLoad(getKalender, (k) => setKal(k.items || [])),
-      safeLoad(getInnkjopskalkyle, (k) => setInnkjopskalkyle(k.items || [])),
-      safeLoad(getVedlikehold, (v) => {
-        if (v.vedlikeholdModus) {
-          setInnstillinger(function (prev) {
-            return { ...prev, vedlikeholdModus: v.vedlikeholdModus };
-          });
-        }
-      }),
-      safeLoad(getInnstillinger, (s) => {
-        if (s.settings) setInnstillinger(s.settings);
-      })
-    ]);
-
-    if (authError) {
-      logout();
-      setUser(null);
-    }
+    setDataLoading(false);
 
     syncBilerEuKontroll({ onlyMissing: true }).then(function (res) {
       if (!res?.items?.length) return;
@@ -496,22 +481,54 @@ export default function App() {
     }).catch(function () { /* stille bakgrunnssync */ });
   }, []);
 
-  useEffect(() => {
-    if (getToken()) {
-      getMe()
-        .then(function (res) {
-          setUser(res.user);
-          return loadData();
-        })
-        .catch(function () {
-          logout();
-          setUser(null);
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
+  const applyBootstrap = useCallback(function (res) {
+    setUser(res.user);
+    if (res.lists) {
+      setInnstillinger(function (prev) { return { ...prev, ...res.lists }; });
     }
-  }, [loadData]);
+    setMailStatus(res.mailStatus || {});
+    setStats(res.stats || {});
+  }, []);
+
+  const initSession = useCallback(async function () {
+    if (!getToken()) {
+      setCoreLoading(false);
+      return;
+    }
+
+    setCoreLoading(true);
+    try {
+      const res = await getBootstrap();
+      applyBootstrap(res);
+    } catch {
+      logout();
+      setUser(null);
+      setCoreLoading(false);
+      return;
+    }
+
+    setCoreLoading(false);
+    loadSecondaryData();
+  }, [applyBootstrap, loadSecondaryData]);
+
+  const loadData = useCallback(async function () {
+    if (!getToken()) return;
+
+    try {
+      const res = await getBootstrap();
+      applyBootstrap(res);
+    } catch {
+      logout();
+      setUser(null);
+      return;
+    }
+
+    await loadSecondaryData();
+  }, [applyBootstrap, loadSecondaryData]);
+
+  useEffect(function () {
+    initSession();
+  }, [initSession]);
 
   const reloadInnboks = useCallback(async () => {
     try {
@@ -529,7 +546,7 @@ export default function App() {
   }, []);
 
   useEffect(function () {
-    if (!user || loading) return;
+    if (!user || coreLoading) return;
     if (tab === 'innstillinger') return;
     const perm = TAB_PERMISSIONS[tab];
     if (perm && canAccess(user, perm)) return;
@@ -540,7 +557,7 @@ export default function App() {
       setTabState(fallback);
       saveActiveTab(fallback);
     }
-  }, [user, tab, loading]);
+  }, [user, tab, coreLoading]);
 
   useEffect(function () {
     if (!mobileNavOpen) return;
@@ -558,7 +575,13 @@ export default function App() {
 
   const handleLogin = (u) => {
     setUser(u);
-    loadData();
+    getBootstrap()
+      .then(applyBootstrap)
+      .catch(function () {
+        logout();
+        setUser(null);
+      });
+    loadSecondaryData();
   };
 
   const handleLogout = () => {
@@ -629,12 +652,12 @@ export default function App() {
     }
   }, [applyBilPatchLocal, visTost]);
 
-  if (!user && !loading) return <Login onSuccess={handleLogin} />;
-  if (loading) {
+  if (!user && !coreLoading) return <Login onSuccess={handleLogin} />;
+  if (coreLoading) {
     return (
       <div className="loading-screen">
         <div className="spin" style={{ width: 24, height: 24 }} />
-        Laster CRM…
+        Laster driftssystem…
       </div>
     );
   }
@@ -942,6 +965,7 @@ export default function App() {
         </aside>
 
         <main className="main">
+          {dataLoading && <div className="data-loading-bar" aria-hidden="true" />}
           <div className="mobile-topbar">
             <button
               type="button"

@@ -734,51 +734,7 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
   }
 
   try {
-    await waitForDbReady(8000);
-
-    const idag = new Date().toISOString().slice(0, 10);
-    const [
-      nyeHenvRow,
-      nyeInnbytteRow,
-      nyeSelgBilRow,
-      paaLagerRow,
-      reservertRow,
-      iDagKalRow,
-      ulestEpost,
-      nyeInnkommendeEpost,
-      ulestEpostRows,
-      totaltKunderRow
-    ] = await Promise.all([
-      prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
-      prepare("SELECT COUNT(*) AS c FROM innbytte WHERE status = 'Ny'").get(),
-      prepare("SELECT COUNT(*) AS c FROM selg_bil WHERE status = 'Ny'").get(),
-      prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status NOT IN ('Solgt')").get(),
-      prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status = 'Reservert'").get(),
-      prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
-      countUlestEpost(),
-      countNyeInnkommendeEpost(),
-      listUlestEpostPreview(25),
-      prepare('SELECT COUNT(*) AS c FROM kunder').get()
-    ]);
-
-    const ulestEpostListe = mapEpostPreviewRows(ulestEpostRows || []);
-
-    const payload = {
-      ok: true,
-      stats: {
-        nyeHenv: Number(nyeHenvRow.c) || 0,
-        nyeInnbytte: Number(nyeInnbytteRow.c) || 0,
-        nyeSelgBil: Number(nyeSelgBilRow.c) || 0,
-        paaLager: Number(paaLagerRow.c) || 0,
-        reservert: Number(reservertRow.c) || 0,
-        iDagKal: Number(iDagKalRow.c) || 0,
-        ulestEpost: Number(ulestEpost) || 0,
-        nyeInnkommendeEpost: Number(nyeInnkommendeEpost) || 0,
-        ulestEpostListe,
-        totaltKunder: Number(totaltKunderRow.c) || 0
-      }
-    };
-
+    const payload = await buildDashboardPayload();
     setDashboardCache(payload);
     res.json(payload);
   } catch (err) {
@@ -786,6 +742,86 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
     res.status(503).json({
       ok: false,
       error: 'Dashboard utilgjengelig midlertidig. Prøv igjen om litt.'
+    });
+  }
+});
+
+async function buildDashboardPayload() {
+  await waitForDbReady(8000);
+
+  const idag = new Date().toISOString().slice(0, 10);
+  const [
+    nyeHenvRow,
+    nyeInnbytteRow,
+    nyeSelgBilRow,
+    paaLagerRow,
+    reservertRow,
+    iDagKalRow,
+    ulestEpost,
+    nyeInnkommendeEpost,
+    ulestEpostRows,
+    totaltKunderRow
+  ] = await Promise.all([
+    prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
+    prepare("SELECT COUNT(*) AS c FROM innbytte WHERE status = 'Ny'").get(),
+    prepare("SELECT COUNT(*) AS c FROM selg_bil WHERE status = 'Ny'").get(),
+    prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status NOT IN ('Solgt')").get(),
+    prepare("SELECT COUNT(*) AS c FROM biler WHERE archived = 0 AND status = 'Reservert'").get(),
+    prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
+    countUlestEpost(),
+    countNyeInnkommendeEpost(),
+    listUlestEpostPreview(25),
+    prepare('SELECT COUNT(*) AS c FROM kunder').get()
+  ]);
+
+  const ulestEpostListe = mapEpostPreviewRows(ulestEpostRows || []);
+
+  return {
+    ok: true,
+    stats: {
+      nyeHenv: Number(nyeHenvRow.c) || 0,
+      nyeInnbytte: Number(nyeInnbytteRow.c) || 0,
+      nyeSelgBil: Number(nyeSelgBilRow.c) || 0,
+      paaLager: Number(paaLagerRow.c) || 0,
+      reservert: Number(reservertRow.c) || 0,
+      iDagKal: Number(iDagKalRow.c) || 0,
+      ulestEpost: Number(ulestEpost) || 0,
+      nyeInnkommendeEpost: Number(nyeInnkommendeEpost) || 0,
+      ulestEpostListe,
+      totaltKunder: Number(totaltKunderRow.c) || 0
+    }
+  };
+}
+
+app.get('/api/bootstrap', requireAuth, async function (req, res) {
+  try {
+    const user = await getUserById(req.user.sub);
+    if (!user || !user.aktiv) {
+      return res.status(401).json({ ok: false, error: 'Ugyldig sesjon.' });
+    }
+
+    const cachedDash = getDashboardCache();
+    const [lists, mailStatus, dashboard] = await Promise.all([
+      getLister(),
+      getMailStatus(),
+      cachedDash || buildDashboardPayload().then(function (payload) {
+        setDashboardCache(payload);
+        return payload;
+      })
+    ]);
+
+    res.json({
+      ok: true,
+      user: formatUserResponse(user),
+      lists,
+      mailStatus,
+      stats: dashboard.stats || {}
+    });
+  } catch (err) {
+    console.error('GET /api/bootstrap feilet:', err.message);
+    res.status(503).json({
+      ok: false,
+      error: 'Kunne ikke starte driftssystemet. Prøv igjen om litt.'
     });
   }
 });

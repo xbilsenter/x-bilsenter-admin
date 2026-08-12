@@ -67,6 +67,10 @@ export function logout() {
   setToken(null);
 }
 
+export function getBootstrap() {
+  return request('/bootstrap');
+}
+
 export function getDashboard() {
   return request('/dashboard');
 }
