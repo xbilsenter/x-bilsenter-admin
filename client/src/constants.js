@@ -1156,6 +1156,21 @@ export const BIL_NUMERIC_FIELDS = new Set(['aar', 'km', 'innkjop', 'salg']);
 /** Tekstfelt på bilkort som lagres med debounce for å unngå tapte tegn ved raske PATCH-kall. */
 export const BIL_DEBOUNCED_TEXT_FIELDS = new Set(['modell', 'notater', 'utstyr', 'farge', 'finnKode']);
 
+export function mergeBilDebouncedTextFields(saved, local) {
+  if (!saved) return local;
+  if (!local) return saved;
+  const next = { ...saved };
+  BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
+    if (local[key] !== undefined) next[key] = local[key];
+  });
+  return next;
+}
+
+export function patchIsDebouncedTextOnly(patch) {
+  const keys = Object.keys(patch || {});
+  return keys.length > 0 && keys.every(function (key) { return BIL_DEBOUNCED_TEXT_FIELDS.has(key); });
+}
+
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
   const inn = Number(innkjop) || 0;

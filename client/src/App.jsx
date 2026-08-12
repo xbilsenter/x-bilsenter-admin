@@ -46,6 +46,7 @@ import {
   BIL_AUTOSYS_FELTER, getBilAutosysOverstyrt, markBilAutosysOverstyrt,
   mergeAutosysOverstyrtIntoSvvData, buildAutosysBilFelt,
   parseNumberInput, numberInputDisplay, numberInputForSave, kmInputDisplay, kmInputForSave, normalizeKmValue, BIL_NUMERIC_FIELDS, BIL_DEBOUNCED_TEXT_FIELDS,
+  mergeBilDebouncedTextFields, patchIsDebouncedTextOnly,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader, bilTilstandsrapportNodvendigFilterOptions,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
@@ -592,6 +593,41 @@ export default function App() {
     });
   }, [innstillinger.bilSjekklister]);
 
+  const refreshStatsRef = useRef(refreshStats);
+  refreshStatsRef.current = refreshStats;
+
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
+
+  const updateBil = useCallback(async function (id, patch, localMsg) {
+    const textOnly = patchIsDebouncedTextOnly(patch);
+    if (!textOnly) applyBilPatchLocal(id, patch);
+    try {
+      const res = await patchBil(id, patch);
+      let mergedItem = res.item || null;
+      if (res.item) {
+        setBiler(function (prev) {
+          return prev.map(function (b) {
+            if (b.id !== id) return b;
+            mergedItem = mergeBilDebouncedTextFields(res.item, b);
+            return mergedItem;
+          });
+        });
+        setModal(function (prev) {
+          if (prev?.t !== 'visBil' || normalizeBilId(prev.d?.id) !== normalizeBilId(id)) return prev;
+          return { ...prev, d: mergeBilDebouncedTextFields(res.item, prev.d) };
+        });
+      }
+      if (localMsg) visTost(localMsg);
+      if (!textOnly) refreshStatsRef.current();
+      return mergedItem;
+    } catch {
+      visTost('Kunne ikke lagre bil ✗');
+      loadDataRef.current();
+      return null;
+    }
+  }, [applyBilPatchLocal, visTost]);
+
   if (!user && !loading) return <Login onSuccess={handleLogin} />;
   if (loading) {
     return (
@@ -629,21 +665,6 @@ export default function App() {
 
   const TABS = buildModulTabs(innstillinger.modulOppsett, modulBadges, user);
   const activeTabLabel = TABS.find(function (t) { return t.id === tab; })?.lbl || 'CRM';
-
-  const updateBil = async (id, patch, localMsg) => {
-    applyBilPatchLocal(id, patch);
-    try {
-      const res = await patchBil(id, patch);
-      if (res.item) setBiler(prev => prev.map(b => b.id === id ? res.item : b));
-      if (localMsg) visTost(localMsg);
-      refreshStats();
-      return res.item || null;
-    } catch {
-      visTost('Kunne ikke lagre bil ✗');
-      loadData();
-      return null;
-    }
-  };
 
   const reorderBiler = async (updates, localMsg) => {
     if (!updates?.length) return;
@@ -2811,6 +2832,18 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
   bilRef.current = bil;
   autosysOverstyrtRef.current = autosysOverstyrt;
 
+  const collectPendingTextPatch = useCallback(function () {
+    const pending = pendingPatchRef.current;
+    pendingPatchRef.current = {};
+    if (!Object.keys(pending).length) return null;
+    const current = bilRef.current || {};
+    const toSend = { ...pending };
+    BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
+      if (key in pending) toSend[key] = current[key];
+    });
+    return toSend;
+  }, []);
+
   const enqueueSave = useCallback(function (patch, msg) {
     const id = bilRef.current?.id;
     if (!id || !patch || !Object.keys(patch).length) return saveChainRef.current;
@@ -2823,30 +2856,37 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
   const flushTextSave = useCallback(function (msg) {
     clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = null;
-    const toSend = pendingPatchRef.current;
-    pendingPatchRef.current = {};
-    if (!Object.keys(toSend).length) return saveChainRef.current;
+    const toSend = collectPendingTextPatch();
+    if (!toSend || !Object.keys(toSend).length) return saveChainRef.current;
     return enqueueSave(toSend, msg);
-  }, [enqueueSave]);
+  }, [enqueueSave, collectPendingTextPatch]);
 
   const saveImmediate = useCallback(function (patch, msg) {
     clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = null;
-    const pending = pendingPatchRef.current;
-    pendingPatchRef.current = {};
-    return enqueueSave({ ...pending, ...patch }, msg);
-  }, [enqueueSave]);
+    const pending = collectPendingTextPatch();
+    const merged = { ...(pending || {}), ...patch };
+    if (!Object.keys(merged).length) return saveChainRef.current;
+    return enqueueSave(merged, msg);
+  }, [enqueueSave, collectPendingTextPatch]);
+
+  const saveImmediateRef = useRef(saveImmediate);
+  saveImmediateRef.current = saveImmediate;
+
+  const listsRef = useRef(lists);
+  listsRef.current = lists;
+
+  const autosysInitKeyRef = useRef('');
 
   const queueTextSave = useCallback(function (patch, msg) {
     pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
     clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(function () {
       debounceTimerRef.current = null;
-      const toSend = pendingPatchRef.current;
-      pendingPatchRef.current = {};
-      if (Object.keys(toSend).length) enqueueSave(toSend, msg);
-    }, 450);
-  }, [enqueueSave]);
+      const toSend = collectPendingTextPatch();
+      if (toSend && Object.keys(toSend).length) enqueueSave(toSend, msg);
+    }, 350);
+  }, [enqueueSave, collectPendingTextPatch]);
 
   const handleClose = useCallback(function () {
     flushTextSave().finally(function () { onClose(); });
@@ -2855,14 +2895,13 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
   useEffect(function () {
     return function () {
       clearTimeout(debounceTimerRef.current);
-      const toSend = pendingPatchRef.current;
-      pendingPatchRef.current = {};
+      const toSend = collectPendingTextPatch();
       const id = bilRef.current?.id;
-      if (id && Object.keys(toSend).length) {
+      if (id && toSend && Object.keys(toSend).length) {
         enqueueSave(toSend);
       }
     };
-  }, [enqueueSave]);
+  }, [enqueueSave, collectPendingTextPatch]);
 
   useEffect(function () {
     setBil(data);
@@ -2870,6 +2909,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
     setAutosysOverstyrt(o);
     bilRef.current = data;
     autosysOverstyrtRef.current = o;
+    autosysInitKeyRef.current = '';
   }, [data.id]);
 
   const lagreAutosys = useCallback(async function (options) {
@@ -2902,10 +2942,18 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
   useEffect(function () {
     const reg = normalizeBilReg(data.reg);
     if (!isValidBilReg(reg)) return;
-    if (hasAutosysVehicleData(data.svvData)) return;
 
+    const initKey = String(data.id) + ':' + reg;
+    if (autosysInitKeyRef.current === initKey) return;
+    if (hasAutosysVehicleData(bilRef.current?.svvData)) {
+      autosysInitKeyRef.current = initKey;
+      return;
+    }
+
+    autosysInitKeyRef.current = initKey;
     let cancelled = false;
-    hentAutosysPayload(reg, lists, bilRef.current, autosysOverstyrtRef.current).then(async function (result) {
+
+    hentAutosysPayload(reg, listsRef.current, bilRef.current, autosysOverstyrtRef.current).then(async function (result) {
       if (cancelled) return;
       const filtered = filterAutosysPatchByOverstyrt(result.patch, result.localUpdate, autosysOverstyrtRef.current);
       const nextOverstyrt = result.overstyrt || {};
@@ -2916,7 +2964,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
         bilRef.current = next;
         return next;
       });
-      const saved = await saveImmediate(filtered.patch);
+      const saved = await saveImmediateRef.current(filtered.patch);
       if (!cancelled && saved) {
         setBil(function (prev) {
           const next = mergeBilAfterAutosysSave(prev, saved);
@@ -2929,7 +2977,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
     }).catch(function () { /* stille bakgrunnshenting */ });
 
     return function () { cancelled = true; };
-  }, [data.id, data.reg, data.svvData, lists, saveImmediate]);
+  }, [data.id, data.reg]);
 
   const docCount = (bil.dokumenter || []).length;
   const bilTabs = [
