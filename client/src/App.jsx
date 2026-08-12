@@ -614,6 +614,7 @@ export default function App() {
           });
         });
         setModal(function (prev) {
+          if (textOnly) return prev;
           if (prev?.t !== 'visBil' || normalizeBilId(prev.d?.id) !== normalizeBilId(id)) return prev;
           return { ...prev, d: mergeBilDebouncedTextFields(res.item, prev.d) };
         });
@@ -2827,8 +2828,10 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
   const bilRef = useRef(bil);
   const autosysOverstyrtRef = useRef(autosysOverstyrt);
   const saveChainRef = useRef(Promise.resolve());
+  const textSaveChainRef = useRef(Promise.resolve());
   const debounceTimerRef = useRef(null);
   const pendingPatchRef = useRef({});
+  const [closing, setClosing] = useState(false);
   bilRef.current = bil;
   autosysOverstyrtRef.current = autosysOverstyrt;
 
@@ -2844,6 +2847,15 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
     return toSend;
   }, []);
 
+  const enqueueTextSave = useCallback(function (patch, msg) {
+    const id = bilRef.current?.id;
+    if (!id || !patch || !Object.keys(patch).length) return textSaveChainRef.current;
+    textSaveChainRef.current = textSaveChainRef.current
+      .catch(function () {})
+      .then(function () { return updateBil(id, patch, msg); });
+    return textSaveChainRef.current;
+  }, [updateBil]);
+
   const enqueueSave = useCallback(function (patch, msg) {
     const id = bilRef.current?.id;
     if (!id || !patch || !Object.keys(patch).length) return saveChainRef.current;
@@ -2853,13 +2865,23 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
     return saveChainRef.current;
   }, [updateBil]);
 
+  const splitPatchBySaveKind = useCallback(function (patch) {
+    const textPatch = {};
+    const otherPatch = {};
+    Object.keys(patch || {}).forEach(function (key) {
+      if (BIL_DEBOUNCED_TEXT_FIELDS.has(key)) textPatch[key] = patch[key];
+      else otherPatch[key] = patch[key];
+    });
+    return { textPatch, otherPatch };
+  }, []);
+
   const flushTextSave = useCallback(function (msg) {
     clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = null;
     const toSend = collectPendingTextPatch();
-    if (!toSend || !Object.keys(toSend).length) return saveChainRef.current;
-    return enqueueSave(toSend, msg);
-  }, [enqueueSave, collectPendingTextPatch]);
+    if (!toSend || !Object.keys(toSend).length) return textSaveChainRef.current;
+    return enqueueTextSave(toSend, msg);
+  }, [enqueueTextSave, collectPendingTextPatch]);
 
   const saveImmediate = useCallback(function (patch, msg) {
     clearTimeout(debounceTimerRef.current);
@@ -2867,8 +2889,23 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
     const pending = collectPendingTextPatch();
     const merged = { ...(pending || {}), ...patch };
     if (!Object.keys(merged).length) return saveChainRef.current;
-    return enqueueSave(merged, msg);
-  }, [enqueueSave, collectPendingTextPatch]);
+
+    const split = splitPatchBySaveKind(merged);
+    let chain = textSaveChainRef.current;
+    if (Object.keys(split.textPatch).length) {
+      chain = enqueueTextSave(split.textPatch);
+    }
+    if (Object.keys(split.otherPatch).length) {
+      saveChainRef.current = chain
+        .catch(function () {})
+        .then(function () {
+          const id = bilRef.current?.id;
+          return updateBil(id, split.otherPatch, msg);
+        });
+      return saveChainRef.current;
+    }
+    return chain;
+  }, [enqueueTextSave, collectPendingTextPatch, splitPatchBySaveKind, updateBil]);
 
   const saveImmediateRef = useRef(saveImmediate);
   saveImmediateRef.current = saveImmediate;
@@ -2884,13 +2921,18 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
     debounceTimerRef.current = setTimeout(function () {
       debounceTimerRef.current = null;
       const toSend = collectPendingTextPatch();
-      if (toSend && Object.keys(toSend).length) enqueueSave(toSend, msg);
+      if (toSend && Object.keys(toSend).length) enqueueTextSave(toSend, msg);
     }, 350);
-  }, [enqueueSave, collectPendingTextPatch]);
+  }, [enqueueTextSave, collectPendingTextPatch]);
 
   const handleClose = useCallback(function () {
-    flushTextSave().finally(function () { onClose(); });
-  }, [flushTextSave, onClose]);
+    if (closing) return;
+    setClosing(true);
+    flushTextSave().finally(function () {
+      setClosing(false);
+      onClose();
+    });
+  }, [closing, flushTextSave, onClose]);
 
   useEffect(function () {
     return function () {
@@ -2898,10 +2940,10 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
       const toSend = collectPendingTextPatch();
       const id = bilRef.current?.id;
       if (id && toSend && Object.keys(toSend).length) {
-        enqueueSave(toSend);
+        enqueueTextSave(toSend);
       }
     };
-  }, [enqueueSave, collectPendingTextPatch]);
+  }, [enqueueTextSave, collectPendingTextPatch]);
 
   useEffect(function () {
     setBil(data);
@@ -3462,8 +3504,10 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
         </div>
 
         <div className="modal-footer bil-modal__footer">
-          <button type="button" className="btn btn-p" onClick={handleClose}>Lagre & lukk</button>
-          <button type="button" className="btn btn-g" onClick={handleClose}>Avbryt</button>
+          <button type="button" className="btn btn-p" onClick={handleClose} disabled={closing}>
+            {closing ? 'Lagrer…' : 'Lagre & lukk'}
+          </button>
+          <button type="button" className="btn btn-g" onClick={handleClose} disabled={closing}>Avbryt</button>
           {kanSletteBil && (
             <button type="button" className="btn btn-red bil-modal__slett-btn" onClick={slettBilPermanent}>
               Slett bil
