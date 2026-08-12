@@ -2074,14 +2074,45 @@ async function mapBilerForApi(rows, kundeMap) {
   });
 }
 
-app.get('/api/biler', requireAuth, async function (_req, res) {
+const BIL_LIST_COLUMNS = [
+  'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'sort_order',
+  'ansvarlig', 'frist', 'notater', 'eu_kontroll', 'forsikring', 'finn_kode', 'chassisnr',
+  'drivstoff', 'girkasse', 'utstyr', 'intern_info', 'sjekkliste', 'sjekklister', 'kunde_id',
+  'archived', 'archived_at'
+].join(', ');
+
+async function mapBilersLiteForApi(rows, kundeMap) {
+  const settings = await getInnstillinger();
+  const mal = settings.bilSjekklister || {};
+  return rows.map(function (row) {
+    const item = mapBil(row, (kundeMap && kundeMap[row.id]) || [], mal);
+    return {
+      ...item,
+      lite: true,
+      svvData: null,
+      logg: [],
+      kommentarer: [],
+      dokumenter: [],
+      okonomi: {}
+    };
+  });
+}
+
+app.get('/api/biler', requireAuth, async function (req, res) {
+  const lite = req.query.lite === '1' || req.query.lite === 'true';
   const [rows, kundeMap] = await Promise.all([
-    prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all(),
+    prepare(
+      lite
+        ? `SELECT ${BIL_LIST_COLUMNS} FROM biler ORDER BY sort_order ASC, id ASC`
+        : 'SELECT * FROM biler ORDER BY sort_order ASC, id ASC'
+    ).all(),
     getAllBilKundeIdsMap()
   ]);
   res.json({
     ok: true,
-    items: await mapBilerForApi(rows, kundeMap)
+    items: lite
+      ? await mapBilersLiteForApi(rows, kundeMap)
+      : await mapBilersForApi(rows, kundeMap)
   });
 });
 
@@ -2341,6 +2372,17 @@ app.get('/api/biler/slettelog', requireAuth, async function (req, res) {
     console.error('GET /api/biler/slettelog feilet:', err.message);
     res.status(500).json({ ok: false, error: 'Kunne ikke hente slettelog.' });
   }
+});
+
+app.get('/api/biler/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ ok: false, error: 'Ugyldig bil-ID.' });
+  }
+  const row = await prepare('SELECT * FROM biler WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
+  const kundeMap = await getAllBilKundeIdsMap();
+  res.json({ ok: true, item: await mapBilForApi(row, kundeMap[id] || []) });
 });
 
 app.delete('/api/biler/:id', requireAuth, async function (req, res) {

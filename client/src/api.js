@@ -196,8 +196,13 @@ export function deleteKunde(id) {
   return request(`/kunder/${id}`, { method: 'DELETE' });
 }
 
-export function getBiler() {
-  return request('/biler');
+export function getBiler(options) {
+  const lite = options?.lite ? '?lite=1' : '';
+  return request('/biler' + lite);
+}
+
+export function getBil(id) {
+  return request('/biler/' + id);
 }
 
 export function postBil(body) {

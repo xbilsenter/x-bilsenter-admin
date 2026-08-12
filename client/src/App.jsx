@@ -61,7 +61,7 @@ import {
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
-  getBiler, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
+  getBiler, getBil, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
   getKalender, postKalender, patchKalender, deleteKalender,
   getInnkjopskalkyle,
   lookupKjoretoy, lookupKjoretoyByUnderstell, getInnstillinger, getLister, patchInnstillinger,
@@ -409,6 +409,47 @@ function clearSessionCache() {
   }
 }
 
+const BILER_CACHE_KEY = 'xbilsenter_admin_biler_cache';
+
+function readBilerCache() {
+  try {
+    const raw = sessionStorage.getItem(BILER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBilerCache(biler) {
+  if (!Array.isArray(biler)) return;
+  try {
+    sessionStorage.setItem(BILER_CACHE_KEY, JSON.stringify(biler));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearBilerCache() {
+  try {
+    sessionStorage.removeItem(BILER_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function normalizeBilItems(items) {
+  return (items || []).map(function (item) {
+    return {
+      ...item,
+      id: normalizeBilId(item.id),
+      sortOrder: Number(item.sortOrder ?? 0),
+      km: normalizeKmValue(item.km)
+    };
+  });
+}
+
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null);
@@ -421,7 +462,9 @@ export default function App() {
     saveActiveTab(next);
     setMobileNavOpen(false);
   }, []);
-  const [biler, setBiler] = useState([]);
+  const [biler, setBiler] = useState(function () {
+    return normalizeBilItems(readBilerCache()) || [];
+  });
   const [kunder, setKunder] = useState([]);
   const [henv, setHenv] = useState([]);
   const [innbytte, setInnbytte] = useState([]);
@@ -448,6 +491,29 @@ export default function App() {
     } catch { /* ignore */ }
   }, []);
 
+  const refreshBiler = useCallback(async function () {
+    const b = await getBiler({ lite: true });
+    const items = normalizeBilItems(b.items);
+    setBiler(items);
+    writeBilerCache(items);
+    return items;
+  }, []);
+
+  const hydrateBil = useCallback(function (item) {
+    const next = normalizeBilItems([item])[0];
+    if (!next) return;
+    delete next.lite;
+    setBiler(function (prev) {
+      return prev.map(function (b) {
+        return b.id === next.id ? next : b;
+      });
+    });
+    setModal(function (prev) {
+      if (prev?.t !== 'visBil' || normalizeBilId(prev.d?.id) !== normalizeBilId(next.id)) return prev;
+      return { ...prev, d: next };
+    });
+  }, []);
+
   const loadSecondaryData = useCallback(async function () {
     setDataLoading(true);
     let authError = null;
@@ -463,14 +529,6 @@ export default function App() {
 
     try {
       await Promise.all([
-        safeLoad(getBiler, (b) => setBiler((b.items || []).map(function (item) {
-          return {
-            ...item,
-            id: normalizeBilId(item.id),
-            sortOrder: Number(item.sortOrder ?? 0),
-            km: normalizeKmValue(item.km)
-          };
-        }))),
         safeLoad(getDashboard, (d) => setStats(d.stats || {})),
         safeLoad(getMailStatus, (d) => setMailStatus(d.status || {})),
         safeLoad(getKunder, (k) => setKunder(k.items || [])),
@@ -503,9 +561,9 @@ export default function App() {
 
     syncBilerEuKontroll({ onlyMissing: true }).then(function (res) {
       if (!res?.items?.length) return;
-      setBiler(res.items.map(function (item) {
-        return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
-      }));
+      const items = normalizeBilItems(res.items);
+      setBiler(items);
+      writeBilerCache(items);
       if (res.updated > 0) {
         setToast(`EU-kontroll frist hentet for ${res.updated} bil${res.updated === 1 ? '' : 'er'} ✓`);
         setTimeout(function () { setToast(null); }, 2800);
@@ -526,6 +584,15 @@ export default function App() {
       setCoreLoading(false);
       return;
     }
+
+    refreshBiler().catch(function (err) {
+      if (err?.status === 401) {
+        logout();
+        setUser(null);
+        clearSessionCache();
+        clearBilerCache();
+      }
+    });
 
     const cached = readSessionCache();
     if (cached) {
@@ -557,7 +624,7 @@ export default function App() {
 
     setCoreLoading(false);
     loadSecondaryData();
-  }, [applyBootstrap, loadSecondaryData]);
+  }, [applyBootstrap, loadSecondaryData, refreshBiler]);
 
   const loadData = useCallback(async function () {
     if (!getToken()) return;
@@ -571,12 +638,19 @@ export default function App() {
       return;
     }
 
-    await loadSecondaryData();
-  }, [applyBootstrap, loadSecondaryData]);
+    await Promise.all([
+      refreshBiler().catch(function () {}),
+      loadSecondaryData()
+    ]);
+  }, [applyBootstrap, loadSecondaryData, refreshBiler]);
 
   useEffect(function () {
     initSession();
   }, [initSession]);
+
+  useEffect(function () {
+    if (biler.length) writeBilerCache(biler);
+  }, [biler]);
 
   const reloadInnboks = useCallback(async () => {
     try {
@@ -623,6 +697,7 @@ export default function App() {
 
   const handleLogin = (u) => {
     setUser(u);
+    refreshBiler().catch(function () {});
     getBootstrap()
       .then(applyBootstrap)
       .catch(function () {
@@ -635,6 +710,7 @@ export default function App() {
   const handleLogout = () => {
     logout();
     clearSessionCache();
+    clearBilerCache();
     setUser(null);
     setMobileNavOpen(false);
     setBiler([]);
@@ -766,10 +842,10 @@ export default function App() {
       if (localMsg) visTost(localMsg);
     } catch {
       visTost('Kunne ikke lagre rekkefølge ✗');
-      getBiler().then(function (b) {
-        setBiler((b.items || []).map(function (item) {
-          return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
-        }));
+      getBiler({ lite: true }).then(function (b) {
+        const items = normalizeBilItems(b.items);
+        setBiler(items);
+        writeBilerCache(items);
       }).catch(function () {});
     }
   };
@@ -1209,6 +1285,7 @@ export default function App() {
           setModal={setModal}
           setTab={setTab}
           setInnboksOpenEpost={setInnboksOpenEpost}
+          hydrateBil={hydrateBil}
           kunder={kunder}
           biler={biler}
           currentUser={user}
@@ -2890,7 +2967,7 @@ async function hentAutosysPayload(reg, lists, prevBil, overstyrt) {
   return buildAutosysLagring(parsed, data.raw || null, lists, prevBil, overstyrt);
 }
 
-function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser }) {
+function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hydrateBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser }) {
   const [bil, setBil] = useState(data);
   const [autosysOverstyrt, setAutosysOverstyrt] = useState(function () {
     return getBilAutosysOverstyrt(data);
@@ -3026,6 +3103,22 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, vis
     autosysOverstyrtRef.current = o;
     autosysInitKeyRef.current = '';
   }, [data.id]);
+
+  useEffect(function () {
+    if (!data?.id || !data.lite) return;
+    let cancelled = false;
+    getBil(data.id).then(function (res) {
+      if (cancelled || !res.item) return;
+      const next = normalizeBilItems([res.item])[0];
+      delete next.lite;
+      setBil(next);
+      bilRef.current = next;
+      autosysOverstyrtRef.current = getBilAutosysOverstyrt(next);
+      setAutosysOverstyrt(getBilAutosysOverstyrt(next));
+      if (hydrateBil) hydrateBil(res.item);
+    }).catch(function () { /* stille */ });
+    return function () { cancelled = true; };
+  }, [data.id, data.lite, hydrateBil]);
 
   const lagreAutosys = useCallback(async function (options) {
     const currentBil = bilRef.current;
