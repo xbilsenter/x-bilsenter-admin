@@ -86,7 +86,7 @@ const {
   normalizeBilArsprovekjennemerke,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
-const { canDeleteBil, canAddBil, resolveRoleKey, permissionDefsWithModulLabels } = require('./db-shared');
+const { canDeleteBil, canAddBil, resolveRoleKey, permissionDefsWithModulLabels, summarizeBilTilstandsrapportDashboard, normalizeBilTilstandsrapport } = require('./db-shared');
 const {
   nowOsloDate,
   nowOsloTime,
@@ -746,8 +746,9 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
   }
 });
 
-async function buildDashboardPayload() {
-  await waitForDbReady(8000);
+async function buildDashboardSummaryStats(options) {
+  const includeEpostPreview = options?.includeEpostPreview !== false;
+  await waitForDbReady(includeEpostPreview ? 8000 : 2000);
 
   const idag = new Date().toISOString().slice(0, 10);
   const [
@@ -760,7 +761,8 @@ async function buildDashboardPayload() {
     ulestEpost,
     nyeInnkommendeEpost,
     ulestEpostRows,
-    totaltKunderRow
+    totaltKunderRow,
+    tilstandsrapportRows
   ] = await Promise.all([
     prepare("SELECT COUNT(*) AS c FROM henvendelser WHERE status = 'Ny'").get(),
     prepare("SELECT COUNT(*) AS c FROM innbytte WHERE status = 'Ny'").get(),
@@ -770,11 +772,18 @@ async function buildDashboardPayload() {
     prepare('SELECT COUNT(*) AS c FROM kalender WHERE dato = ?').get(idag),
     countUlestEpost(),
     countNyeInnkommendeEpost(),
-    listUlestEpostPreview(25),
-    prepare('SELECT COUNT(*) AS c FROM kunder').get()
+    includeEpostPreview ? listUlestEpostPreview(25) : Promise.resolve([]),
+    prepare('SELECT COUNT(*) AS c FROM kunder').get(),
+    prepare(`
+      SELECT tilstandsrapport, status, archived FROM biler
+      WHERE archived = 0 AND status NOT IN ('Solgt')
+    `).all()
   ]);
 
-  const ulestEpostListe = mapEpostPreviewRows(ulestEpostRows || []);
+  const ulestEpostListe = includeEpostPreview ? mapEpostPreviewRows(ulestEpostRows || []) : [];
+  const trStats = summarizeBilTilstandsrapportDashboard(tilstandsrapportRows, function (raw) {
+    return normalizeBilTilstandsrapport(parseJson(raw, null));
+  });
 
   return {
     ok: true,
@@ -788,16 +797,31 @@ async function buildDashboardPayload() {
       ulestEpost: Number(ulestEpost) || 0,
       nyeInnkommendeEpost: Number(nyeInnkommendeEpost) || 0,
       ulestEpostListe,
-      totaltKunder: Number(totaltKunderRow.c) || 0
+      totaltKunder: Number(totaltKunderRow.c) || 0,
+      manglerTilstandsrapport: trStats.manglerTilstandsrapport,
+      nodvendigPaBil: trStats.nodvendigPaBil
     }
   };
 }
 
+async function buildDashboardPayload() {
+  return buildDashboardSummaryStats({ includeEpostPreview: true });
+}
+
 app.get('/api/bootstrap', requireAuth, async function (req, res) {
   try {
-    const [user, lists] = await Promise.all([
+    const cachedDash = getDashboardCache();
+    const statsPromise = cachedDash?.stats
+      ? Promise.resolve(cachedDash.stats)
+      : buildDashboardSummaryStats({ includeEpostPreview: false }).then(function (payload) {
+        setDashboardCache(payload);
+        return payload.stats;
+      });
+
+    const [user, lists, stats] = await Promise.all([
       getUserById(req.user.sub),
-      getLister()
+      getLister(),
+      statsPromise
     ]);
     if (!user || !user.aktiv) {
       return res.status(401).json({ ok: false, error: 'Ugyldig sesjon.' });
@@ -806,7 +830,8 @@ app.get('/api/bootstrap', requireAuth, async function (req, res) {
     res.json({
       ok: true,
       user: formatUserResponse(user),
-      lists
+      lists,
+      stats: stats || {}
     });
   } catch (err) {
     console.error('GET /api/bootstrap feilet:', err.message);
@@ -2078,7 +2103,7 @@ const BIL_LIST_COLUMNS = [
   'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'sort_order',
   'ansvarlig', 'frist', 'notater', 'eu_kontroll', 'forsikring', 'finn_kode', 'chassisnr',
   'drivstoff', 'girkasse', 'utstyr', 'intern_info', 'sjekkliste', 'sjekklister', 'kunde_id',
-  'archived', 'archived_at'
+  'archived', 'archived_at', 'tilstandsrapport'
 ].join(', ');
 
 async function mapBilersLiteForApi(rows, kundeMap) {

@@ -410,6 +410,7 @@ function clearSessionCache() {
 }
 
 const BILER_CACHE_KEY = 'xbilsenter_admin_biler_cache';
+const STATS_CACHE_KEY = 'xbilsenter_admin_stats_cache';
 
 function readBilerCache() {
   try {
@@ -434,6 +435,33 @@ function writeBilerCache(biler) {
 function clearBilerCache() {
   try {
     sessionStorage.removeItem(BILER_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function readStatsCache() {
+  try {
+    const raw = sessionStorage.getItem(STATS_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStatsCache(stats) {
+  try {
+    sessionStorage.setItem(STATS_CACHE_KEY, JSON.stringify(stats || {}));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearStatsCache() {
+  try {
+    sessionStorage.removeItem(STATS_CACHE_KEY);
   } catch {
     /* ignore */
   }
@@ -473,7 +501,9 @@ export default function App() {
   const [innkjopskalkyle, setInnkjopskalkyle] = useState([]);
   const [epost, setEpost] = useState([]);
   const [mailStatus, setMailStatus] = useState({});
-  const [stats, setStats] = useState({});
+  const [stats, setStats] = useState(function () {
+    return readStatsCache();
+  });
   const [innstillinger, setInnstillinger] = useState(DEFAULT_INNSTILLINGER);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
@@ -487,7 +517,9 @@ export default function App() {
   const refreshStats = useCallback(async () => {
     try {
       const dash = await getDashboard();
-      setStats(dash.stats || {});
+      const next = dash.stats || {};
+      setStats(next);
+      writeStatsCache(next);
     } catch { /* ignore */ }
   }, []);
 
@@ -514,6 +546,35 @@ export default function App() {
     });
   }, []);
 
+  const loadDashboardLists = useCallback(async function () {
+    let authError = null;
+
+    async function safeLoad(loader, onSuccess) {
+      try {
+        const data = await loader();
+        onSuccess(data);
+      } catch (err) {
+        if (err.status === 401) authError = err;
+      }
+    }
+
+    try {
+      await Promise.all([
+        safeLoad(getHenvendelser, (h) => setHenv(h.items || [])),
+        safeLoad(getInnbytte, (i) => setInnbytte(i.items || [])),
+        safeLoad(getSelgBil, (s) => setSelgBil(s.items || [])),
+        safeLoad(getKalender, (k) => setKal(k.items || []))
+      ]);
+    } catch {
+      /* ignore */
+    }
+
+    if (authError) {
+      logout();
+      setUser(null);
+    }
+  }, []);
+
   const loadSecondaryData = useCallback(async function () {
     setDataLoading(true);
     let authError = null;
@@ -529,13 +590,8 @@ export default function App() {
 
     try {
       await Promise.all([
-        safeLoad(getDashboard, (d) => setStats(d.stats || {})),
         safeLoad(getMailStatus, (d) => setMailStatus(d.status || {})),
         safeLoad(getKunder, (k) => setKunder(k.items || [])),
-        safeLoad(getHenvendelser, (h) => setHenv(h.items || [])),
-        safeLoad(getInnbytte, (i) => setInnbytte(i.items || [])),
-        safeLoad(getSelgBil, (s) => setSelgBil(s.items || [])),
-        safeLoad(getKalender, (k) => setKal(k.items || [])),
         safeLoad(getInnkjopskalkyle, (k) => setInnkjopskalkyle(k.items || [])),
         safeLoad(getVedlikehold, (v) => {
           if (v.vedlikeholdModus) {
@@ -577,6 +633,13 @@ export default function App() {
       setInnstillinger(function (prev) { return { ...prev, ...res.lists }; });
       writeSessionCache(res.user, res.lists);
     }
+    if (res.stats && typeof res.stats === 'object') {
+      setStats(function (prev) {
+        const next = { ...prev, ...res.stats };
+        writeStatsCache(next);
+        return next;
+      });
+    }
   }, []);
 
   const initSession = useCallback(async function () {
@@ -591,8 +654,12 @@ export default function App() {
         setUser(null);
         clearSessionCache();
         clearBilerCache();
+        clearStatsCache();
       }
     });
+
+    refreshStats().catch(function () { /* stille bakgrunn */ });
+    loadDashboardLists().catch(function () { /* stille bakgrunn */ });
 
     const cached = readSessionCache();
     if (cached) {
@@ -624,7 +691,7 @@ export default function App() {
 
     setCoreLoading(false);
     loadSecondaryData();
-  }, [applyBootstrap, loadSecondaryData, refreshBiler]);
+  }, [applyBootstrap, loadSecondaryData, loadDashboardLists, refreshBiler, refreshStats]);
 
   const loadData = useCallback(async function () {
     if (!getToken()) return;
@@ -640,9 +707,11 @@ export default function App() {
 
     await Promise.all([
       refreshBiler().catch(function () {}),
+      refreshStats().catch(function () {}),
+      loadDashboardLists().catch(function () {}),
       loadSecondaryData()
     ]);
-  }, [applyBootstrap, loadSecondaryData, refreshBiler]);
+  }, [applyBootstrap, loadSecondaryData, loadDashboardLists, refreshBiler, refreshStats]);
 
   useEffect(function () {
     initSession();
@@ -698,6 +767,8 @@ export default function App() {
   const handleLogin = (u) => {
     setUser(u);
     refreshBiler().catch(function () {});
+    refreshStats().catch(function () {});
+    loadDashboardLists().catch(function () {});
     getBootstrap()
       .then(applyBootstrap)
       .catch(function () {
@@ -711,6 +782,7 @@ export default function App() {
     logout();
     clearSessionCache();
     clearBilerCache();
+    clearStatsCache();
     setUser(null);
     setMobileNavOpen(false);
     setBiler([]);
@@ -1612,9 +1684,9 @@ function Dashboard({
   const reserverteBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status === 'Reservert'; });
   const nyeInnbytteListe = (innbytte || []).filter(function (i) { return i.status === 'Ny'; });
   const trMangler = biler.filter(bilManglerTilstandsrapport);
-  const trAntall = trMangler.length;
+  const trAntall = Number(stats.manglerTilstandsrapport ?? trMangler.length) || 0;
   const nodvendigRader = bilTilstandsrapportNodvendigRader(biler);
-  const nodvendigAntall = nodvendigRader.length;
+  const nodvendigAntall = Number(stats.nodvendigPaBil ?? nodvendigRader.length) || 0;
   const nodvendigFilterOptions = useMemo(function () {
     return bilTilstandsrapportNodvendigFilterOptions(biler);
   }, [biler]);

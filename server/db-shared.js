@@ -606,6 +606,31 @@ function normalizeBilTilstandsrapport(raw) {
   };
 }
 
+function tilstandsrapportNodvendigLabels(tr) {
+  const normalized = normalizeBilTilstandsrapport(tr);
+  const labels = [];
+  if (normalized.stylingDelerNodvendig) labels.push('Styling deler nødvendig');
+  if (normalized.reparasjonsdelerNodvendig) labels.push('Reparasjonsdeler nødvendig');
+  if (normalized.felglakkeringNodvendig) labels.push('Felglakkering nødvendig');
+  if (normalized.lakkeringNodvendig) labels.push('Lakkering nødvendig');
+  if (normalized.lakkstiftLakkboksNodvendig) labels.push('Lakkstift/lakkboks nødvendig');
+  if (normalized.bulkopprettingNodvendig) labels.push('Bulkoppretting nødvendig');
+  if (normalized.chromeDeleteNodvendig) labels.push('Chrome delete nødvendig');
+  return labels;
+}
+
+function summarizeBilTilstandsrapportDashboard(rows, parseTilstandsrapport) {
+  let manglerTilstandsrapport = 0;
+  let nodvendigPaBil = 0;
+  (rows || []).forEach(function (row) {
+    if (row.archived || row.status === 'Solgt') return;
+    const tr = parseTilstandsrapport(row.tilstandsrapport);
+    if (normalizeBilTilstandsrapport(tr).status === 'ikke_utfort') manglerTilstandsrapport++;
+    nodvendigPaBil += tilstandsrapportNodvendigLabels(tr).length;
+  });
+  return { manglerTilstandsrapport, nodvendigPaBil };
+}
+
 const DEFAULT_BIL_ARSPROVEKJENNEMERKE = {
   skiltnummer: '',
   fraDato: '',
@@ -691,6 +716,8 @@ module.exports = {
   jsonStringify,
   DEFAULT_BIL_TILSTANDSRAPPORT,
   normalizeBilTilstandsrapport,
+  tilstandsrapportNodvendigLabels,
+  summarizeBilTilstandsrapportDashboard,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE,
   normalizeBilArsprovekjennemerke,
   normalizeMerkerList,
