@@ -1690,7 +1690,16 @@ function Dashboard({
     });
   };
 
+  const handleStatClick = function (key) {
+    if (key === 'lager') {
+      setTab('biler');
+      return;
+    }
+    toggleDrilldown(key);
+  };
+
   const drillSub = function (key, count) {
+    if (key === 'lager') return 'Gå til biler';
     return aktivDrilldown === key ? 'Skjul liste' : (count ? 'Klikk for liste' : 'Se detaljer');
   };
 
@@ -1959,11 +1968,11 @@ function Dashboard({
               key={s.key}
               role="button"
               tabIndex={0}
-              onClick={function () { toggleDrilldown(s.key); }}
+              onClick={function () { handleStatClick(s.key); }}
               onKeyDown={function (e) {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  toggleDrilldown(s.key);
+                  handleStatClick(s.key);
                 }
               }}
             >
