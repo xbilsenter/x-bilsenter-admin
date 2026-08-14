@@ -2196,7 +2196,7 @@ function BilSlettelogPanel() {
   );
 }
 
-function BilOrderBadge({ value, editing, onEditingChange, onSave }) {
+function BilOrderBadge({ value, editing, onEditingChange, onSave, revealAdd }) {
   const [val, setVal] = useState(value != null ? String(value) : '');
   const inputRef = useRef(null);
   const ignoreBlurRef = useRef(false);
@@ -2295,7 +2295,7 @@ function BilOrderBadge({ value, editing, onEditingChange, onSave }) {
   return (
     <button
       type="button"
-      className="bil-order-add"
+      className={`bil-order-add${revealAdd ? ' bil-order-add--reveal' : ''}`}
       title="Sett nummer i pipelinen"
       onMouseDown={startEditing}
       onClick={function (e) { e.stopPropagation(); }}
@@ -2346,6 +2346,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
   const searchActive = searchQuery.length > 0;
   const [visSlettelog, setVisSlettelog] = useState(false);
   const [orderEditId, setOrderEditId] = useState(null);
+  const [hoveredBilId, setHoveredBilId] = useState(null);
 
   useEffect(function () {
     if (mFilter !== 'Alle' && !merker.includes(mFilter)) setMFilter('Alle');
@@ -2446,11 +2447,13 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     const linkHenv = countBilHenvendelser(bil, henv, innbytte, epost, harInnboks);
     return (
       <div
-        className={`bil-card${dragId === bil.id ? ' bil-card--dragging' : ''}`}
+        className={`bil-card${dragId === bil.id ? ' bil-card--dragging' : ''}${hoveredBilId === normalizeBilId(bil.id) ? ' bil-card--hover' : ''}`}
         key={bil.id}
         draggable
         onDragStart={(e) => handleDragStart(e, bil)}
         onDragEnd={handleDragEnd}
+        onMouseEnter={function () { setHoveredBilId(normalizeBilId(bil.id)); }}
+        onMouseLeave={function () { setHoveredBilId(function (prev) { return prev === normalizeBilId(bil.id) ? null : prev; }); }}
         onClick={() => openBil(bil)}
       >
         <div className="bil-card-head">
@@ -2458,6 +2461,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <BilOrderBadge
             value={bil.pipelineNummer}
             editing={orderEditId === normalizeBilId(bil.id)}
+            revealAdd={hoveredBilId === normalizeBilId(bil.id) || orderEditId === normalizeBilId(bil.id)}
             onEditingChange={function (next) {
               setOrderEditId(next ? normalizeBilId(bil.id) : null);
             }}
@@ -2497,10 +2501,12 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     return (
       <div
         key={bil.id}
-        className={`bil-pipeline-row${dragId === bil.id ? ' bil-pipeline-row--dragging' : ''}`}
+        className={`bil-pipeline-row${dragId === bil.id ? ' bil-pipeline-row--dragging' : ''}${hoveredBilId === normalizeBilId(bil.id) ? ' bil-pipeline-row--hover' : ''}`}
         draggable
         onDragStart={(e) => handleDragStart(e, bil)}
         onDragEnd={handleDragEnd}
+        onMouseEnter={function () { setHoveredBilId(normalizeBilId(bil.id)); }}
+        onMouseLeave={function () { setHoveredBilId(function (prev) { return prev === normalizeBilId(bil.id) ? null : prev; }); }}
         onDragOver={(e) => {
           if (dragId === bil.id) return;
           e.preventDefault();
@@ -2513,6 +2519,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
         <BilOrderBadge
           value={bil.pipelineNummer}
           editing={orderEditId === normalizeBilId(bil.id)}
+          revealAdd={hoveredBilId === normalizeBilId(bil.id) || orderEditId === normalizeBilId(bil.id)}
           onEditingChange={function (next) {
             setOrderEditId(next ? normalizeBilId(bil.id) : null);
           }}
@@ -2558,7 +2565,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <div className="ph-sub">
             {section === 'arkiv'
               ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
-              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · hold over kort og klikk «Nr.» for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
+              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · klikk «Nr.» på kortet for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
       </div>
