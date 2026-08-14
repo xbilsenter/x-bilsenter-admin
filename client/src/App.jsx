@@ -1185,6 +1185,7 @@ export default function App() {
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               setInnboksOpenEpost={setInnboksOpenEpost}
               currentUser={user}
+              stats={stats}
               vedlikeholdModus={innstillinger.vedlikeholdModus}
               henvStatusFarger={innstillinger.henvStatusFarger}
               bilStatusFarger={innstillinger.bilStatusFarger}
@@ -1675,7 +1676,8 @@ function Dashboard({
   biler, henv, innbytte, selgBil, kal, paaLager, reservert,
   nyeInnbytte, nyeHenvendelserTotal, ulestEpostListe, harInnboks,
   iDagKal, setTab, setModal, setInnboksOpenEpost,
-  currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger
+  currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger,
+  stats
 }) {
   const [aktivDrilldown, setAktivDrilldown] = useState(null);
   const [nodvendigFilter, setNodvendigFilter] = useState('Alle');
@@ -1684,9 +1686,9 @@ function Dashboard({
   const reserverteBiler = biler.filter(function (b) { return isBilAktiv(b) && b.status === 'Reservert'; });
   const nyeInnbytteListe = (innbytte || []).filter(function (i) { return i.status === 'Ny'; });
   const trMangler = biler.filter(bilManglerTilstandsrapport);
-  const trAntall = Number(stats.manglerTilstandsrapport ?? trMangler.length) || 0;
+  const trAntall = Number(stats?.manglerTilstandsrapport ?? trMangler.length) || 0;
   const nodvendigRader = bilTilstandsrapportNodvendigRader(biler);
-  const nodvendigAntall = Number(stats.nodvendigPaBil ?? nodvendigRader.length) || 0;
+  const nodvendigAntall = Number(stats?.nodvendigPaBil ?? nodvendigRader.length) || 0;
   const nodvendigFilterOptions = useMemo(function () {
     return bilTilstandsrapportNodvendigFilterOptions(biler);
   }, [biler]);
