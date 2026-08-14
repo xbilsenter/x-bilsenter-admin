@@ -2199,13 +2199,20 @@ function BilSlettelogPanel() {
 function BilOrderBadge({ value, editing, onEditingChange, onSave }) {
   const [val, setVal] = useState(value != null ? String(value) : '');
   const inputRef = useRef(null);
+  const ignoreBlurRef = useRef(false);
   const hasValue = value != null && Number.isFinite(Number(value)) && Number(value) > 0;
 
   useEffect(function () {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
+    if (!editing) return;
+    ignoreBlurRef.current = true;
+    const id = window.setTimeout(function () {
+      ignoreBlurRef.current = false;
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }, 0);
+    return function () { window.clearTimeout(id); };
   }, [editing]);
 
   useEffect(function () {
@@ -2213,23 +2220,28 @@ function BilOrderBadge({ value, editing, onEditingChange, onSave }) {
   }, [value, hasValue, editing]);
 
   const commit = function () {
-    onEditingChange(false);
     const trimmed = String(val || '').trim();
     if (!trimmed) {
       if (hasValue) onSave(null);
+      onEditingChange(false);
       setVal('');
       return;
     }
     const n = parseInt(trimmed, 10);
     if (!Number.isFinite(n) || n < 1) {
       setVal(hasValue ? String(value) : '');
+      onEditingChange(false);
       return;
     }
     if (!hasValue || n !== Number(value)) onSave(n);
-    else setVal(String(value));
+    else onEditingChange(false);
   };
 
-  if (!hasValue && !editing) return null;
+  const startEditing = function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    onEditingChange(true);
+  };
 
   if (editing) {
     return (
@@ -2240,32 +2252,55 @@ function BilOrderBadge({ value, editing, onEditingChange, onSave }) {
         min={1}
         value={val}
         onChange={function (e) { setVal(e.target.value); }}
-        onBlur={commit}
+        onBlur={function () {
+          if (ignoreBlurRef.current) return;
+          commit();
+        }}
         onKeyDown={function (e) {
           e.stopPropagation();
-          if (e.key === 'Enter') commit();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          }
           if (e.key === 'Escape') {
+            e.preventDefault();
             onEditingChange(false);
             setVal(hasValue ? String(value) : '');
           }
         }}
+        onMouseDown={function (e) { e.stopPropagation(); }}
         onClick={function (e) { e.stopPropagation(); }}
         aria-label="Pipelinenummer"
       />
     );
   }
 
+  if (hasValue) {
+    return (
+      <button
+        type="button"
+        className="bil-order-badge"
+        title="Klikk for å endre nummer (tøm feltet for å fjerne)"
+        onMouseDown={function (e) { e.stopPropagation(); }}
+        onClick={function (e) {
+          e.stopPropagation();
+          onEditingChange(true);
+        }}
+      >
+        {value}
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
-      className="bil-order-badge"
-      title="Klikk for å endre nummer (tøm feltet for å fjerne)"
-      onClick={function (e) {
-        e.stopPropagation();
-        onEditingChange(true);
-      }}
+      className="bil-order-add"
+      title="Sett nummer i pipelinen"
+      onMouseDown={startEditing}
+      onClick={function (e) { e.stopPropagation(); }}
     >
-      {value}
+      Nr.
     </button>
   );
 }
@@ -2402,14 +2437,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     setOrderEditId(null);
   };
 
-  const openOrderEditor = function (bil, e) {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    setOrderEditId(normalizeBilId(bil.id));
-  };
-
   const renderBilKanbanCard = (bil) => {
     const list = getAktivSjekkliste(bil);
     const prog = calcSjekklisteFremdrift(list);
@@ -2424,7 +2451,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
         draggable
         onDragStart={(e) => handleDragStart(e, bil)}
         onDragEnd={handleDragEnd}
-        onContextMenu={(e) => openOrderEditor(bil, e)}
         onClick={() => openBil(bil)}
       >
         <div className="bil-card-head">
@@ -2482,7 +2508,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           setDropTarget({ status: status, beforeId: bil.id });
         }}
         onDrop={(e) => handleListeDrop(e, status, bil.id)}
-        onContextMenu={(e) => openOrderEditor(bil, e)}
         onClick={() => openBil(bil)}
       >
         <BilOrderBadge
@@ -2533,7 +2558,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <div className="ph-sub">
             {section === 'arkiv'
               ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
-              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · høyreklikk bil for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
+              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · hold over kort og klikk «Nr.» for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
       </div>
