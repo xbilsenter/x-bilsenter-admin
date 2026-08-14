@@ -354,6 +354,20 @@ function computeListeReorder(allBiler, dragId, targetStatus, beforeId) {
   return updates;
 }
 
+function computeReorderToPosition(allBiler, bilId, targetStatus, targetPosition) {
+  const sorted = allBiler
+    .filter(function (b) { return b.status === targetStatus; })
+    .sort(sortBilerListe);
+  const dragNum = normalizeBilId(bilId);
+  const currentIdx = sorted.findIndex(function (b) { return normalizeBilId(b.id) === dragNum; });
+  const pos = Math.max(1, Math.min(Number(targetPosition) || 1, sorted.length));
+  if (currentIdx >= 0 && currentIdx + 1 === pos) return [];
+
+  const without = sorted.filter(function (b) { return normalizeBilId(b.id) !== dragNum; });
+  const beforeId = pos <= without.length ? without[pos - 1].id : null;
+  return computeListeReorder(allBiler, bilId, targetStatus, beforeId);
+}
+
 function bilLoggEntry(tekst) {
   return {
     tekst: tekst,
@@ -2186,6 +2200,74 @@ function BilSlettelogPanel() {
   );
 }
 
+function BilOrderBadge({ position, maxPosition, onSetPosition }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(position));
+  const inputRef = useRef(null);
+
+  useEffect(function () {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  useEffect(function () {
+    if (!editing) setVal(String(position));
+  }, [position, editing]);
+
+  const commit = function () {
+    setEditing(false);
+    const n = parseInt(val, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setVal(String(position));
+      return;
+    }
+    const capped = Math.min(n, maxPosition);
+    if (capped !== position) onSetPosition(capped);
+    else setVal(String(position));
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="bil-order-input"
+        type="number"
+        min={1}
+        max={maxPosition}
+        value={val}
+        onChange={function (e) { setVal(e.target.value); }}
+        onBlur={commit}
+        onKeyDown={function (e) {
+          e.stopPropagation();
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') {
+            setEditing(false);
+            setVal(String(position));
+          }
+        }}
+        onClick={function (e) { e.stopPropagation(); }}
+        aria-label="Rekkefølgenummer"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="bil-order-badge"
+      title="Klikk for å sette rekkefølgenummer i pipelinen"
+      onClick={function (e) {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+    >
+      {position}
+    </button>
+  );
+}
+
 function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser }) {
   const kanLeggeTilBil = canAddBil(currentUser);
   const [mFilter, setMFilter] = useState('Alle');
@@ -2312,7 +2394,13 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     setModal({ t: 'visBil', d: bil });
   };
 
-  const renderBilKanbanCard = (bil) => {
+  const setBilPosition = function (bil, position) {
+    const updates = computeReorderToPosition(aktiveBiler, bil.id, bil.status, position);
+    if (!updates.length) return;
+    reorderBiler(updates, 'Rekkefølge oppdatert ✓');
+  };
+
+  const renderBilKanbanCard = (bil, position, statusCount) => {
     const list = getAktivSjekkliste(bil);
     const prog = calcSjekklisteFremdrift(list);
     const { f, t, pst } = prog;
@@ -2328,7 +2416,14 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
         onDragEnd={handleDragEnd}
         onClick={() => openBil(bil)}
       >
-        <div className="bil-reg">{bil.reg}</div>
+        <div className="bil-card-head">
+          <BilOrderBadge
+            position={position}
+            maxPosition={statusCount}
+            onSetPosition={function (n) { setBilPosition(bil, n); }}
+          />
+          <div className="bil-reg">{bil.reg}</div>
+        </div>
         <div className="bil-name">{bil.merke} {bil.modell}</div>
         <div className="bil-sub">{bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · {formatBilFarge(bil.farge)}</div>
         {sisteSjekk ? (
@@ -2352,7 +2447,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     );
   };
 
-  const renderBilPipelineRow = (bil, status) => {
+  const renderBilPipelineRow = (bil, status, position, statusCount) => {
     const list = getAktivSjekkliste(bil);
     const prog = calcSjekklisteFremdrift(list);
     const { f, t, pst } = prog;
@@ -2375,6 +2470,11 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
         onDrop={(e) => handleListeDrop(e, status, bil.id)}
         onClick={() => openBil(bil)}
       >
+        <BilOrderBadge
+          position={position}
+          maxPosition={statusCount}
+          onSetPosition={function (n) { setBilPosition(bil, n); }}
+        />
         <span className="bil-pipeline-grip" aria-hidden="true">⋮⋮</span>
         <div className="bil-pipeline-main">
           <div className="bil-pipeline-ident">
@@ -2415,7 +2515,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <div className="ph-sub">
             {section === 'arkiv'
               ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
-              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
+              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · nummer viser rekkefølge i hver pipeline · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
       </div>
@@ -2643,7 +2743,9 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
                 }}
                 onDrop={(e) => handleKanbanDrop(e, status)}
               >
-                {kbiler.sort(sortBilerListe).map(renderBilKanbanCard)}
+                {kbiler.sort(sortBilerListe).map(function (bil, i) {
+                  return renderBilKanbanCard(bil, i + 1, kbiler.length);
+                })}
               </div>
             </div>
           );
@@ -2673,12 +2775,12 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
                 {sbiler.length === 0 && !dragId && (
                   <div className="bil-pipeline-empty">Ingen biler i denne stasjonen</div>
                 )}
-                {sbiler.map(function (bil) {
+                {sbiler.map(function (bil, i) {
                   const showDropBefore = dragId && dropTarget?.status === status && dropTarget.beforeId === bil.id;
                   return (
                     <div key={bil.id}>
                       {showDropBefore && <div className="bil-pipeline-drop-line" />}
-                      {renderBilPipelineRow(bil, status)}
+                      {renderBilPipelineRow(bil, status, i + 1, sbiler.length)}
                     </div>
                   );
                 })}
