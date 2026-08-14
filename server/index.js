@@ -86,7 +86,7 @@ const {
   normalizeBilArsprovekjennemerke,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
-const { canDeleteBil, canAddBil, resolveRoleKey, permissionDefsWithModulLabels, summarizeBilTilstandsrapportDashboard, normalizeBilTilstandsrapport } = require('./db-shared');
+const { canDeleteBil, canAddBil, resolveRoleKey, permissionDefsWithModulLabels, summarizeBilTilstandsrapportDashboard } = require('./db-shared');
 const {
   nowOsloDate,
   nowOsloTime,
