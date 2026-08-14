@@ -182,7 +182,8 @@ async function ensureBilSchemaExtensions() {
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS dokumenter JSONB NOT NULL DEFAULT '[]'::jsonb",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS okonomi JSONB NOT NULL DEFAULT '{}'::jsonb",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS tilstandsrapport JSONB NOT NULL DEFAULT '{\"medfolger\":false,\"nybilgaranti\":false,\"status\":\"ikke_utfort\"}'::jsonb",
-    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS arsprovekjennemerke JSONB NOT NULL DEFAULT '{\"skiltnummer\":\"\",\"fraDato\":\"\",\"tilDato\":\"\",\"status\":\"ingen\",\"notater\":\"\"}'::jsonb"
+    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS arsprovekjennemerke JSONB NOT NULL DEFAULT '{\"skiltnummer\":\"\",\"fraDato\":\"\",\"tilDato\":\"\",\"status\":\"ingen\",\"notater\":\"\"}'::jsonb",
+    'ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS pipeline_nummer INTEGER DEFAULT NULL'
   ];
   for (const sql of statements) {
     await execAsync(sql);
