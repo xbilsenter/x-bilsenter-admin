@@ -1112,6 +1112,7 @@ function mapBil(row, kundeIds, malPerStatus) {
     farge: formatSvvFargeNavn(row.farge) || '',
     status: row.status,
     sortOrder: Number(row.sort_order ?? 0),
+    pipelineNummer: row.pipeline_nummer != null ? Number(row.pipeline_nummer) : null,
     ansvarlig: row.ansvarlig,
     frist: row.frist,
     notater: row.notater,
@@ -1675,8 +1676,9 @@ async function reorderBiler(updates, ansvarligNavn) {
     const existing = byId[id];
     if (!existing) return;
     const newStatus = String(item.status || existing.status);
+    const statusChanged = newStatus !== existing.status;
     let sjekklister = parseBilSjekklisterObject(existing);
-    if (bilSjekklisterMal && newStatus !== existing.status) {
+    if (bilSjekklisterMal && statusChanged) {
       sjekklister = ensureSjekklisterForStatus(sjekklister, newStatus, bilSjekklisterMal);
     }
     const aktiv = getAktivSjekklisteFromRow({ ...existing, status: newStatus }, sjekklister);
@@ -1684,6 +1686,7 @@ async function reorderBiler(updates, ansvarligNavn) {
       id,
       status: newStatus,
       sortOrder: Number(item.sortOrder) || 0,
+      clearPipelineNummer: statusChanged ? 1 : 0,
       sjekklister: jsonStringify(sjekklister),
       sjekkliste: jsonStringify(aktiv)
     });
@@ -1694,6 +1697,7 @@ async function reorderBiler(updates, ansvarligNavn) {
   await Promise.all(payloads.map(function (p) {
     return prepare(`
       UPDATE biler SET status = @status, sort_order = @sortOrder,
+        pipeline_nummer = CASE WHEN @clearPipelineNummer = 1 THEN NULL ELSE pipeline_nummer END,
         sjekklister = @sjekklister, sjekkliste = @sjekkliste,
         ansvarlig = CASE WHEN @ansvarlig != '' THEN @ansvarlig ELSE ansvarlig END,
         updated_at = datetime('now')
@@ -1709,6 +1713,7 @@ async function reorderBiler(updates, ansvarligNavn) {
       ...row,
       status: p.status,
       sort_order: p.sortOrder,
+      pipeline_nummer: p.clearPipelineNummer ? null : row.pipeline_nummer,
       sjekklister: p.sjekklister,
       sjekkliste: p.sjekkliste,
       ansvarlig: ansvarlig || row.ansvarlig

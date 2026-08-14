@@ -1,0 +1,1 @@
+ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS pipeline_nummer INTEGER DEFAULT NULL;

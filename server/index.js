@@ -2100,7 +2100,7 @@ async function mapBilerForApi(rows, kundeMap) {
 }
 
 const BIL_LIST_COLUMNS = [
-  'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'sort_order',
+  'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'sort_order', 'pipeline_nummer',
   'ansvarlig', 'frist', 'notater', 'eu_kontroll', 'forsikring', 'finn_kode', 'chassisnr',
   'drivstoff', 'girkasse', 'utstyr', 'intern_info', 'sjekkliste', 'sjekklister', 'kunde_id',
   'archived', 'archived_at', 'tilstandsrapport'
@@ -2285,6 +2285,14 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
   }
 
   const ansvarlig = await resolveBilAnsvarlig(req, b);
+  let hasPipelineNummer = Object.prototype.hasOwnProperty.call(b, 'pipelineNummer');
+  let pipelineNummer = hasPipelineNummer
+    ? (b.pipelineNummer == null || b.pipelineNummer === '' ? null : Number(b.pipelineNummer))
+    : null;
+  if (b.status != null && b.status !== row.status && !hasPipelineNummer) {
+    hasPipelineNummer = true;
+    pipelineNummer = null;
+  }
 
   await prepare(`
     UPDATE biler SET
@@ -2298,6 +2306,7 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
       farge = COALESCE(@farge, farge),
       status = COALESCE(@status, status),
       sort_order = COALESCE(@sortOrder, sort_order),
+      pipeline_nummer = CASE WHEN @hasPipelineNummer = 1 THEN @pipelineNummer ELSE pipeline_nummer END,
       ansvarlig = COALESCE(@ansvarlig, ansvarlig),
       frist = COALESCE(@frist, frist),
       notater = COALESCE(@notater, notater),
@@ -2334,6 +2343,8 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
     farge: b.farge ?? null,
     status: b.status ?? null,
     sortOrder: b.sortOrder != null ? Number(b.sortOrder) : null,
+    hasPipelineNummer: hasPipelineNummer ? 1 : 0,
+    pipelineNummer: pipelineNummer,
     ansvarlig: ansvarlig,
     frist: b.frist ?? null,
     notater: b.notater ?? null,

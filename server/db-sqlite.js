@@ -326,7 +326,8 @@ function migrateBilSchemaExtensions() {
     "ALTER TABLE biler ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE biler ADD COLUMN sjekklister TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE biler ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE biler ADD COLUMN archived_at TEXT DEFAULT NULL"
+    "ALTER TABLE biler ADD COLUMN archived_at TEXT DEFAULT NULL",
+    "ALTER TABLE biler ADD COLUMN pipeline_nummer INTEGER DEFAULT NULL"
   ];
   columns.forEach(function (sql) {
     try { db.exec(sql); } catch { /* column exists */ }
@@ -1292,6 +1293,7 @@ function mapBil(row, kundeIds, malPerStatus) {
     farge: formatSvvFargeNavn(row.farge) || '',
     status: row.status,
     sortOrder: Number(row.sort_order ?? 0),
+    pipelineNummer: row.pipeline_nummer != null ? Number(row.pipeline_nummer) : null,
     ansvarlig: row.ansvarlig,
     frist: row.frist,
     notater: row.notater,
