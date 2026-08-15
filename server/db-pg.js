@@ -1013,6 +1013,7 @@ function mapHenv(row) {
     svar: row.svar,
     kommentarer: normalizeHenvKommentarer(parseJson(row.kommentarer, [])),
     dato: formatDate(row.created_at),
+    sortDato: row.created_at || '',
     kilde: row.kilde,
     bilRef: row.bil_ref,
     kundeId: row.kunde_id || null
@@ -1045,6 +1046,7 @@ function mapInnbytte(row) {
     ansvarlig: row.ansvarlig,
     tilbud: row.tilbud,
     dato: formatDate(row.created_at),
+    sortDato: row.created_at || '',
     kommentarer: normalizeHenvKommentarer(parseJson(row.kommentarer, [])),
     utstyr: parseJson(row.utstyr, []),
     bilder: parseJson(row.bilder, []),
@@ -1082,6 +1084,7 @@ function mapSelgBil(row) {
     ansvarlig: row.ansvarlig,
     tilbud: row.tilbud,
     dato: formatDate(row.created_at),
+    sortDato: row.created_at || '',
     kommentarer: normalizeHenvKommentarer(parseJson(row.kommentarer, [])),
     utstyr: parseJson(row.utstyr, []),
     bilder: parseJson(row.bilder, []),

@@ -561,6 +561,7 @@ export function buildNyeHenvendelserItems(opts) {
       type: 'henvendelse',
       typeLabel: 'Kontaktskjema',
       dato: h.dato || '',
+      sortDato: h.sortDato || h.dato || '',
       navn: h.navn || '—',
       sub: h.epost || '',
       emne: h.emne || '—',
@@ -576,6 +577,7 @@ export function buildNyeHenvendelserItems(opts) {
       type: 'innbytte',
       typeLabel: 'Innbytte',
       dato: i.dato || '',
+      sortDato: i.sortDato || i.dato || '',
       navn: i.navn || '—',
       sub: i.epost || i.tlf || '',
       emne: [i.merke, i.modell, i.aar].filter(Boolean).join(' ') || 'Innbyttebil',
@@ -591,6 +593,7 @@ export function buildNyeHenvendelserItems(opts) {
       type: 'selgbil',
       typeLabel: 'Selg bil',
       dato: s.dato || '',
+      sortDato: s.sortDato || s.dato || '',
       navn: s.navn || '—',
       sub: s.epost || s.tlf || '',
       emne: [s.merke, s.modell, s.aar].filter(Boolean).join(' ') || 'Bil til salg',
@@ -607,6 +610,7 @@ export function buildNyeHenvendelserItems(opts) {
         type: 'epost',
         typeLabel: 'E-post',
         dato: e.dato || e.sortDato || '',
+        sortDato: e.sortDato || e.dato || '',
         navn: e.fraNavn || e.fraEpost || '—',
         sub: e.fraEpost || e.kontoNavn || '',
         emne: e.emne || '(Uten emne)',
@@ -617,9 +621,22 @@ export function buildNyeHenvendelserItems(opts) {
     });
   }
 
-  return items.sort(function (a, b) {
-    return String(b.dato || '').localeCompare(String(a.dato || ''));
+  return sortItemsNyestFirst(items);
+}
+
+export function sortItemsNyestFirst(items) {
+  return (items || []).slice().sort(function (a, b) {
+    const diff = itemSortTimestamp(b) - itemSortTimestamp(a);
+    if (diff !== 0) return diff;
+    return String(b.key || '').localeCompare(String(a.key || ''));
   });
+}
+
+function itemSortTimestamp(item) {
+  const raw = item?.sortDato || item?.dato || '';
+  const ts = Date.parse(String(raw));
+  if (!Number.isNaN(ts)) return ts;
+  return Number(item?.id || 0);
 }
 
 export function canAccess(user, permission) {
