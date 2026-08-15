@@ -538,6 +538,10 @@ select option{background:var(--s1);}
 .inbox-item-subj{font-size:11px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .inbox-item-snippet{font-size:10px;color:var(--t4);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .inbox-detail-body{padding:16px;max-height:620px;overflow:auto;}
+.modal.mail-reader-modal{width:min(1120px,96vw);max-height:94vh;display:flex;flex-direction:column;padding:0;overflow:hidden;}
+.mail-reader-modal .inbox-detail-hd{padding:16px 20px;flex-shrink:0;}
+.mail-reader-modal .inbox-detail-body--modal{flex:1;max-height:none;overflow:auto;padding:20px 24px 28px;}
+.mail-reader-modal .inbox-body--modal{min-height:280px;font-size:13px;}
 .inbox-meta{font-size:11px;color:var(--t3);line-height:1.7;margin-bottom:14px;}
 .inbox-body{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:14px;font-size:12px;color:var(--t2);line-height:1.65;white-space:pre-wrap;}
 .inbox-empty{padding:40px 20px;text-align:center;color:var(--t4);font-size:13px;}

@@ -5129,6 +5129,166 @@ function mappeDisplayName(mappe) {
   return MAPPE_TYPE_LABELS[mappe.mappeType] || mappe.navn || 'Mappe';
 }
 
+function InboxMailDetailView({
+  mail,
+  mapper,
+  mailStatus,
+  lists,
+  colors,
+  hasReplyDraft,
+  onOpprettHenv,
+  onGoHenv,
+  onReply,
+  onForward,
+  onToggleFlag,
+  onMarkRead,
+  onMove,
+  onDelete,
+  onMetaChange,
+  onExpand,
+  onClose,
+  isModal,
+  visTost
+}) {
+  if (!mail) return null;
+
+  const flyttMapper = mapper.filter(function (m) { return m.id !== mail.mappeId; });
+
+  return (
+    <>
+      <div className="inbox-detail-hd">
+        <div>
+          <div style={{ fontSize: isModal ? 18 : 15, fontWeight: 800, color: 'var(--t1)' }}>{mail.emne}</div>
+          <div style={{ fontSize: 10, color: 'var(--t4)', marginTop: 2 }}>
+            {mail.retning === 'ut' ? 'Utgående' : 'Inngående'} · {mail.dato}
+            {mail.kontoNavn ? ` · ${mail.kontoNavn}` : ''}
+            {mail.retning === 'inn' && !mail.lest && <span className="chip chip-red" style={{ marginLeft: 8 }}>Ulest</span>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {onExpand && (
+            <button type="button" className="btn btn-g btn-sm" onClick={() => onExpand(mail)} title="Dobbeltklikk i listen">
+              ⛶ Stor visning
+            </button>
+          )}
+          {mail.retning === 'inn' && !mail.henvendelseId && (
+            <button type="button" className="btn btn-g btn-sm" onClick={onOpprettHenv}>Opprett kontaktskjema</button>
+          )}
+          {mail.henvendelseId && (
+            <button type="button" className="btn btn-g btn-sm" onClick={onGoHenv}>Gå til kontaktskjema</button>
+          )}
+          {mail.retning === 'inn' && (
+            <button
+              type="button"
+              className="btn btn-p btn-sm"
+              onClick={() => onReply(mail)}
+              disabled={!mailStatus.smtpConfigured}
+            >
+              ↩ Svar{hasReplyDraft(mail.id) ? ' · utkast' : ''}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-g btn-sm"
+            onClick={() => onForward(mail)}
+            disabled={!mailStatus.smtpConfigured}
+          >
+            ↪ Videresend
+          </button>
+          <button type="button" className="btn btn-g btn-sm" onClick={() => onToggleFlag(mail)}>
+            {mail.flagged ? '★ Fjern stjerne' : '☆ Stjerne'}
+          </button>
+          {!mail.lest && (
+            <button type="button" className="btn btn-g btn-sm" onClick={() => onMarkRead(mail)}>Markér lest</button>
+          )}
+          {flyttMapper.length > 0 && (
+            <select
+              className="inbox-meta-select"
+              defaultValue=""
+              onChange={function (e) {
+                if (e.target.value) onMove(mail, Number(e.target.value));
+                e.target.value = '';
+              }}
+            >
+              <option value="">Flytt til…</option>
+              {flyttMapper.map(function (m) {
+                return <option key={m.id} value={m.id}>{mappeDisplayName(m)}</option>;
+              })}
+            </select>
+          )}
+          <button type="button" className="btn btn-g btn-sm" onClick={() => onDelete(mail)}>Slett</button>
+          {isModal && onClose && (
+            <button type="button" className="modal-close" onClick={onClose} aria-label="Lukk" title="Lukk">×</button>
+          )}
+        </div>
+      </div>
+      <div className={`inbox-detail-body${isModal ? ' inbox-detail-body--modal' : ''}`}>
+        <div className="inbox-meta">
+          <div><strong>Fra:</strong> {mail.fraNavn ? `${mail.fraNavn} <${mail.fraEpost}>` : mail.fraEpost}</div>
+          <div><strong>Til:</strong> {mail.tilEpost || mail.kontoEpost || '—'}</div>
+          {mail.kontoNavn && <div><strong>Konto:</strong> {mail.kontoNavn} ({mail.kontoEpost})</div>}
+        </div>
+
+        <div className="inbox-behavior">
+          <div className="modal-sec">Merking</div>
+          <InboxMetaFields
+            mail={mail}
+            lists={lists}
+            colors={colors}
+            onChange={onMetaChange}
+            stopClick={false}
+          />
+          {(mail.status || mail.ansvarlig) && (
+            <div className="inbox-item-tags" style={{ marginTop: 10 }}>
+              {mail.status && <Badge s={mail.status} colors={colors} />}
+              {mail.ansvarlig && <span className="tag">{mail.ansvarlig}</span>}
+            </div>
+          )}
+        </div>
+
+        <div className={`inbox-body${isModal ? ' inbox-body--modal' : ''}`}>
+          {mail.innholdHtml ? (
+            <div className="inbox-body--html" dangerouslySetInnerHTML={{ __html: mail.innholdHtml }} />
+          ) : (
+            mail.innhold || '(Tom melding)'
+          )}
+        </div>
+
+        {!!(mail.vedlegg && mail.vedlegg.length) && (
+          <div className="inbox-attachments">
+            <div className="modal-sec">Vedlegg</div>
+            <div className="inbox-attachments-list">
+              {mail.vedlegg.map(function (v) {
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className="inbox-attachment-link"
+                    onClick={function () {
+                      downloadEpostVedlegg(mail.id, v.id, v.filnavn).catch(function (err) {
+                        visTost(err.message || 'Kunne ikke laste ned ✗');
+                      });
+                    }}
+                  >
+                    📎 {v.filnavn} ({Math.max(1, Math.round(v.sizeBytes / 1024))} KB)
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {mail.retning === 'inn' && (
+          <div className="inbox-reply-hint">
+            Klikk <strong>Svar</strong> for å skrive svar med formatering, vedlegg, kopi og blindkopi — samme som ved ny e-post.
+            {hasReplyDraft(mail.id) ? ' Du har et lagret svarutkast.' : ''}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function epostSortKey(item) {
   const raw = item?.sortDato || item?.updatedAt || item?.createdAt || '';
   const ts = Date.parse(String(raw));
@@ -5253,7 +5413,7 @@ function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
         </>
       ) : (
         <>
-          <MenuItem label="Åpne melding" onClick={() => run('open', mail)} />
+          <MenuItem label="Åpne stor visning" onClick={() => run('open', mail)} />
           <Sep />
           <MenuItem label="Svar" disabled={!canReply} onClick={() => run('reply', mail)} />
           <MenuItem label="Videresend" disabled={!canForward} onClick={() => run('forward', mail)} />
@@ -5352,7 +5512,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const [nyMappeNavn, setNyMappeNavn] = useState('');
   const [visNyMappe, setVisNyMappe] = useState(false);
   const [valgt, setValgt] = useState(null);
-  const [listSelectedId, setListSelectedId] = useState(null);
+  const [expandedMail, setExpandedMail] = useState(null);
   const [valgtUtkast, setValgtUtkast] = useState(null);
   const [utkast, setUtkast] = useState([]);
   const [syncing, setSyncing] = useState(false);
@@ -5490,7 +5650,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
 
   const selectMappe = useCallback(function (mappeId) {
     setValgt(null);
-    setListSelectedId(null);
+    setExpandedMail(null);
     setValgtMappeId(mappeId);
     if (isMobile) setMobileFolders(false);
     reloadInnboks(mappeId, aktivKontoId);
@@ -5608,56 +5768,69 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const openMailFull = async (mail, options) => {
-    const markRead = options?.markRead !== false;
-    setListSelectedId(mail.id);
-    setValgt(mail);
-    if (isMobile) setMobileFolders(false);
+  const applyMailSelection = useCallback(function (item) {
+    if (!item) return;
+    setValgt(function (prev) { return prev?.id === item.id ? item : prev; });
+    setExpandedMail(function (prev) { return prev?.id === item.id ? item : prev; });
+  }, []);
 
-    let current = mail;
-    if (!current.innhold && !current.innholdHtml) {
-      try {
-        const res = await getEpostById(current.id);
-        if (res.item) {
-          current = res.item;
-          patchListeEpost(function (prev) {
-            return prev.map(function (e) { return e.id === current.id ? current : e; });
-          });
-          setValgt(current);
-        }
-      } catch {
-        /* ignore */
+  const ensureMailBody = async function (mail) {
+    if (!mail || mail.innhold || mail.innholdHtml) return mail;
+    try {
+      const res = await getEpostById(mail.id);
+      if (res.item) {
+        patchListeEpost(function (prev) {
+          return prev.map(function (e) { return e.id === res.item.id ? res.item : e; });
+        });
+        applyMailSelection(res.item);
+        return res.item;
       }
+    } catch {
+      /* ignore */
     }
-
-    if (markRead && current.retning === 'inn' && !current.lest) {
-      try {
-        const res = await patchEpost(current.id, { lest: true });
-        if (res.item) {
-          patchListeEpost(function (prev) { return prev.map(function (e) { return e.id === current.id ? res.item : e; }); });
-          setValgt(res.item);
-          refreshStats();
-          await loadMapper();
-        }
-      } catch (err) {
-        visTost(err.message || 'Kunne ikke markere som lest ✗');
-      }
-    }
+    return mail;
   };
 
-  const selectMail = (mail) => {
-    setListSelectedId(mail.id);
+  const markMailRead = async function (mail) {
+    if (!mail || mail.retning !== 'inn' || mail.lest) return mail;
+    try {
+      const res = await patchEpost(mail.id, { lest: true });
+      if (res.item) {
+        patchListeEpost(function (prev) {
+          return prev.map(function (e) { return e.id === mail.id ? res.item : e; });
+        });
+        applyMailSelection(res.item);
+        refreshStats();
+        await loadMapper();
+        return res.item;
+      }
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke markere som lest ✗');
+    }
+    return mail;
+  };
+
+  const previewMail = async (mail) => {
+    setValgt(mail);
+    if (isMobile) setMobileFolders(false);
+    await ensureMailBody(mail);
+  };
+
+  const openMailExpanded = async (mail) => {
+    let current = await ensureMailBody(mail);
+    setValgt(current);
+    setExpandedMail(current);
+    if (isMobile) setMobileFolders(false);
+    current = await markMailRead(current);
+    setExpandedMail(current);
+    setValgt(current);
   };
 
   const handleMailClick = (mail) => {
-    if (isMobile) {
-      openMailFull(mail);
-      return;
-    }
     if (mailClickTimerRef.current) clearTimeout(mailClickTimerRef.current);
     mailClickTimerRef.current = setTimeout(function () {
       mailClickTimerRef.current = null;
-      selectMail(mail);
+      previewMail(mail);
     }, 220);
   };
 
@@ -5666,7 +5839,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
       clearTimeout(mailClickTimerRef.current);
       mailClickTimerRef.current = null;
     }
-    openMailFull(mail);
+    openMailExpanded(mail);
   };
 
   useEffect(function () {
@@ -5677,7 +5850,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
 
   useEffect(function () {
     if (!initialOpenEpost?.id) return;
-    openMailFull(initialOpenEpost);
+    openMailExpanded(initialOpenEpost);
     if (onInitialOpenEpostConsumed) onInitialOpenEpostConsumed();
   }, [initialOpenEpost?.id]);
 
@@ -5726,6 +5899,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
       patchListeEpost(function (prev) { return prev.filter(function (e) { return e.id !== mail.id; }); });
       invalidateEpostCache(aktivKontoId);
       setValgt(function (prev) { return prev?.id === mail.id ? null : prev; });
+      setExpandedMail(function (prev) { return prev?.id === mail.id ? null : prev; });
       await loadMapper();
       refreshStats();
       visTost('E-post slettet ✓');
@@ -5780,7 +5954,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
 
   const handleContextMenuAction = async (action, payload) => {
     if (action === 'open') {
-      openMailFull(payload);
+      openMailExpanded(payload);
       return;
     }
     if (action === 'reply') {
@@ -5854,6 +6028,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     setValgt(function (prev) {
       return prev?.id === id ? applyPatch(prev) : prev;
     });
+    setExpandedMail(function (prev) {
+      return prev?.id === id ? applyPatch(prev) : prev;
+    });
 
     try {
       const res = await patchEpost(id, patch);
@@ -5862,6 +6039,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
           return prev.map(function (e) { return e.id === id ? res.item : e; });
         });
         setValgt(function (prev) {
+          return prev?.id === id ? res.item : prev;
+        });
+        setExpandedMail(function (prev) {
           return prev?.id === id ? res.item : prev;
         });
       }
@@ -6083,12 +6263,12 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                   return (
                     <div
                       key={tråd.threadId}
-                      className={`inbox-item${(listSelectedId === e.id || valgt?.id === e.id) ? ' on' : ''}${unread ? ' unread' : ''}${e.status ? ' has-status' : ''}`}
+                      className={`inbox-item${valgt?.id === e.id ? ' on' : ''}${unread ? ' unread' : ''}${e.status ? ' has-status' : ''}`}
                       style={statusColor ? { borderLeft: `3px solid ${statusColor}` } : undefined}
                       onClick={() => handleMailClick(e)}
                       onDoubleClick={() => handleMailDoubleClick(e)}
                       onContextMenu={(ev) => showMailContextMenu(ev, e)}
-                      title={unread ? 'Dobbeltklikk for å åpne (ulest)' : 'Dobbeltklikk for å åpne'}
+                      title={unread ? 'Klikk for forhåndsvisning · dobbeltklikk for stor visning' : 'Klikk for forhåndsvisning · dobbeltklikk for stor visning'}
                     >
                       <div className="inbox-item-top">
                         <div className="inbox-item-from">
@@ -6161,137 +6341,59 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
             )
           ) : !valgt ? (
             <div className="inbox-empty">
-              {listSelectedId
-                ? <>E-post valgt i listen. <strong>Dobbeltklikk</strong> for å åpne i fullvisning og markere som lest.</>
-                : <>Dobbeltklikk en e-post for å åpne den, eller klikk <strong>Ny e-post</strong> for å skrive.</>}
+              Klikk en e-post for forhåndsvisning. Dobbeltklikk (eller <strong>Stor visning</strong>) for å åpne større og markere som lest.
             </div>
           ) : (
-            <>
-              <div className="inbox-detail-hd">
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--t1)' }}>{valgt.emne}</div>
-                  <div style={{ fontSize: 10, color: 'var(--t4)', marginTop: 2 }}>
-                    {valgt.retning === 'ut' ? 'Utgående' : 'Inngående'} · {valgt.dato}
-                    {valgt.kontoNavn ? ` · ${valgt.kontoNavn}` : ''}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {valgt.retning === 'inn' && !valgt.henvendelseId && (
-                    <button type="button" className="btn btn-g btn-sm" onClick={opprettHenv}>Opprett kontaktskjema</button>
-                  )}
-                  {valgt.henvendelseId && (
-                    <button type="button" className="btn btn-g btn-sm" onClick={() => setTab('henvendelser')}>Gå til kontaktskjema</button>
-                  )}
-                  {valgt.retning === 'inn' && (
-                    <button
-                      type="button"
-                      className="btn btn-p btn-sm"
-                      onClick={() => openReplyCompose(valgt)}
-                      disabled={!mailStatus.smtpConfigured}
-                    >
-                      ↩ Svar{hasReplyDraft(valgt.id) ? ' · utkast' : ''}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-g btn-sm"
-                    onClick={() => openForwardCompose(valgt)}
-                    disabled={!mailStatus.smtpConfigured}
-                  >
-                    ↪ Videresend
-                  </button>
-                  <button type="button" className="btn btn-g btn-sm" onClick={() => updateEpostMeta(valgt.id, { flagged: !valgt.flagged }, valgt.flagged ? 'Stjerne fjernet ✓' : 'Merket med stjerne ✓')}>
-                    {valgt.flagged ? '★ Fjern stjerne' : '☆ Stjerne'}
-                  </button>
-                  {!valgt.lest && (
-                    <button type="button" className="btn btn-g btn-sm" onClick={() => updateEpostMeta(valgt.id, { lest: true }, 'Markert som lest ✓')}>Markér lest</button>
-                  )}
-                  {mapper.filter(function (m) { return m.id !== valgt.mappeId; }).length > 0 && (
-                    <select
-                      className="inbox-meta-select"
-                      defaultValue=""
-                      onChange={function (e) {
-                        if (e.target.value) flyttValgtEpost(Number(e.target.value));
-                        e.target.value = '';
-                      }}
-                    >
-                      <option value="">Flytt til…</option>
-                      {mapper.filter(function (m) { return m.id !== valgt.mappeId; }).map(function (m) {
-                        return <option key={m.id} value={m.id}>{mappeDisplayName(m)}</option>;
-                      })}
-                    </select>
-                  )}
-                  <button type="button" className="btn btn-g btn-sm" onClick={slettValgtEpost}>Slett</button>
-                </div>
-              </div>
-              <div className="inbox-detail-body">
-                <div className="inbox-meta">
-                  <div><strong>Fra:</strong> {valgt.fraNavn ? `${valgt.fraNavn} <${valgt.fraEpost}>` : valgt.fraEpost}</div>
-                  <div><strong>Til:</strong> {valgt.tilEpost || valgt.kontoEpost || '—'}</div>
-                  {valgt.kontoNavn && <div><strong>Konto:</strong> {valgt.kontoNavn} ({valgt.kontoEpost})</div>}
-                </div>
-
-                <div className="inbox-behavior">
-                  <div className="modal-sec">Merking</div>
-                  <InboxMetaFields
-                    mail={valgt}
-                    lists={lists}
-                    colors={colors}
-                    onChange={(id, patch) => updateEpostMeta(id, patch, 'Lagret ✓')}
-                    stopClick={false}
-                  />
-                  {(valgt.status || valgt.ansvarlig) && (
-                    <div className="inbox-item-tags" style={{ marginTop: 10 }}>
-                      {valgt.status && <Badge s={valgt.status} colors={colors} />}
-                      {valgt.ansvarlig && <span className="tag">{valgt.ansvarlig}</span>}
-                    </div>
-                  )}
-                </div>
-
-                <div className="inbox-body">
-                  {valgt.innholdHtml ? (
-                    <div className="inbox-body--html" dangerouslySetInnerHTML={{ __html: valgt.innholdHtml }} />
-                  ) : (
-                    valgt.innhold || '(Tom melding)'
-                  )}
-                </div>
-
-                {!!(valgt.vedlegg && valgt.vedlegg.length) && (
-                  <div className="inbox-attachments">
-                    <div className="modal-sec">Vedlegg</div>
-                    <div className="inbox-attachments-list">
-                      {valgt.vedlegg.map(function (v) {
-                        return (
-                          <button
-                            key={v.id}
-                            type="button"
-                            className="inbox-attachment-link"
-                            onClick={function () {
-                              downloadEpostVedlegg(valgt.id, v.id, v.filnavn).catch(function (err) {
-                                visTost(err.message || 'Kunne ikke laste ned ✗');
-                              });
-                            }}
-                          >
-                            📎 {v.filnavn} ({Math.max(1, Math.round(v.sizeBytes / 1024))} KB)
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {valgt.retning === 'inn' && (
-                  <div className="inbox-reply-hint">
-                    Klikk <strong>Svar</strong> for å skrive svar med formatering, vedlegg, kopi og blindkopi — samme som ved ny e-post.
-                    {hasReplyDraft(valgt.id) ? ' Du har et lagret svarutkast.' : ''}
-                  </div>
-                )}
-              </div>
-            </>
+            <InboxMailDetailView
+              mail={valgt}
+              mapper={mapper}
+              mailStatus={mailStatus}
+              lists={lists}
+              colors={colors}
+              hasReplyDraft={hasReplyDraft}
+              onOpprettHenv={() => opprettHenvForMail(valgt)}
+              onGoHenv={() => setTab('henvendelser')}
+              onReply={openReplyCompose}
+              onForward={openForwardCompose}
+              onToggleFlag={(mail) => updateEpostMeta(mail.id, { flagged: !mail.flagged }, mail.flagged ? 'Stjerne fjernet ✓' : 'Merket med stjerne ✓')}
+              onMarkRead={(mail) => updateEpostMeta(mail.id, { lest: true }, 'Markert som lest ✓')}
+              onMove={flyttEpostItem}
+              onDelete={slettEpostItem}
+              onMetaChange={(id, patch) => updateEpostMeta(id, patch, 'Lagret ✓')}
+              onExpand={openMailExpanded}
+              visTost={visTost}
+            />
           )}
         </div>
       </div>
       </div>
+
+      {expandedMail && (
+        <div className="ov" onClick={() => setExpandedMail(null)}>
+          <div className="modal xl mail-reader-modal" onClick={(e) => e.stopPropagation()}>
+            <InboxMailDetailView
+              mail={expandedMail}
+              mapper={mapper}
+              mailStatus={mailStatus}
+              lists={lists}
+              colors={colors}
+              hasReplyDraft={hasReplyDraft}
+              onOpprettHenv={() => opprettHenvForMail(expandedMail)}
+              onGoHenv={() => { setExpandedMail(null); setTab('henvendelser'); }}
+              onReply={(mail) => { setExpandedMail(null); openReplyCompose(mail); }}
+              onForward={(mail) => { setExpandedMail(null); openForwardCompose(mail); }}
+              onToggleFlag={(mail) => updateEpostMeta(mail.id, { flagged: !mail.flagged }, mail.flagged ? 'Stjerne fjernet ✓' : 'Merket med stjerne ✓')}
+              onMarkRead={(mail) => updateEpostMeta(mail.id, { lest: true }, 'Markert som lest ✓')}
+              onMove={flyttEpostItem}
+              onDelete={(mail) => { setExpandedMail(null); slettEpostItem(mail); }}
+              onMetaChange={(id, patch) => updateEpostMeta(id, patch, 'Lagret ✓')}
+              onClose={() => setExpandedMail(null)}
+              isModal
+              visTost={visTost}
+            />
+          </div>
+        </div>
+      )}
 
       {composeOpen && (
         <ComposeMailModal
