@@ -371,8 +371,13 @@ export function getInnboks(params = {}) {
   const qs = new URLSearchParams();
   if (params.kontoId) qs.set('kontoId', String(params.kontoId));
   if (params.mappeId) qs.set('mappeId', String(params.mappeId));
+  if (params.status === false) qs.set('status', '0');
   const query = qs.toString();
   return request('/innboks' + (query ? `?${query}` : ''));
+}
+
+export function getEpostById(id) {
+  return request(`/innboks/${id}`);
 }
 
 export function getInnboksMapper(kontoId, refresh) {

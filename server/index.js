@@ -170,6 +170,45 @@ function mapEpostPreviewRows(rows) {
   });
 }
 
+function epostSnippetFromPreview(innhold, innholdHtml) {
+  const plain = String(innhold || '').trim();
+  if (plain) {
+    return plain.replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+  return String(innholdHtml || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+}
+
+function mapEpostListRow(row) {
+  const mapped = mapEpost({
+    ...row,
+    innhold: '',
+    innhold_html: ''
+  }, []);
+  mapped.snippet = epostSnippetFromPreview(row.innhold_preview, row.innhold_html_preview);
+  mapped.innhold = '';
+  mapped.innholdHtml = '';
+  return mapped;
+}
+
+function mapEpostListRows(rows) {
+  return (rows || []).map(mapEpostListRow);
+}
+
+const INNBOKS_LIST_SELECT = `
+  e.id, e.konto_id, e.mappe_id, e.message_id, e.thread_id, e.in_reply_to,
+  e.retning, e.fra_navn, e.fra_epost, e.til_epost, e.emne,
+  e.lest, e.flagged, e.slettet, e.henvendelse_id, e.status, e.ansvarlig, e.kunde_id,
+  e.mottatt_dato, e.created_at,
+  SUBSTR(COALESCE(e.innhold, ''), 1, 400) AS innhold_preview,
+  SUBSTR(COALESCE(e.innhold_html, ''), 1, 800) AS innhold_html_preview
+`;
+
 async function waitForDbReady(maxMs) {
   const timeoutMs = Number(maxMs || 8000);
   await Promise.race([
@@ -1317,7 +1356,8 @@ app.get('/api/innboks', requireAuth, async function (req, res) {
   }
 
   let sql = `
-    SELECT e.*, k.navn AS konto_navn, k.epost AS konto_epost,
+    SELECT ${INNBOKS_LIST_SELECT},
+      k.navn AS konto_navn, k.epost AS konto_epost,
       m.navn AS mappe_navn, m.mappe_type AS mappe_type,
       (SELECT COUNT(*) FROM epost_vedlegg v WHERE v.epost_id = e.id) AS vedlegg_count
     FROM eposter e
@@ -1342,7 +1382,21 @@ app.get('/api/innboks', requireAuth, async function (req, res) {
   }
   sql += ' ORDER BY e.mottatt_dato DESC, e.id DESC LIMIT 500';
   const rows = await prepare(sql).all(...params);
-  res.json({ ok: true, items: await mapEpostRowsWithVedlegg(rows), status: await getMailStatus() });
+  const includeStatus = req.query.status !== '0';
+  const payload = { ok: true, items: mapEpostListRows(rows) };
+  if (includeStatus) payload.status = await getMailStatus();
+  res.json(payload);
+});
+
+app.get('/api/innboks/:id', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+  const row = await getEpostRowById(id);
+  if (!row || row.slettet) {
+    return res.status(404).json({ ok: false, error: 'E-post ikke funnet.' });
+  }
+  const items = await mapEpostRowsWithVedlegg([row]);
+  res.json({ ok: true, item: items[0] });
 });
 
 app.get('/api/innboks/:id/vedlegg/:vedleggId', requireAuth, async function (req, res) {

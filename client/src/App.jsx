@@ -65,7 +65,7 @@ import {
   getKalender, postKalender, patchKalender, deleteKalender,
   getInnkjopskalkyle,
   lookupKjoretoy, lookupKjoretoyByUnderstell, getInnstillinger, getLister, patchInnstillinger,
-  getInnboks, getInnboksMapper, createInnboksMappe, flyttEpost, deleteEpost, downloadEpostVedlegg,
+  getInnboks, getInnboksMapper, createInnboksMappe, flyttEpost, deleteEpost, downloadEpostVedlegg, getEpostById,
   getMailStatus,
   syncInnboks, patchEpost, sendEpostMultipart, getEpostUtkast, getEpostUtkastById, saveEpostUtkast, deleteEpostUtkast, opprettHenvFraEpost,
   sendHenvendelseSvar, getMailKontoer, postMailKonto, patchMailKonto, deleteMailKonto, testMailKonto,
@@ -418,6 +418,72 @@ function clearSessionCache() {
 
 const BILER_CACHE_KEY = 'xbilsenter_admin_biler_cache';
 const STATS_CACHE_KEY = 'xbilsenter_admin_stats_cache';
+const INNBOKS_CACHE_KEY = 'xbilsenter_admin_innboks_cache';
+const INNBOKS_KONTO_KEY = 'xbilsenter_admin_innboks_konto';
+
+function readInnboksCacheStore() {
+  try {
+    const raw = sessionStorage.getItem(INNBOKS_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readInnboksCacheEntry(key) {
+  const items = readInnboksCacheStore()[key];
+  return Array.isArray(items) ? items : null;
+}
+
+function writeInnboksCacheEntry(key, items) {
+  if (!Array.isArray(items)) return;
+  try {
+    const store = readInnboksCacheStore();
+    store[key] = items;
+    sessionStorage.setItem(INNBOKS_CACHE_KEY, JSON.stringify(store));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearInnboksCacheStore(kontoId) {
+  try {
+    if (!kontoId) {
+      sessionStorage.removeItem(INNBOKS_CACHE_KEY);
+      return;
+    }
+    const store = readInnboksCacheStore();
+    const prefix = String(kontoId) + ':';
+    Object.keys(store).forEach(function (key) {
+      if (key.startsWith(prefix)) delete store[key];
+    });
+    sessionStorage.setItem(INNBOKS_CACHE_KEY, JSON.stringify(store));
+  } catch {
+    /* ignore */
+  }
+}
+
+function readInnboksKontoFallback() {
+  try {
+    const raw = sessionStorage.getItem(INNBOKS_KONTO_KEY);
+    if (!raw) return null;
+    const id = Number(raw);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeInnboksKontoFallback(kontoId) {
+  if (!kontoId) return;
+  try {
+    sessionStorage.setItem(INNBOKS_KONTO_KEY, String(kontoId));
+  } catch {
+    /* ignore */
+  }
+}
 
 function readBilerCache() {
   try {
@@ -5294,11 +5360,15 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const [composeReplyTo, setComposeReplyTo] = useState(null);
   const [composeForwardFrom, setComposeForwardFrom] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
-  const epostCacheRef = useRef({});
+  const epostCacheRef = useRef(readInnboksCacheStore());
   const fetchSeqRef = useRef(0);
   const kontoer = mailStatus.kontoer || [];
   const statusReady = Array.isArray(mailStatus.kontoer);
   const colors = lists?.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER;
+
+  const aktivKontoId = kontoFilter !== 'alle'
+    ? Number(kontoFilter)
+    : (kontoer.find(function (k) { return k.aktiv; })?.id || kontoer[0]?.id || readInnboksKontoFallback() || null);
 
   useEffect(function () {
     if (statusReady) return;
@@ -5329,12 +5399,14 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const invalidateEpostCache = useCallback(function (kontoId) {
     if (!kontoId) {
       epostCacheRef.current = {};
+      clearInnboksCacheStore();
       return;
     }
     const prefix = String(kontoId) + ':';
     Object.keys(epostCacheRef.current).forEach(function (key) {
       if (key.startsWith(prefix)) delete epostCacheRef.current[key];
     });
+    clearInnboksCacheStore(kontoId);
   }, []);
 
   const loadUtkast = async () => {
@@ -5351,9 +5423,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     loadUtkast();
   }, []);
 
-  const aktivKontoId = kontoFilter !== 'alle'
-    ? Number(kontoFilter)
-    : (kontoer.find(function (k) { return k.aktiv; })?.id || kontoer[0]?.id || null);
+  useEffect(function () {
+    if (aktivKontoId) writeInnboksKontoFallback(aktivKontoId);
+  }, [aktivKontoId]);
 
   const loadMapper = async function (forceRefresh) {
     if (!aktivKontoId) {
@@ -5385,8 +5457,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
 
     const key = cacheKey(kid, mid);
-    const cached = epostCacheRef.current[key];
+    const cached = epostCacheRef.current[key] || readInnboksCacheEntry(key);
     if (cached) {
+      epostCacheRef.current[key] = cached;
       applyListeEpost(cached);
     } else {
       setLasterEpost(true);
@@ -5394,12 +5467,13 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
 
     const seq = ++fetchSeqRef.current;
     try {
-      const params = { kontoId: kid };
+      const params = { kontoId: kid, status: false };
       if (mid) params.mappeId = mid;
       const data = await getInnboks(params);
       if (seq !== fetchSeqRef.current) return;
       const items = sortEpostNyestFirst(data.items || []);
       epostCacheRef.current[key] = items;
+      writeInnboksCacheEntry(key, items);
       applyListeEpost(items);
       if (data.status) setMailStatus(data.status);
       return data;
@@ -5534,11 +5608,28 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const openMail = async (mail) => {
     setValgt(mail);
     if (isMobile) setMobileFolders(false);
-    if (mail.retning === 'inn' && !mail.lest) {
+
+    let current = mail;
+    if (!current.innhold && !current.innholdHtml) {
       try {
-        const res = await patchEpost(mail.id, { lest: true });
+        const res = await getEpostById(current.id);
         if (res.item) {
-          patchListeEpost(function (prev) { return prev.map(function (e) { return e.id === mail.id ? res.item : e; }); });
+          current = res.item;
+          patchListeEpost(function (prev) {
+            return prev.map(function (e) { return e.id === current.id ? current : e; });
+          });
+          setValgt(current);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (current.retning === 'inn' && !current.lest) {
+      try {
+        const res = await patchEpost(current.id, { lest: true });
+        if (res.item) {
+          patchListeEpost(function (prev) { return prev.map(function (e) { return e.id === current.id ? res.item : e; }); });
           setValgt(res.item);
           refreshStats();
         }
@@ -5976,7 +6067,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                         onChange={updateEpostMeta}
                         compact
                       />
-                      <div className="inbox-item-snippet">{e.innhold || e.innholdHtml || ''}</div>
+                      <div className="inbox-item-snippet">{e.snippet || e.innhold || e.innholdHtml || ''}</div>
                     </div>
                   );
                 })}
