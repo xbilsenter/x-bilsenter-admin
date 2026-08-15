@@ -5189,7 +5189,7 @@ function InboxMailDetailView({
               type="button"
               className="btn btn-p btn-sm"
               onClick={() => onReply(mail)}
-              disabled={!mailStatus.smtpConfigured}
+              disabled={!mailStatus?.smtpConfigured}
             >
               ↩ Svar{hasReplyDraft(mail.id) ? ' · utkast' : ''}
             </button>
@@ -5198,7 +5198,7 @@ function InboxMailDetailView({
             type="button"
             className="btn btn-g btn-sm"
             onClick={() => onForward(mail)}
-            disabled={!mailStatus.smtpConfigured}
+            disabled={!mailStatus?.smtpConfigured}
           >
             ↪ Videresend
           </button>
@@ -5530,7 +5530,6 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const [contextMenu, setContextMenu] = useState(null);
   const epostCacheRef = useRef(readInnboksCacheStore());
   const fetchSeqRef = useRef(0);
-  const mailClickTimerRef = useRef(null);
   const kontoer = mailStatus.kontoer || [];
   const statusReady = Array.isArray(mailStatus.kontoer);
   const colors = lists?.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER;
@@ -5681,7 +5680,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   }, [kontoer, kontoFilter]);
 
   useEffect(function () {
-    if (valgt && !listeEpost.some(function (e) { return e.id === valgt.id; })) {
+    if (!valgt?.id) return;
+    const valgtId = Number(valgt.id);
+    if (!listeEpost.some(function (e) { return Number(e.id) === valgtId; })) {
       setValgt(null);
     }
   }, [listeEpost, valgt]);
@@ -5775,27 +5776,23 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const applyMailSelection = useCallback(function (item) {
-    if (!item) return;
-    setValgt(function (prev) { return prev?.id === item.id ? item : prev; });
+  const applyMailToViews = useCallback(function (item) {
+    if (!item?.id) return;
+    setValgt(item);
     setExpandedMail(function (prev) { return prev?.id === item.id ? item : prev; });
   }, []);
 
   const ensureMailBody = async function (mail) {
-    if (!mail || mail.innhold || mail.innholdHtml) return mail;
-    try {
-      const res = await getEpostById(mail.id);
-      if (res.item) {
-        patchListeEpost(function (prev) {
-          return prev.map(function (e) { return e.id === res.item.id ? res.item : e; });
-        });
-        applyMailSelection(res.item);
-        return res.item;
-      }
-    } catch {
-      /* ignore */
-    }
-    return mail;
+    if (!mail?.id) return mail;
+    if (mail.innhold || mail.innholdHtml) return mail;
+    const res = await getEpostById(mail.id);
+    if (!res?.item) throw new Error('Kunne ikke hente e-post.');
+    patchListeEpost(function (prev) {
+      return prev.map(function (e) {
+        return Number(e.id) === Number(res.item.id) ? res.item : e;
+      });
+    });
+    return res.item;
   };
 
   const markMailRead = async function (mail) {
@@ -5804,11 +5801,11 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
       const res = await patchEpost(mail.id, { lest: true });
       if (res.item) {
         patchListeEpost(function (prev) {
-          return prev.map(function (e) { return e.id === mail.id ? res.item : e; });
+          return prev.map(function (e) { return Number(e.id) === Number(mail.id) ? res.item : e; });
         });
-        applyMailSelection(res.item);
+        applyMailToViews(res.item);
         refreshStats();
-        await loadMapper();
+        loadMapper().catch(function () { /* ignore */ });
         return res.item;
       }
     } catch (err) {
@@ -5818,42 +5815,44 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   };
 
   const previewMail = async (mail) => {
+    if (!mail?.id) return;
     setValgt(mail);
     if (isMobile) setMobileFolders(false);
-    await ensureMailBody(mail);
+    try {
+      const current = await ensureMailBody(mail);
+      setValgt(current);
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke laste e-post ✗');
+    }
   };
 
   const openMailExpanded = async (mail) => {
-    let current = await ensureMailBody(mail);
-    setValgt(current);
-    setExpandedMail(current);
+    if (!mail?.id) return;
+    setValgt(mail);
+    setExpandedMail(mail);
     if (isMobile) setMobileFolders(false);
-    current = await markMailRead(current);
-    setExpandedMail(current);
-    setValgt(current);
+    try {
+      const current = await ensureMailBody(mail);
+      setValgt(current);
+      setExpandedMail(current);
+      markMailRead(current).then(function (updated) {
+        if (updated?.id) {
+          setValgt(updated);
+          setExpandedMail(function (prev) { return prev?.id === updated.id ? updated : prev; });
+        }
+      });
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke åpne e-post ✗');
+    }
   };
 
   const handleMailClick = (mail) => {
-    if (mailClickTimerRef.current) clearTimeout(mailClickTimerRef.current);
-    mailClickTimerRef.current = setTimeout(function () {
-      mailClickTimerRef.current = null;
-      previewMail(mail);
-    }, 220);
+    previewMail(mail);
   };
 
   const handleMailDoubleClick = (mail) => {
-    if (mailClickTimerRef.current) {
-      clearTimeout(mailClickTimerRef.current);
-      mailClickTimerRef.current = null;
-    }
     openMailExpanded(mail);
   };
-
-  useEffect(function () {
-    return function () {
-      if (mailClickTimerRef.current) clearTimeout(mailClickTimerRef.current);
-    };
-  }, []);
 
   useEffect(function () {
     if (!initialOpenEpost?.id) return;
