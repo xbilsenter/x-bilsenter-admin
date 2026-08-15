@@ -244,7 +244,7 @@ async function getSyncedUidMap(kontoId, mappeId) {
 async function refreshKnownMessageFlags(client, knownUids, uidMap) {
   let updated = 0;
 
-  for await (const msg of client.fetch(knownUids, { uid: true, flags: true })) {
+  for await (const msg of client.fetch(knownUids, { flags: true }, { uid: true })) {
     const row = uidMap.get(Number(msg.uid));
     if (!row) continue;
 
@@ -286,11 +286,10 @@ async function syncFolderMessages(client, konto, mappe) {
 
     if (newUids.length) {
       for await (const msg of client.fetch(newUids, {
-        uid: true,
         envelope: true,
         source: true,
         flags: true
-      })) {
+      }, { uid: true })) {
         const parsed = await simpleParser(msg.source);
         const result = await upsertSyncedMessage(konto, mappe, msg, parsed);
         if (result.created) imported += 1;
@@ -351,7 +350,7 @@ async function syncAccountFull(konto) {
       try {
         results.push(await syncFolderMessages(client, konto, mappe));
       } catch (err) {
-        console.warn(`[mail-sync] Mappe ${mappe.imapPath} feilet:`, err.message);
+        console.warn(`[mail-sync] Mappe ${mappe.imapPath} feilet:`, err.message, err.responseText || '');
         results.push({ mappeId: mappe.id, mappeNavn: mappe.navn, error: err.message });
       }
     }
