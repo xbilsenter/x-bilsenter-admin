@@ -5352,6 +5352,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const [nyMappeNavn, setNyMappeNavn] = useState('');
   const [visNyMappe, setVisNyMappe] = useState(false);
   const [valgt, setValgt] = useState(null);
+  const [listSelectedId, setListSelectedId] = useState(null);
   const [valgtUtkast, setValgtUtkast] = useState(null);
   const [utkast, setUtkast] = useState([]);
   const [syncing, setSyncing] = useState(false);
@@ -5362,6 +5363,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
   const [contextMenu, setContextMenu] = useState(null);
   const epostCacheRef = useRef(readInnboksCacheStore());
   const fetchSeqRef = useRef(0);
+  const mailClickTimerRef = useRef(null);
   const kontoer = mailStatus.kontoer || [];
   const statusReady = Array.isArray(mailStatus.kontoer);
   const colors = lists?.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER;
@@ -5488,6 +5490,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
 
   const selectMappe = useCallback(function (mappeId) {
     setValgt(null);
+    setListSelectedId(null);
     setValgtMappeId(mappeId);
     if (isMobile) setMobileFolders(false);
     reloadInnboks(mappeId, aktivKontoId);
@@ -5605,7 +5608,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const openMail = async (mail) => {
+  const openMailFull = async (mail, options) => {
+    const markRead = options?.markRead !== false;
+    setListSelectedId(mail.id);
     setValgt(mail);
     if (isMobile) setMobileFolders(false);
 
@@ -5625,23 +5630,54 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
       }
     }
 
-    if (current.retning === 'inn' && !current.lest) {
+    if (markRead && current.retning === 'inn' && !current.lest) {
       try {
         const res = await patchEpost(current.id, { lest: true });
         if (res.item) {
           patchListeEpost(function (prev) { return prev.map(function (e) { return e.id === current.id ? res.item : e; }); });
           setValgt(res.item);
           refreshStats();
+          await loadMapper();
         }
-      } catch {
-        /* ignore */
+      } catch (err) {
+        visTost(err.message || 'Kunne ikke markere som lest ✗');
       }
     }
   };
 
+  const selectMail = (mail) => {
+    setListSelectedId(mail.id);
+  };
+
+  const handleMailClick = (mail) => {
+    if (isMobile) {
+      openMailFull(mail);
+      return;
+    }
+    if (mailClickTimerRef.current) clearTimeout(mailClickTimerRef.current);
+    mailClickTimerRef.current = setTimeout(function () {
+      mailClickTimerRef.current = null;
+      selectMail(mail);
+    }, 220);
+  };
+
+  const handleMailDoubleClick = (mail) => {
+    if (mailClickTimerRef.current) {
+      clearTimeout(mailClickTimerRef.current);
+      mailClickTimerRef.current = null;
+    }
+    openMailFull(mail);
+  };
+
+  useEffect(function () {
+    return function () {
+      if (mailClickTimerRef.current) clearTimeout(mailClickTimerRef.current);
+    };
+  }, []);
+
   useEffect(function () {
     if (!initialOpenEpost?.id) return;
-    openMail(initialOpenEpost);
+    openMailFull(initialOpenEpost);
     if (onInitialOpenEpostConsumed) onInitialOpenEpostConsumed();
   }, [initialOpenEpost?.id]);
 
@@ -5744,7 +5780,7 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
 
   const handleContextMenuAction = async (action, payload) => {
     if (action === 'open') {
-      openMail(payload);
+      openMailFull(payload);
       return;
     }
     if (action === 'reply') {
@@ -5828,6 +5864,10 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         setValgt(function (prev) {
           return prev?.id === id ? res.item : prev;
         });
+      }
+      if (patch.lest != null) {
+        refreshStats();
+        await loadMapper();
       }
       if (msg) visTost(msg);
     } catch (err) {
@@ -6043,15 +6083,20 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
                   return (
                     <div
                       key={tråd.threadId}
-                      className={`inbox-item${valgt?.id === e.id ? ' on' : ''}${unread ? ' unread' : ''}${e.status ? ' has-status' : ''}`}
+                      className={`inbox-item${(listSelectedId === e.id || valgt?.id === e.id) ? ' on' : ''}${unread ? ' unread' : ''}${e.status ? ' has-status' : ''}`}
                       style={statusColor ? { borderLeft: `3px solid ${statusColor}` } : undefined}
-                      onClick={() => openMail(e)}
+                      onClick={() => handleMailClick(e)}
+                      onDoubleClick={() => handleMailDoubleClick(e)}
                       onContextMenu={(ev) => showMailContextMenu(ev, e)}
+                      title={unread ? 'Dobbeltklikk for å åpne (ulest)' : 'Dobbeltklikk for å åpne'}
                     >
                       <div className="inbox-item-top">
                         <div className="inbox-item-from">
-                          {e.retning === 'ut' ? `Til ${e.tilEpost}` : (e.fraNavn || e.fraEpost || 'Ukjent')}
-                          {tråd.count > 1 && <span className="inbox-thread-count">{tråd.count}</span>}
+                          {unread && <span className="inbox-unread-dot" aria-hidden="true" />}
+                          <span className="inbox-item-from-text">
+                            {e.retning === 'ut' ? `Til ${e.tilEpost}` : (e.fraNavn || e.fraEpost || 'Ukjent')}
+                            {tråd.count > 1 && <span className="inbox-thread-count">{tråd.count}</span>}
+                          </span>
                         </div>
                         <div className="inbox-item-date">{e.dato}</div>
                       </div>
@@ -6116,7 +6161,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
             )
           ) : !valgt ? (
             <div className="inbox-empty">
-              Velg en e-post for å lese og svare, eller klikk <strong>Ny e-post</strong> for å skrive en ny melding.
+              {listSelectedId
+                ? <>E-post valgt i listen. <strong>Dobbeltklikk</strong> for å åpne i fullvisning og markere som lest.</>
+                : <>Dobbeltklikk en e-post for å åpne den, eller klikk <strong>Ny e-post</strong> for å skrive.</>}
             </div>
           ) : (
             <>

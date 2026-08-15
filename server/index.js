@@ -109,6 +109,7 @@ const {
 const { isConfigured: isOmregConfigured, lookupOmregistreringsavgift } = require('./skatteetaten-omreg');
 const { lookupFinnAnnonse, resolveFinnMarkedsSok } = require('./finn');
 const { getMailStatus, syncInbox, sendMail, testMailKonto, startBackgroundMailSync } = require('./mail');
+const { accountImapReady } = require('./mail-utils');
 const {
   getMailMapperForKonto,
   getMailMappeById,
@@ -226,6 +227,34 @@ async function getEpostRowById(id) {
     LEFT JOIN mail_mapper m ON m.id = e.mappe_id
     WHERE e.id = ?
   `).get(Number(id));
+}
+
+async function resolveMappeForEpostRow(row) {
+  if (!row) return null;
+  if (row.mappe_id) {
+    const mappe = await getMailMappeById(row.mappe_id);
+    if (mappe) return mappe;
+  }
+  if (!row.konto_id) return null;
+  const mapper = await getMailMapperForKonto(row.konto_id);
+  if (row.retning === 'inn') {
+    return mapper.find(function (m) { return m.mappeType === 'inbox'; }) || null;
+  }
+  if (row.retning === 'ut') {
+    return mapper.find(function (m) { return m.mappeType === 'sent'; }) || null;
+  }
+  return null;
+}
+
+async function refreshMappeCountsForEpostRow(row) {
+  const mappe = await resolveMappeForEpostRow(row);
+  if (mappe?.id) {
+    await updateMappeCounts(mappe.id);
+    return;
+  }
+  if (row?.konto_id) {
+    await updateAllMappeCountsForKonto(row.konto_id);
+  }
 }
 
 process.on('unhandledRejection', function (reason) {
@@ -1464,18 +1493,32 @@ app.patch('/api/innboks/:id', requireAuth, async function (req, res) {
 
   const b = req.body || {};
   if (b.lest != null) {
+    const seen = !!b.lest;
+    const konto = await getMailKontoById(row.konto_id, true);
+    const mappe = await resolveMappeForEpostRow(row);
+    const canImap = !!(konto && mappe && row.imap_uid && accountImapReady(konto));
+
+    if (canImap) {
+      try {
+        await setMessageSeenOnServer(konto, mappe, row, seen);
+      } catch (err) {
+        console.warn('[innboks/patch lest]', err.message);
+        return res.status(502).json({
+          ok: false,
+          error: 'Kunne ikke synkronisere lest-status med e-postserveren. Prøv igjen.'
+        });
+      }
+    }
+
     await prepare('UPDATE eposter SET lest = @lest WHERE id = @id').run({
       id,
-      lest: b.lest ? 1 : 0
+      lest: seen ? 1 : 0
     });
+
     try {
-      const konto = await getMailKontoById(row.konto_id, true);
-      const mappe = row.mappe_id ? await getMailMappeById(row.mappe_id) : null;
-      if (konto && mappe) {
-        await setMessageSeenOnServer(konto, mappe, row, !!b.lest);
-      }
+      await refreshMappeCountsForEpostRow(row);
     } catch (err) {
-      console.warn('[innboks/patch lest]', err.message);
+      console.warn('[innboks/patch mappe counts]', err.message);
     }
   }
 
