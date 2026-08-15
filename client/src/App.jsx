@@ -716,6 +716,9 @@ export default function App() {
         return next;
       });
     }
+    if (res.mailStatus && typeof res.mailStatus === 'object') {
+      setMailStatus(res.mailStatus);
+    }
   }, []);
 
   const initSession = useCallback(async function () {
@@ -944,7 +947,11 @@ export default function App() {
   const aapneOppgaver = Number(stats.aapneOppgaver ?? biler.filter(isBilAktiv).reduce(
     (s, b) => s + getAktivSjekkliste(b).filter(x => x.obligatorisk && !x.f).length, 0
   )) || 0;
-  const ulestEpost = Number(stats.ulestEpost ?? mailStatus.ulest ?? epost.filter(e => e.retning === 'inn' && !e.lest).length) || 0;
+  const ulestEpost = Math.max(
+    Number(stats.ulestEpost) || 0,
+    Number(mailStatus.ulest) || 0,
+    epost.filter(function (e) { return e.retning === 'inn' && !e.lest; }).length
+  );
   const harInnboks = canAccess(user, 'innboks');
   const nyeInnkommendeEpost = Number(stats.nyeInnkommendeEpost ?? 0) || 0;
   const ulestEpostListe = harInnboks ? (stats.ulestEpostListe || []) : [];

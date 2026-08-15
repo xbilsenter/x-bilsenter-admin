@@ -886,10 +886,11 @@ app.get('/api/bootstrap', requireAuth, async function (req, res) {
         return payload.stats;
       });
 
-    const [user, lists, stats] = await Promise.all([
+    const [user, lists, stats, mailStatus] = await Promise.all([
       getUserById(req.user.sub),
       getLister(),
-      statsPromise
+      statsPromise,
+      getMailStatus().catch(function () { return null; })
     ]);
     if (!user || !user.aktiv) {
       return res.status(401).json({ ok: false, error: 'Ugyldig sesjon.' });
@@ -899,7 +900,8 @@ app.get('/api/bootstrap', requireAuth, async function (req, res) {
       ok: true,
       user: formatUserResponse(user),
       lists,
-      stats: stats || {}
+      stats: stats || {},
+      mailStatus: mailStatus || null
     });
   } catch (err) {
     console.error('GET /api/bootstrap feilet:', err.message);
