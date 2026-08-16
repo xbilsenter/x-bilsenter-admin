@@ -1437,6 +1437,15 @@ async function mapKundeWithStats(row) {
   return base;
 }
 
+async function findKundeIdByEpost(epost) {
+  const email = normalizeKundeEpost(epost);
+  if (!email) return null;
+  const existing = await prepare(`
+    SELECT id FROM kunder WHERE lower(trim(epost)) = ? LIMIT 1
+  `).get(email);
+  return existing?.id || null;
+}
+
 async function findOrCreateKunde(data) {
   const email = normalizeKundeEpost(data.epost);
   const name = String(data.navn || '').trim() || email || 'Ukjent';
@@ -1472,12 +1481,8 @@ async function findOrCreateKunde(data) {
 
 async function linkInboundEpostToKunde(epostId, fraNavn, fraEpost) {
   if (!fraEpost) return null;
-  const kundeId = await findOrCreateKunde({
-    navn: fraNavn,
-    epost: fraEpost,
-    tlf: '',
-    kilde: 'E-post'
-  });
+  const kundeId = await findKundeIdByEpost(fraEpost);
+  if (!kundeId) return null;
   await prepare('UPDATE eposter SET kunde_id = ? WHERE id = ?').run(kundeId, epostId);
   return kundeId;
 }
@@ -1812,6 +1817,7 @@ module.exports = {
   ALL_PERMISSION_IDS,
   PASS_MASK,
   findOrCreateKunde,
+  findKundeIdByEpost,
   linkInboundEpostToKunde,
   mapKunde,
   getKunder,

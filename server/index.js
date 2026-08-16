@@ -61,7 +61,7 @@ const {
   getPermissionDefs,
   getRoleTemplates,
   PASS_MASK,
-  findOrCreateKunde,
+  findKundeIdByEpost,
   linkInboundEpostToKunde,
   mapKunde,
   getKunder,
@@ -1031,12 +1031,7 @@ app.post('/api/ingest/henvendelse', requireIngest, async function (req, res) {
     melding: b.melding || '',
     kilde: b.kilde || 'Nettside',
     bil_ref: b.bilRef || '',
-    kunde_id: await findOrCreateKunde({
-      navn: b.navn,
-      epost: b.epost,
-      tlf: b.tlf || '',
-      kilde: b.kilde || 'Nettside'
-    })
+    kunde_id: await findKundeIdByEpost(b.epost),
   });
 
   res.status(201).json({ ok: true, id: info.lastInsertRowid });
@@ -1722,12 +1717,7 @@ app.post('/api/innboks/:id/oppret-henvendelse', requireAuth, async function (req
     bil_ref: (req.body || {}).bilRef || '',
     status: row.status || 'Ny',
     ansvarlig: row.ansvarlig || '',
-    kunde_id: await findOrCreateKunde({
-      navn: row.fra_navn || row.fra_epost,
-      epost: row.fra_epost,
-      tlf: '',
-      kilde: 'E-post'
-    })
+    kunde_id: await findKundeIdByEpost(row.fra_epost),
   });
 
   await prepare('UPDATE eposter SET henvendelse_id = @henvendelse_id WHERE id = @id').run({
