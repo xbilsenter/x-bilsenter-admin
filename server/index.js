@@ -797,7 +797,7 @@ app.post('/api/drift/finn-refresh', requireAuth, requirePermission('innstillinge
 
 app.get('/api/dashboard', requireAuth, async function (_req, res) {
   const cached = getDashboardCache();
-  if (cached) {
+  if (cached?.includeEpostPreview) {
     return res.json(cached);
   }
 
@@ -855,6 +855,7 @@ async function buildDashboardSummaryStats(options) {
 
   return {
     ok: true,
+    includeEpostPreview,
     stats: {
       nyeHenv: Number(nyeHenvRow.c) || 0,
       nyeInnbytte: Number(nyeInnbytteRow.c) || 0,
@@ -879,10 +880,9 @@ async function buildDashboardPayload() {
 app.get('/api/bootstrap', requireAuth, async function (req, res) {
   try {
     const cachedDash = getDashboardCache();
-    const statsPromise = cachedDash?.stats
+    const statsPromise = (cachedDash?.stats && cachedDash.includeEpostPreview)
       ? Promise.resolve(cachedDash.stats)
       : buildDashboardSummaryStats({ includeEpostPreview: false }).then(function (payload) {
-        setDashboardCache(payload);
         return payload.stats;
       });
 

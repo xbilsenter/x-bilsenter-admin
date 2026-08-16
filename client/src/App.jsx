@@ -728,6 +728,14 @@ export default function App() {
       return;
     }
 
+    const cached = readSessionCache();
+    if (cached) {
+      setUser(cached.user);
+      setInnstillinger(function (prev) { return { ...prev, ...cached.lists }; });
+    } else {
+      setCoreLoading(true);
+    }
+
     refreshBiler().catch(function (err) {
       if (err?.status === 401) {
         logout();
@@ -738,33 +746,19 @@ export default function App() {
       }
     });
 
-    refreshStats().catch(function () { /* stille bakgrunn */ });
-    loadDashboardLists().catch(function () { /* stille bakgrunn */ });
-
-    const cached = readSessionCache();
-    if (cached) {
-      setUser(cached.user);
-      setInnstillinger(function (prev) { return { ...prev, ...cached.lists }; });
-      setCoreLoading(false);
-      loadSecondaryData();
-      try {
-        const res = await getBootstrap();
-        applyBootstrap(res);
-      } catch {
-        logout();
-        setUser(null);
-        clearSessionCache();
-      }
-      return;
-    }
-
-    setCoreLoading(true);
     try {
       const res = await getBootstrap();
       applyBootstrap(res);
+      await Promise.all([
+        loadDashboardLists(),
+        refreshStats()
+      ]);
     } catch {
       logout();
       setUser(null);
+      clearSessionCache();
+      clearBilerCache();
+      clearStatsCache();
       setCoreLoading(false);
       return;
     }
@@ -846,14 +840,22 @@ export default function App() {
 
   const handleLogin = (u) => {
     setUser(u);
+    setCoreLoading(true);
     refreshBiler().catch(function () {});
-    refreshStats().catch(function () {});
-    loadDashboardLists().catch(function () {});
     getBootstrap()
-      .then(applyBootstrap)
+      .then(function (res) {
+        applyBootstrap(res);
+        return Promise.all([
+          loadDashboardLists(),
+          refreshStats()
+        ]);
+      })
       .catch(function () {
         logout();
         setUser(null);
+      })
+      .finally(function () {
+        setCoreLoading(false);
       });
     loadSecondaryData();
   };
