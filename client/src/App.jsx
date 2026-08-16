@@ -1318,6 +1318,9 @@ export default function App() {
               refreshStats={refreshStats}
               setTab={setTab}
               lists={lists}
+              kunder={kunder}
+              setKunder={setKunder}
+              setModal={setModal}
               initialOpenEpost={innboksOpenEpost}
               initialOpenEpostMode="preview"
               onInitialOpenEpostConsumed={function () { setInnboksOpenEpost(null); }}
@@ -1482,6 +1485,7 @@ export default function App() {
           mailStatus={mailStatus}
           currentUser={user}
           kunder={kunder}
+          setKunder={setKunder}
           setModal={setModal}
         />
       )}
@@ -1497,6 +1501,7 @@ export default function App() {
           mailStatus={mailStatus}
           currentUser={user}
           kunder={kunder}
+          setKunder={setKunder}
           setModal={setModal}
         />
       )}
@@ -1512,6 +1517,7 @@ export default function App() {
           mailStatus={mailStatus}
           currentUser={user}
           kunder={kunder}
+          setKunder={setKunder}
           setModal={setModal}
         />
       )}
@@ -1579,15 +1585,24 @@ export default function App() {
       )}
       {modal?.t === 'nyKunde' && (
         <NyKundeModal
+          initial={modal.initial}
           onClose={() => setModal(null)}
           onSave={async (body) => {
             try {
               const res = await postKunde(body);
               if (res.item) {
-                setKunder(prev => [res.item, ...prev].sort((a, b) => a.navn.localeCompare(b.navn, 'nb')));
-                setModal({ t: 'visKunde', d: res.item });
+                setKunder(prev => {
+                  if (prev.some(function (k) { return k.id === res.item.id; })) return prev;
+                  return [...prev, res.item].sort((a, b) => a.navn.localeCompare(b.navn, 'nb'));
+                });
+                if (modal.onCreated) {
+                  modal.onCreated(res.item);
+                  setModal(null);
+                } else {
+                  setModal({ t: 'visKunde', d: res.item });
+                  visTost('Kunde opprettet ✓');
+                }
               }
-              visTost('Kunde opprettet ✓');
             } catch (err) {
               visTost(err.message || 'Kunne ikke opprette kunde ✗');
             }
@@ -5156,7 +5171,11 @@ function InboxMailDetailView({
   onExpand,
   onClose,
   isModal,
-  visTost
+  visTost,
+  kunder,
+  setKunder,
+  setModal,
+  onKundeLink
 }) {
   if (!mail) return null;
 
@@ -5250,6 +5269,19 @@ function InboxMailDetailView({
             <div className="inbox-item-tags" style={{ marginTop: 10 }}>
               {mail.status && <Badge s={mail.status} colors={colors} />}
               {mail.ansvarlig && <span className="tag">{mail.ansvarlig}</span>}
+            </div>
+          )}
+          {mail.retning === 'inn' && onKundeLink && (
+            <div style={{ marginTop: 12 }}>
+              <KundeVelger
+                kundeId={mail.kundeId}
+                kunder={kunder}
+                setModal={setModal}
+                setKunder={setKunder}
+                kontakt={{ navn: mail.fraNavn, epost: mail.fraEpost }}
+                kilde="Manuell"
+                onChange={function (id) { onKundeLink(mail.id, id); }}
+              />
             </div>
           )}
         </div>
@@ -5506,7 +5538,7 @@ function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
   );
 }
 
-function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visTost, refreshStats, setTab, lists, initialOpenEpost, initialOpenEpostMode, onInitialOpenEpostConsumed }) {
+function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visTost, refreshStats, setTab, lists, kunder, setKunder, setModal, initialOpenEpost, initialOpenEpostMode, onInitialOpenEpostConsumed }) {
   const isMobile = useIsMobile();
   const [mobileFolders, setMobileFolders] = useState(false);
   const [filter, setFilter] = useState('Meldinger');
@@ -6072,6 +6104,14 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
+  const linkEpostKunde = function (mailId, kundeId) {
+    updateEpostMeta(
+      mailId,
+      { kundeId: kundeId || null },
+      kundeId ? 'Kunde koblet ✓' : 'Kunde fjernet ✓'
+    );
+  };
+
   const kontoLabel = !statusReady
     ? 'Laster…'
     : (kontoer.length
@@ -6370,6 +6410,10 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
               onMetaChange={(id, patch) => updateEpostMeta(id, patch, 'Lagret ✓')}
               onExpand={openMailExpanded}
               visTost={visTost}
+              kunder={kunder}
+              setKunder={setKunder}
+              setModal={setModal}
+              onKundeLink={linkEpostKunde}
             />
           )}
         </div>
@@ -6398,6 +6442,10 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
               onClose={() => setExpandedMail(null)}
               isModal
               visTost={visTost}
+              kunder={kunder}
+              setKunder={setKunder}
+              setModal={setModal}
+              onKundeLink={linkEpostKunde}
             />
           </div>
         </div>
@@ -6465,6 +6513,23 @@ function kundeLabel(k) {
   return extra ? `${k.navn} (${extra})` : k.navn;
 }
 
+function normalizeKundeEpostKey(epost) {
+  return String(epost || '').trim().toLowerCase();
+}
+
+function findKundeByEpost(kunder, epost) {
+  const key = normalizeKundeEpostKey(epost);
+  if (!key) return null;
+  return (kunder || []).find(function (k) {
+    return normalizeKundeEpostKey(k.epost) === key;
+  }) || null;
+}
+
+function kontaktHarKundedata(kontakt) {
+  if (!kontakt) return false;
+  return !!(String(kontakt.navn || '').trim() || normalizeKundeEpostKey(kontakt.epost));
+}
+
 function BilKunderVelger({ kundeIds, kunder, onChange, setModal, label = 'Kunder' }) {
   const ids = Array.isArray(kundeIds) ? kundeIds : (kundeIds ? [kundeIds] : []);
   const valgte = ids.map(function (id) {
@@ -6524,8 +6589,53 @@ function BilKunderVelger({ kundeIds, kunder, onChange, setModal, label = 'Kunder
   );
 }
 
-function KundeVelger({ kundeId, kunder, onChange, setModal, label = 'Kunde' }) {
+function KundeVelger({
+  kundeId,
+  kunder,
+  onChange,
+  setModal,
+  setKunder,
+  label = 'Kunde',
+  kontakt,
+  kilde = 'Manuell'
+}) {
   const valgt = (kunder || []).find(function (k) { return k.id === kundeId; });
+  const match = !kundeId && kontaktHarKundedata(kontakt)
+    ? findKundeByEpost(kunder, kontakt.epost)
+    : null;
+
+  const apneNyKunde = function () {
+    if (!setModal || !kontaktHarKundedata(kontakt)) return;
+    const navn = String(kontakt.navn || '').trim()
+      || String(kontakt.epost || '').split('@')[0]
+      || '';
+    setModal({
+      t: 'nyKunde',
+      initial: {
+        navn,
+        epost: kontakt.epost || '',
+        tlf: kontakt.tlf || '',
+        kilde: kilde || 'Manuell'
+      },
+      onCreated: function (kunde) {
+        if (setKunder && kunde) {
+          setKunder(function (prev) {
+            if (prev.some(function (k) { return k.id === kunde.id; })) return prev;
+            return [...prev, kunde].sort(function (a, b) {
+              return a.navn.localeCompare(b.navn, 'nb');
+            });
+          });
+        }
+        onChange(kunde.id);
+      }
+    });
+  };
+
+  const kobleEksisterende = function () {
+    if (!match) return;
+    onChange(match.id);
+  };
+
   return (
     <div className="gap">
       <div className="fl">{label}</div>
@@ -6544,6 +6654,17 @@ function KundeVelger({ kundeId, kunder, onChange, setModal, label = 'Kunde' }) {
           <button type="button" className="btn btn-g btn-xs" onClick={function () { setModal({ t: 'visKunde', d: valgt }); }}>
             Profil
           </button>
+        )}
+        {!kundeId && kontaktHarKundedata(kontakt) && (
+          match ? (
+            <button type="button" className="btn btn-p btn-xs" onClick={kobleEksisterende}>
+              Koble til {match.navn}
+            </button>
+          ) : setModal ? (
+            <button type="button" className="btn btn-p btn-xs" onClick={apneNyKunde}>
+              + Legg til som kunde
+            </button>
+          ) : null
         )}
       </div>
     </div>
@@ -6648,11 +6769,11 @@ function KunderView({ kunder, setModal, visTost }) {
   );
 }
 
-function NyKundeModal({ onClose, onSave }) {
+function NyKundeModal({ onClose, onSave, initial }) {
   const [f, setF] = useState({
-    navn: '',
-    epost: '',
-    tlf: '',
+    navn: initial?.navn || '',
+    epost: initial?.epost || '',
+    tlf: initial?.tlf || '',
     adresse: '',
     postnr: '',
     poststed: '',
@@ -6669,7 +6790,10 @@ function NyKundeModal({ onClose, onSave }) {
       return;
     }
     setErr('');
-    onSave(f);
+    onSave({
+      ...f,
+      kilde: initial?.kilde || 'Manuell'
+    });
   };
 
   return (
@@ -7081,7 +7205,7 @@ function HenvendelserView({ henv, epost, setEpost, harInnboks, setTab, setInnbok
   );
 }
 
-function HenvModal({ data, onClose, updateHenv, deleteHenv, onSendSvar, visTost, lists, mailStatus, currentUser, kunder, setModal }) {
+function HenvModal({ data, onClose, updateHenv, deleteHenv, onSendSvar, visTost, lists, mailStatus, currentUser, kunder, setKunder, setModal }) {
   const [h, setH] = useState(data);
   const [svar, setSvar] = useState(h.svar || '');
   const [sending, setSending] = useState(false);
@@ -7133,6 +7257,9 @@ function HenvModal({ data, onClose, updateHenv, deleteHenv, onSendSvar, visTost,
               kundeId={h.kundeId}
               kunder={kunder}
               setModal={setModal}
+              setKunder={setKunder}
+              kontakt={{ navn: h.navn, epost: h.epost, tlf: h.tlf }}
+              kilde="Manuell"
               onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
             />
             <div className="gap"><div className="fl">Tilknyttet bil</div><span className="tag">{h.bilRef || '—'}</span></div>
@@ -7508,7 +7635,7 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
   );
 }
 
-function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbud, visTost, lists, mailStatus, currentUser, kunder, setModal }) {
+function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbud, visTost, lists, mailStatus, currentUser, kunder, setKunder, setModal }) {
   const [inn, setInn] = useState(data);
   const [activeTab, setActiveTab] = useState('foresporsel');
   const [svarType, setSvarType] = useState('tilbud');
@@ -7734,6 +7861,9 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
                     kundeId={inn.kundeId}
                     kunder={kunder}
                     setModal={setModal}
+                    setKunder={setKunder}
+                    kontakt={{ navn: inn.navn, epost: inn.epost, tlf: inn.tlf }}
+                    kilde="Manuell"
                     onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
                   />
                 </div>
@@ -7839,7 +7969,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
   );
 }
 
-function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud, visTost, lists, mailStatus, currentUser, kunder, setModal }) {
+function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud, visTost, lists, mailStatus, currentUser, kunder, setKunder, setModal }) {
   const [inn, setInn] = useState(data);
   const [activeTab, setActiveTab] = useState('foresporsel');
   const [svarType, setSvarType] = useState('tilbud');
@@ -8105,6 +8235,9 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
                     kundeId={inn.kundeId}
                     kunder={kunder}
                     setModal={setModal}
+                    setKunder={setKunder}
+                    kontakt={{ navn: inn.navn, epost: inn.epost, tlf: inn.tlf }}
+                    kilde="Manuell"
                     onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
                   />
                 </div>
