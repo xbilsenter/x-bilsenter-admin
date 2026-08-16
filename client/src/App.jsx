@@ -68,7 +68,7 @@ import {
   lookupKjoretoy, lookupKjoretoyByUnderstell, getInnstillinger, getLister, patchInnstillinger,
   getInnboks, getInnboksMapper, createInnboksMappe, flyttEpost, deleteEpost, downloadEpostVedlegg, getEpostById,
   getMailStatus,
-  syncInnboks, patchEpost, sendEpostMultipart, getEpostUtkast, getEpostUtkastById, saveEpostUtkast, deleteEpostUtkast, opprettHenvFraEpost,
+  syncInnboks, patchEpost, sendEpostMultipart, getEpostUtkast, getEpostUtkastById, saveEpostUtkast, deleteEpostUtkast,
   sendHenvendelseSvar, getMailKontoer, postMailKonto, patchMailKonto, deleteMailKonto, testMailKonto,
   getEpostMaler, postEpostMal, patchEpostMal, deleteEpostMal,
   getBrukereMeta, getBrukere, postBruker, patchBruker, deleteBruker
@@ -5147,6 +5147,78 @@ const MAPPE_TYPE_LABELS = {
   archive: 'Arkiv'
 };
 
+function kontaktHarKundedata(kontakt) {
+  if (!kontakt) return false;
+  return !!(String(kontakt.navn || '').trim() || normalizeKundeEpostKey(kontakt.epost));
+}
+
+function normalizeKundeEpostKey(epost) {
+  return String(epost || '').trim().toLowerCase();
+}
+
+function findKundeByEpost(kunder, epost) {
+  const key = normalizeKundeEpostKey(epost);
+  if (!key) return null;
+  return (kunder || []).find(function (k) {
+    return normalizeKundeEpostKey(k.epost) === key;
+  }) || null;
+}
+
+function apneLeggTilKundeForEpost({ mail, kunder, setModal, onKundeLink }) {
+  if (!mail || mail.retning !== 'inn' || mail.kundeId || !onKundeLink) return false;
+  if (!kontaktHarKundedata({ navn: mail.fraNavn, epost: mail.fraEpost })) return false;
+
+  const match = findKundeByEpost(kunder, mail.fraEpost);
+  if (match) {
+    onKundeLink(mail.id, match.id);
+    return true;
+  }
+  if (!setModal) return false;
+
+  setModal({
+    t: 'nyKunde',
+    initial: {
+      navn: String(mail.fraNavn || '').trim() || String(mail.fraEpost || '').split('@')[0],
+      epost: mail.fraEpost || '',
+      tlf: '',
+      kilde: 'Manuell'
+    },
+    onCreated: function (kunde) {
+      onKundeLink(mail.id, kunde.id);
+    }
+  });
+  return true;
+}
+
+function InboxLeggTilKundeKnapp({ mail, kunder, setModal, onKundeLink }) {
+  if (!mail || mail.retning !== 'inn' || mail.kundeId || !onKundeLink) return null;
+  if (!kontaktHarKundedata({ navn: mail.fraNavn, epost: mail.fraEpost })) return null;
+
+  const match = findKundeByEpost(kunder, mail.fraEpost);
+  if (match) {
+    return (
+      <button
+        type="button"
+        className="btn btn-p btn-sm"
+        onClick={function () { onKundeLink(mail.id, match.id); }}
+      >
+        Koble til {match.navn}
+      </button>
+    );
+  }
+  if (!setModal) return null;
+
+  return (
+    <button
+      type="button"
+      className="btn btn-p btn-sm"
+      onClick={function () { apneLeggTilKundeForEpost({ mail, kunder, setModal, onKundeLink }); }}
+    >
+      + Legg til som kunde
+    </button>
+  );
+}
+
 function mappeDisplayName(mappe) {
   if (!mappe) return 'Alle';
   return MAPPE_TYPE_LABELS[mappe.mappeType] || mappe.navn || 'Mappe';
@@ -5159,8 +5231,6 @@ function InboxMailDetailView({
   lists,
   colors,
   hasReplyDraft,
-  onOpprettHenv,
-  onGoHenv,
   onReply,
   onForward,
   onToggleFlag,
@@ -5171,7 +5241,6 @@ function InboxMailDetailView({
   onExpand,
   onClose,
   isModal,
-  visTost,
   kunder,
   setKunder,
   setModal,
@@ -5198,12 +5267,12 @@ function InboxMailDetailView({
               ⛶ Stor visning
             </button>
           )}
-          {mail.retning === 'inn' && !mail.henvendelseId && (
-            <button type="button" className="btn btn-g btn-sm" onClick={onOpprettHenv}>Opprett kontaktskjema</button>
-          )}
-          {mail.henvendelseId && (
-            <button type="button" className="btn btn-g btn-sm" onClick={onGoHenv}>Gå til kontaktskjema</button>
-          )}
+          <InboxLeggTilKundeKnapp
+            mail={mail}
+            kunder={kunder}
+            setModal={setModal}
+            onKundeLink={onKundeLink}
+          />
           {mail.retning === 'inn' && (
             <button
               type="button"
@@ -5271,7 +5340,7 @@ function InboxMailDetailView({
               {mail.ansvarlig && <span className="tag">{mail.ansvarlig}</span>}
             </div>
           )}
-          {mail.retning === 'inn' && onKundeLink && (
+          {mail.kundeId && onKundeLink && (
             <div style={{ marginTop: 12 }}>
               <KundeVelger
                 kundeId={mail.kundeId}
@@ -5359,7 +5428,7 @@ function groupEpostThreads(items) {
   });
 }
 
-function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
+function InboxContextMenu({ menu, mapper, mailStatus, kunder, setModal, onKundeLink, onClose, onAction }) {
   const menuRef = useRef(null);
   const [submenu, setSubmenu] = useState(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -5414,7 +5483,11 @@ function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
   });
   const canReply = mail && mail.retning === 'inn' && mailStatus.smtpConfigured;
   const canForward = mail && mailStatus.smtpConfigured;
-  const canCreateHenv = mail && mail.retning === 'inn' && !mail.henvendelseId;
+  const canAddKunde = mail
+    && mail.retning === 'inn'
+    && !mail.kundeId
+    && kontaktHarKundedata({ navn: mail.fraNavn, epost: mail.fraEpost })
+    && onKundeLink;
 
   const run = function (action, payload) {
     onAction(action, payload);
@@ -5524,10 +5597,17 @@ function InboxContextMenu({ menu, mapper, mailStatus, onClose, onAction }) {
               </div>
             )}
           </div>
-          {canCreateHenv && (
+          {canAddKunde && (
             <>
               <Sep />
-              <MenuItem label="Opprett kontaktskjema" onClick={() => run('createHenv', mail)} />
+              <MenuItem
+                label={findKundeByEpost(kunder, mail.fraEpost)
+                  ? `Koble til ${findKundeByEpost(kunder, mail.fraEpost).navn}`
+                  : 'Legg til som kunde'}
+                onClick={function () {
+                  apneLeggTilKundeForEpost({ mail, kunder, setModal, onKundeLink });
+                }}
+              />
             </>
           )}
           <Sep />
@@ -5972,26 +6052,6 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const opprettHenvForMail = async (mail) => {
-    if (!mail) return;
-    try {
-      const res = await opprettHenvFraEpost(mail.id);
-      if (res.epost) {
-        patchListeEpost(function (prev) { return prev.map(function (e) { return e.id === mail.id ? res.epost : e; }); });
-        setValgt(function (prev) { return prev?.id === mail.id ? res.epost : prev; });
-      }
-      if (res.henvendelse) setHenv(prev => [res.henvendelse, ...prev]);
-      visTost('Kontaktskjema opprettet ✓');
-      refreshStats();
-    } catch (err) {
-      visTost(err.message || 'Kunne ikke opprette kontaktskjema ✗');
-    }
-  };
-
-  const opprettHenv = async () => {
-    await opprettHenvForMail(valgt);
-  };
-
   const handleContextMenuAction = async (action, payload) => {
     if (action === 'open') {
       openMailExpanded(payload);
@@ -6026,10 +6086,6 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
     if (action === 'move') {
       await flyttEpostItem(payload.mail, payload.mappeId);
-      return;
-    }
-    if (action === 'createHenv') {
-      await opprettHenvForMail(payload);
       return;
     }
     if (action === 'delete') {
@@ -6399,8 +6455,6 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
               lists={lists}
               colors={colors}
               hasReplyDraft={hasReplyDraft}
-              onOpprettHenv={() => opprettHenvForMail(valgt)}
-              onGoHenv={() => setTab('henvendelser')}
               onReply={openReplyCompose}
               onForward={openForwardCompose}
               onToggleFlag={(mail) => updateEpostMeta(mail.id, { flagged: !mail.flagged }, mail.flagged ? 'Stjerne fjernet ✓' : 'Merket med stjerne ✓')}
@@ -6409,7 +6463,6 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
               onDelete={slettEpostItem}
               onMetaChange={(id, patch) => updateEpostMeta(id, patch, 'Lagret ✓')}
               onExpand={openMailExpanded}
-              visTost={visTost}
               kunder={kunder}
               setKunder={setKunder}
               setModal={setModal}
@@ -6430,8 +6483,6 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
               lists={lists}
               colors={colors}
               hasReplyDraft={hasReplyDraft}
-              onOpprettHenv={() => opprettHenvForMail(expandedMail)}
-              onGoHenv={() => { setExpandedMail(null); setTab('henvendelser'); }}
               onReply={(mail) => { setExpandedMail(null); openReplyCompose(mail); }}
               onForward={(mail) => { setExpandedMail(null); openForwardCompose(mail); }}
               onToggleFlag={(mail) => updateEpostMeta(mail.id, { flagged: !mail.flagged }, mail.flagged ? 'Stjerne fjernet ✓' : 'Merket med stjerne ✓')}
@@ -6441,7 +6492,6 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
               onMetaChange={(id, patch) => updateEpostMeta(id, patch, 'Lagret ✓')}
               onClose={() => setExpandedMail(null)}
               isModal
-              visTost={visTost}
               kunder={kunder}
               setKunder={setKunder}
               setModal={setModal}
@@ -6499,6 +6549,9 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
         menu={contextMenu}
         mapper={mapper}
         mailStatus={mailStatus}
+        kunder={kunder}
+        setModal={setModal}
+        onKundeLink={linkEpostKunde}
         onClose={() => setContextMenu(null)}
         onAction={handleContextMenuAction}
       />
@@ -6511,23 +6564,6 @@ function kundeLabel(k) {
   if (!k) return '—';
   const extra = k.epost || k.tlf || '';
   return extra ? `${k.navn} (${extra})` : k.navn;
-}
-
-function normalizeKundeEpostKey(epost) {
-  return String(epost || '').trim().toLowerCase();
-}
-
-function findKundeByEpost(kunder, epost) {
-  const key = normalizeKundeEpostKey(epost);
-  if (!key) return null;
-  return (kunder || []).find(function (k) {
-    return normalizeKundeEpostKey(k.epost) === key;
-  }) || null;
-}
-
-function kontaktHarKundedata(kontakt) {
-  if (!kontakt) return false;
-  return !!(String(kontakt.navn || '').trim() || normalizeKundeEpostKey(kontakt.epost));
 }
 
 function BilKunderVelger({ kundeIds, kunder, onChange, setModal, label = 'Kunder' }) {
