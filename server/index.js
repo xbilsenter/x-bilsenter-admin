@@ -880,16 +880,9 @@ async function buildDashboardPayload() {
 app.get('/api/bootstrap', requireAuth, async function (req, res) {
   try {
     const cachedDash = getDashboardCache();
-    const statsPromise = (cachedDash?.stats && cachedDash.includeEpostPreview)
-      ? Promise.resolve(cachedDash.stats)
-      : buildDashboardSummaryStats({ includeEpostPreview: false }).then(function (payload) {
-        return payload.stats;
-      });
-
-    const [user, lists, stats, mailStatus] = await Promise.all([
+    const [user, lists, mailStatus] = await Promise.all([
       getUserById(req.user.sub),
       getLister(),
-      statsPromise,
       getMailStatus().catch(function () { return null; })
     ]);
     if (!user || !user.aktiv) {
@@ -900,7 +893,7 @@ app.get('/api/bootstrap', requireAuth, async function (req, res) {
       ok: true,
       user: formatUserResponse(user),
       lists,
-      stats: stats || {},
+      stats: cachedDash?.includeEpostPreview ? (cachedDash.stats || {}) : {},
       mailStatus: mailStatus || null
     });
   } catch (err) {

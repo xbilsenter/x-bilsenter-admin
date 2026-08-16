@@ -704,6 +704,22 @@ export default function App() {
     }).catch(function () { /* stille bakgrunnssync */ });
   }, []);
 
+  const [dashboardFeedLoading, setDashboardFeedLoading] = useState(false);
+
+  const loadDashboardFeed = useCallback(async function () {
+    setDashboardFeedLoading(true);
+    try {
+      await Promise.all([
+        loadDashboardLists(),
+        refreshStats()
+      ]);
+    } catch {
+      /* ignore */
+    } finally {
+      setDashboardFeedLoading(false);
+    }
+  }, [loadDashboardLists, refreshStats]);
+
   const applyBootstrap = useCallback(function (res) {
     setUser(res.user);
     if (res.lists) {
@@ -749,10 +765,6 @@ export default function App() {
     try {
       const res = await getBootstrap();
       applyBootstrap(res);
-      await Promise.all([
-        loadDashboardLists(),
-        refreshStats()
-      ]);
     } catch {
       logout();
       setUser(null);
@@ -765,7 +777,8 @@ export default function App() {
 
     setCoreLoading(false);
     loadSecondaryData();
-  }, [applyBootstrap, loadSecondaryData, loadDashboardLists, refreshBiler, refreshStats]);
+    loadDashboardFeed().catch(function () { /* stille bakgrunn */ });
+  }, [applyBootstrap, loadDashboardFeed, loadSecondaryData, refreshBiler]);
 
   const loadData = useCallback(async function () {
     if (!getToken()) return;
@@ -781,11 +794,10 @@ export default function App() {
 
     await Promise.all([
       refreshBiler().catch(function () {}),
-      refreshStats().catch(function () {}),
-      loadDashboardLists().catch(function () {}),
+      loadDashboardFeed().catch(function () {}),
       loadSecondaryData()
     ]);
-  }, [applyBootstrap, loadSecondaryData, loadDashboardLists, refreshBiler, refreshStats]);
+  }, [applyBootstrap, loadDashboardFeed, loadSecondaryData, refreshBiler]);
 
   useEffect(function () {
     initSession();
@@ -845,10 +857,8 @@ export default function App() {
     getBootstrap()
       .then(function (res) {
         applyBootstrap(res);
-        return Promise.all([
-          loadDashboardLists(),
-          refreshStats()
-        ]);
+        loadSecondaryData();
+        return loadDashboardFeed();
       })
       .catch(function () {
         logout();
@@ -857,7 +867,6 @@ export default function App() {
       .finally(function () {
         setCoreLoading(false);
       });
-    loadSecondaryData();
   };
 
   const handleLogout = () => {
@@ -1268,6 +1277,7 @@ export default function App() {
               nyeHenvendelserTotal={nyeHenvendelserTotal}
               ulestEpostListe={ulestEpostListe}
               harInnboks={harInnboks}
+              dashboardFeedLoading={dashboardFeedLoading}
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               setInnboksOpenEpost={setInnboksOpenEpost}
               currentUser={user}
@@ -1765,7 +1775,7 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
 
 function Dashboard({
   biler, henv, innbytte, selgBil, kal, paaLager, reservert,
-  nyeInnbytte, nyeHenvendelserTotal, ulestEpostListe, harInnboks,
+  nyeInnbytte, nyeHenvendelserTotal, ulestEpostListe, harInnboks, dashboardFeedLoading,
   iDagKal, setTab, setModal, setInnboksOpenEpost,
   currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger,
   stats
@@ -1815,6 +1825,16 @@ function Dashboard({
   };
 
   const renderNyeHenvendelserRows = function (items, emptyText) {
+    if (dashboardFeedLoading) {
+      return (
+        <tr>
+          <td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>
+            <span className="spin" style={{ width: 14, height: 14, display: 'inline-block', verticalAlign: 'middle', marginRight: 8 }} />
+            Laster henvendelser…
+          </td>
+        </tr>
+      );
+    }
     if (!items.length) {
       return (
         <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>{emptyText}</td></tr>
