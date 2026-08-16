@@ -816,7 +816,7 @@ app.get('/api/dashboard', requireAuth, async function (_req, res) {
 
 async function buildDashboardSummaryStats(options) {
   const includeEpostPreview = options?.includeEpostPreview !== false;
-  await waitForDbReady(includeEpostPreview ? 8000 : 2000);
+  await waitForDbReady(includeEpostPreview ? 4000 : 1500);
 
   const idag = new Date().toISOString().slice(0, 10);
   const [
@@ -880,10 +880,20 @@ async function buildDashboardPayload() {
 app.get('/api/bootstrap', requireAuth, async function (req, res) {
   try {
     const cachedDash = getDashboardCache();
-    const [user, lists, mailStatus] = await Promise.all([
+    const statsPromise = cachedDash?.includeEpostPreview
+      ? Promise.resolve(cachedDash)
+      : buildDashboardSummaryStats({ includeEpostPreview: true }).then(function (payload) {
+        setDashboardCache(payload);
+        return payload;
+      });
+
+    const [user, lists, mailStatus, statsPayload, henvNyRows, selgNyRows] = await Promise.all([
       getUserById(req.user.sub),
       getLister(),
-      getMailStatus().catch(function () { return null; })
+      getMailStatus().catch(function () { return null; }),
+      statsPromise,
+      prepare("SELECT * FROM henvendelser WHERE status = 'Ny' ORDER BY created_at DESC LIMIT 40").all(),
+      prepare("SELECT * FROM selg_bil WHERE status = 'Ny' ORDER BY created_at DESC LIMIT 40").all()
     ]);
     if (!user || !user.aktiv) {
       return res.status(401).json({ ok: false, error: 'Ugyldig sesjon.' });
@@ -893,8 +903,12 @@ app.get('/api/bootstrap', requireAuth, async function (req, res) {
       ok: true,
       user: formatUserResponse(user),
       lists,
-      stats: cachedDash?.includeEpostPreview ? (cachedDash.stats || {}) : {},
-      mailStatus: mailStatus || null
+      stats: statsPayload?.stats || {},
+      mailStatus: mailStatus || null,
+      dashboardFeed: {
+        henv: (henvNyRows || []).map(mapHenv),
+        selgBil: (selgNyRows || []).map(mapSelgBil)
+      }
     });
   } catch (err) {
     console.error('GET /api/bootstrap feilet:', err.message);

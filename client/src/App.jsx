@@ -667,7 +667,6 @@ export default function App() {
 
     try {
       await Promise.all([
-        safeLoad(getMailStatus, (d) => setMailStatus(d.status || {})),
         safeLoad(getKunder, (k) => setKunder(k.items || [])),
         safeLoad(getInnkjopskalkyle, (k) => setInnkjopskalkyle(k.items || [])),
         safeLoad(getVedlikehold, (v) => {
@@ -704,22 +703,6 @@ export default function App() {
     }).catch(function () { /* stille bakgrunnssync */ });
   }, []);
 
-  const [dashboardFeedLoading, setDashboardFeedLoading] = useState(false);
-
-  const loadDashboardFeed = useCallback(async function () {
-    setDashboardFeedLoading(true);
-    try {
-      await Promise.all([
-        loadDashboardLists(),
-        refreshStats()
-      ]);
-    } catch {
-      /* ignore */
-    } finally {
-      setDashboardFeedLoading(false);
-    }
-  }, [loadDashboardLists, refreshStats]);
-
   const applyBootstrap = useCallback(function (res) {
     setUser(res.user);
     if (res.lists) {
@@ -736,7 +719,20 @@ export default function App() {
     if (res.mailStatus && typeof res.mailStatus === 'object') {
       setMailStatus(res.mailStatus);
     }
+    if (res.dashboardFeed) {
+      if (Array.isArray(res.dashboardFeed.henv)) setHenv(res.dashboardFeed.henv);
+      if (Array.isArray(res.dashboardFeed.selgBil)) setSelgBil(res.dashboardFeed.selgBil);
+    }
   }, []);
+
+  const scheduleDeferredLoads = useCallback(function () {
+    window.setTimeout(function () {
+      loadDashboardLists().catch(function () { /* stille bakgrunn */ });
+    }, 1200);
+    window.setTimeout(function () {
+      loadSecondaryData();
+    }, 2200);
+  }, [loadDashboardLists, loadSecondaryData]);
 
   const initSession = useCallback(async function () {
     if (!getToken()) {
@@ -745,9 +741,11 @@ export default function App() {
     }
 
     const cached = readSessionCache();
+    const hadCache = !!cached;
     if (cached) {
       setUser(cached.user);
       setInnstillinger(function (prev) { return { ...prev, ...cached.lists }; });
+      setCoreLoading(false);
     } else {
       setCoreLoading(true);
     }
@@ -775,29 +773,18 @@ export default function App() {
       return;
     }
 
-    setCoreLoading(false);
-    loadSecondaryData();
-    loadDashboardFeed().catch(function () { /* stille bakgrunn */ });
-  }, [applyBootstrap, loadDashboardFeed, loadSecondaryData, refreshBiler]);
+    if (!hadCache) setCoreLoading(false);
+    scheduleDeferredLoads();
+  }, [applyBootstrap, scheduleDeferredLoads, refreshBiler]);
 
   const loadData = useCallback(async function () {
     if (!getToken()) return;
 
-    try {
-      const res = await getBootstrap();
-      applyBootstrap(res);
-    } catch {
-      logout();
-      setUser(null);
-      return;
-    }
-
     await Promise.all([
-      refreshBiler().catch(function () {}),
-      loadDashboardFeed().catch(function () {}),
-      loadSecondaryData()
+      refreshStats().catch(function () {}),
+      loadDashboardLists().catch(function () {})
     ]);
-  }, [applyBootstrap, loadDashboardFeed, loadSecondaryData, refreshBiler]);
+  }, [loadDashboardLists, refreshStats]);
 
   useEffect(function () {
     initSession();
@@ -850,23 +837,20 @@ export default function App() {
     return function () { window.removeEventListener('resize', onResize); };
   }, []);
 
-  const handleLogin = (u) => {
+  const handleLogin = async (u) => {
     setUser(u);
     setCoreLoading(true);
-    refreshBiler().catch(function () {});
-    getBootstrap()
-      .then(function (res) {
-        applyBootstrap(res);
-        loadSecondaryData();
-        return loadDashboardFeed();
-      })
-      .catch(function () {
-        logout();
-        setUser(null);
-      })
-      .finally(function () {
-        setCoreLoading(false);
-      });
+    try {
+      const res = await getBootstrap();
+      applyBootstrap(res);
+      setCoreLoading(false);
+      refreshBiler().catch(function () {});
+      scheduleDeferredLoads();
+    } catch {
+      logout();
+      setUser(null);
+      setCoreLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -1277,7 +1261,6 @@ export default function App() {
               nyeHenvendelserTotal={nyeHenvendelserTotal}
               ulestEpostListe={ulestEpostListe}
               harInnboks={harInnboks}
-              dashboardFeedLoading={dashboardFeedLoading}
               iDagKal={iDagKal} setTab={setTab} setModal={setModal}
               setInnboksOpenEpost={setInnboksOpenEpost}
               currentUser={user}
@@ -1775,7 +1758,7 @@ function NettsideDriftPanel({ setTab, currentUser, vedlikeholdModus }) {
 
 function Dashboard({
   biler, henv, innbytte, selgBil, kal, paaLager, reservert,
-  nyeInnbytte, nyeHenvendelserTotal, ulestEpostListe, harInnboks, dashboardFeedLoading,
+  nyeInnbytte, nyeHenvendelserTotal, ulestEpostListe, harInnboks,
   iDagKal, setTab, setModal, setInnboksOpenEpost,
   currentUser, vedlikeholdModus, henvStatusFarger, bilStatusFarger, innbytteStatusFarger,
   stats
@@ -1825,16 +1808,6 @@ function Dashboard({
   };
 
   const renderNyeHenvendelserRows = function (items, emptyText) {
-    if (dashboardFeedLoading) {
-      return (
-        <tr>
-          <td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>
-            <span className="spin" style={{ width: 14, height: 14, display: 'inline-block', verticalAlign: 'middle', marginRight: 8 }} />
-            Laster henvendelser…
-          </td>
-        </tr>
-      );
-    }
     if (!items.length) {
       return (
         <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>{emptyText}</td></tr>
