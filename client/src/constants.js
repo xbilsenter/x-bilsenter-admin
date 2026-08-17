@@ -485,6 +485,14 @@ export function saveActiveTab(tab) {
   }
 }
 
+export function clearActiveTab() {
+  try {
+    localStorage.removeItem(ACTIVE_TAB_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function getSavedBilerView() {
   try {
     const saved = localStorage.getItem(BILER_VIEW_KEY);
@@ -717,27 +725,73 @@ export function calcInnkjopspris(input) {
 }
 
 export const DEFAULT_BIL_OKONOMI = {
-  pakost: 0,
-  aukGebyr: 0,
-  garantikost: 0,
-  omregAvgift: 0,
+  pakost: null,
+  aukGebyr: null,
+  garantikost: null,
+  omregAvgift: null,
   kostnader: []
 };
+
+export function okonomiBelopValue(value) {
+  if (value === '' || value === null || value === undefined) return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function okonomiBelopDisplay(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n === 0) return '';
+  return n;
+}
+
+export function okonomiBelopForSave(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n === 0) return null;
+  return n;
+}
+
+export function monetaryInputDisplay(value) {
+  return okonomiBelopDisplay(value);
+}
+
+function normalizeBilOkonomiKostnader(kostnader) {
+  return (Array.isArray(kostnader) ? kostnader : []).map(function (item, index) {
+    return {
+      id: String(item?.id || `kost-${index}`),
+      label: String(item?.label || '').trim(),
+      belop: okonomiBelopForSave(item?.belop)
+    };
+  }).filter(function (item) { return item.label || item.belop != null; });
+}
+
+export function mergeBilOkonomi(prev, patch) {
+  const base = prev && typeof prev === 'object' ? { ...prev } : { ...DEFAULT_BIL_OKONOMI };
+  const next = { ...base, ...patch };
+  if (Array.isArray(patch?.kostnader)) {
+    next.kostnader = patch.kostnader.map(function (item, index) {
+      const belop = item?.belop;
+      return {
+        id: String(item?.id || `kost-${index}`),
+        label: String(item?.label || '').trim(),
+        belop: belop === '' ? '' : okonomiBelopForSave(belop)
+      };
+    });
+  } else if (!Array.isArray(next.kostnader)) {
+    next.kostnader = [];
+  }
+  return next;
+}
 
 export function normalizeBilOkonomi(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
   return {
-    pakost: Number(o.pakost) || 0,
-    aukGebyr: Number(o.aukGebyr) || 0,
-    garantikost: Number(o.garantikost) || 0,
-    omregAvgift: Number(o.omregAvgift) || 0,
-    kostnader: (Array.isArray(o.kostnader) ? o.kostnader : []).map(function (item, index) {
-      return {
-        id: String(item?.id || `kost-${index}`),
-        label: String(item?.label || '').trim(),
-        belop: Number(item?.belop) || 0
-      };
-    }).filter(function (item) { return item.label || item.belop; })
+    pakost: okonomiBelopForSave(o.pakost),
+    aukGebyr: okonomiBelopForSave(o.aukGebyr),
+    garantikost: okonomiBelopForSave(o.garantikost),
+    omregAvgift: okonomiBelopForSave(o.omregAvgift),
+    kostnader: normalizeBilOkonomiKostnader(o.kostnader)
   };
 }
 
@@ -1190,11 +1244,14 @@ export function patchIsDebouncedTextOnly(patch) {
 
 export function calcBilOkonomi(innkjop, salg, okonomi) {
   const o = normalizeBilOkonomi(okonomi);
-  const inn = Number(innkjop) || 0;
-  const ut = Number(salg) || 0;
-  const fasteKostnader = o.pakost + o.aukGebyr + o.garantikost + o.omregAvgift;
+  const inn = okonomiBelopValue(innkjop);
+  const ut = okonomiBelopValue(salg);
+  const fasteKostnader = okonomiBelopValue(o.pakost)
+    + okonomiBelopValue(o.aukGebyr)
+    + okonomiBelopValue(o.garantikost)
+    + okonomiBelopValue(o.omregAvgift);
   const ekstraKostnader = o.kostnader.reduce(function (sum, item) {
-    return sum + (Number(item.belop) || 0);
+    return sum + okonomiBelopValue(item.belop);
   }, 0);
   const totaltKostnader = fasteKostnader + ekstraKostnader;
   const bruttoMargin = ut - inn;
@@ -1484,6 +1541,11 @@ export function buildModulTabs(oppsett, badges, user) {
     if (t.id === 'innstillinger') return !!user;
     return canAccess(user, TAB_PERMISSIONS[t.id]);
   });
+}
+
+export function getDefaultTabForUser(user, modulOppsett) {
+  const tabs = buildModulTabs(modulOppsett, {}, user);
+  return tabs[0]?.id || 'dashboard';
 }
 
 export const DEFAULT_INNSTILLINGER = {

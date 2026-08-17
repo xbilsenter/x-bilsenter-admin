@@ -33,12 +33,13 @@ import {
   calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, getSisteKryssedeSjekklisteItem, normalizeSjekklisteMalItems,
   finalizeSjekklisteMalItems, trimSjekklisteMalTekst, coerceSjekklisteMalRows,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
-  getSavedTab, saveActiveTab, getSavedBilerView, saveBilerView,
+  getSavedTab, saveActiveTab, clearActiveTab, getSavedBilerView, saveBilerView,
   getSavedBilerSection, saveBilerSection,
-  buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS,
+  buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS, getDefaultTabForUser,
   buildNyeHenvendelserItems,
   sortItemsNyestFirst,
-  ansvarligSelectOptions, normalizeBilOkonomi, calcBilOkonomi,
+  ansvarligSelectOptions, normalizeBilOkonomi, mergeBilOkonomi, calcBilOkonomi,
+  okonomiBelopDisplay, monetaryInputDisplay, okonomiBelopValue,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
@@ -814,14 +815,12 @@ export default function App() {
     if (tab === 'innstillinger') return;
     const perm = TAB_PERMISSIONS[tab];
     if (perm && canAccess(user, perm)) return;
-    const fallback = Object.keys(TAB_PERMISSIONS).find(function (id) {
-      return canAccess(user, TAB_PERMISSIONS[id]);
-    });
+    const fallback = getDefaultTabForUser(user, innstillinger.modulOppsett);
     if (fallback && fallback !== tab) {
       setTabState(fallback);
       saveActiveTab(fallback);
     }
-  }, [user, tab, coreLoading]);
+  }, [user, tab, coreLoading, innstillinger.modulOppsett]);
 
   useEffect(function () {
     if (!mobileNavOpen) return;
@@ -843,6 +842,9 @@ export default function App() {
     try {
       const res = await getBootstrap();
       applyBootstrap(res);
+      const defaultTab = getDefaultTabForUser(res.user, res.lists?.modulOppsett);
+      setTabState(defaultTab);
+      saveActiveTab(defaultTab);
       setCoreLoading(false);
       refreshBiler().catch(function () {});
       scheduleDeferredLoads();
@@ -858,6 +860,7 @@ export default function App() {
     clearSessionCache();
     clearBilerCache();
     clearStatsCache();
+    clearActiveTab();
     setUser(null);
     setMobileNavOpen(false);
     setBiler([]);
@@ -3278,6 +3281,28 @@ function mergeBilServerItem(prevBil, saved) {
   return mergeBilAfterAutosysSave(prevBil, next);
 }
 
+const BIL_HYDRATE_PRESERVE_FIELDS = [
+  'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'pipelineNummer',
+  'ansvarlig', 'frist', 'notater', 'euKontroll', 'forsikring', 'finnKode', 'chassisnr',
+  'drivstoff', 'girkasse', 'utstyr', 'internInfo', 'okonomi', 'tilstandsrapport',
+  'arsprovekjennemerke', 'sjekkliste', 'sjekklister'
+];
+
+function bilFieldChangedSinceSnapshot(prev, snapshot, key) {
+  if (!snapshot) return false;
+  return JSON.stringify(prev?.[key]) !== JSON.stringify(snapshot?.[key]);
+}
+
+function mergeBilAfterHydrate(prev, server, snapshot) {
+  const next = mergeBilServerItem(prev, server);
+  BIL_HYDRATE_PRESERVE_FIELDS.forEach(function (key) {
+    if (bilFieldChangedSinceSnapshot(prev, snapshot, key)) {
+      next[key] = prev[key];
+    }
+  });
+  return next;
+}
+
 async function hentAutosysPayload(reg, lists, prevBil, overstyrt) {
   const normalized = normalizeBilReg(reg);
   if (!isValidBilReg(normalized)) {
@@ -3303,6 +3328,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const textSaveChainRef = useRef(Promise.resolve());
   const debounceTimerRef = useRef(null);
   const pendingPatchRef = useRef({});
+  const bilSnapshotRef = useRef(data);
   const [closing, setClosing] = useState(false);
   bilRef.current = bil;
   autosysOverstyrtRef.current = autosysOverstyrt;
@@ -3400,7 +3426,10 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const handleClose = useCallback(function () {
     if (closing) return;
     setClosing(true);
-    flushTextSave().finally(function () {
+    Promise.all([
+      flushTextSave(),
+      saveChainRef.current.catch(function () {})
+    ]).finally(function () {
       setClosing(false);
       onClose();
     });
@@ -3419,6 +3448,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
   useEffect(function () {
     setBil(data);
+    bilSnapshotRef.current = data;
     const o = getBilAutosysOverstyrt(data);
     setAutosysOverstyrt(o);
     bilRef.current = data;
@@ -3433,10 +3463,14 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
       if (cancelled || !res.item) return;
       const next = normalizeBilItems([res.item])[0];
       delete next.lite;
-      setBil(next);
-      bilRef.current = next;
-      autosysOverstyrtRef.current = getBilAutosysOverstyrt(next);
-      setAutosysOverstyrt(getBilAutosysOverstyrt(next));
+      next.okonomi = normalizeBilOkonomi(next.okonomi);
+      setBil(function (prev) {
+        const merged = mergeBilAfterHydrate(prev, next, bilSnapshotRef.current);
+        bilRef.current = merged;
+        autosysOverstyrtRef.current = getBilAutosysOverstyrt(merged);
+        setAutosysOverstyrt(getBilAutosysOverstyrt(merged));
+        return merged;
+      });
       if (hydrateBil) hydrateBil(res.item);
     }).catch(function () { /* stille */ });
     return function () { cancelled = true; };
@@ -3599,12 +3633,15 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   };
 
   const oppdaterOkonomi = (patch, msg) => {
+    let forSave;
     setBil(function (prev) {
-      const local = { ...normalizeBilOkonomi(prev.okonomi), ...patch };
-      const forSave = normalizeBilOkonomi(local);
-      saveImmediate({ okonomi: forSave }, msg || 'Økonomi oppdatert ✓');
-      return { ...prev, okonomi: local };
+      const local = mergeBilOkonomi(prev.okonomi, patch);
+      forSave = normalizeBilOkonomi(local);
+      const next = { ...prev, okonomi: local };
+      bilRef.current = next;
+      return next;
     });
+    saveImmediate({ okonomi: forSave }, msg || 'Økonomi oppdatert ✓');
   };
 
   const oppdaterArsprove = (patch, msg) => {
@@ -4009,11 +4046,11 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
 function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
   const okonomi = bil.okonomi && typeof bil.okonomi === 'object'
-    ? { ...normalizeBilOkonomi(bil.okonomi), ...bil.okonomi }
+    ? bil.okonomi
     : normalizeBilOkonomi(bil.okonomi);
   const stats = calcBilOkonomi(
-    numberInputForSave(bil.innkjop),
-    numberInputForSave(bil.salg),
+    bil.innkjop,
+    bil.salg,
     okonomi
   );
   const [nyKostLabel, setNyKostLabel] = useState('');
@@ -4025,12 +4062,14 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
 
   const leggTilKostnad = () => {
     if (!nyKostLabel.trim() && !nyKostBelop) return;
+    const belop = parseNumberInput(nyKostBelop);
+    if (belop === '' && !nyKostLabel.trim()) return;
     const kostnader = [
       ...okonomi.kostnader,
       {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         label: nyKostLabel.trim() || 'Kostnad',
-        belop: Number(nyKostBelop) || 0
+        belop: belop === '' ? null : belop
       }
     ];
     oppdaterOkonomi({ kostnader }, 'Kostnad lagt til ✓');
@@ -4059,11 +4098,11 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
           <div className="form-row gap">
             <div>
               <div className="fl">Innkjøpspris (kr)</div>
-              <input type="number" value={numberInputDisplay(bil.innkjop)} onChange={e => oppdater('innkjop', parseNumberInput(e.target.value), 'Innkjøp oppdatert ✓')} />
+              <input type="number" value={monetaryInputDisplay(bil.innkjop)} onChange={e => oppdater('innkjop', parseNumberInput(e.target.value), 'Innkjøp oppdatert ✓')} />
             </div>
             <div>
               <div className="fl">Salgspris (kr)</div>
-              <input type="number" value={numberInputDisplay(bil.salg)} onChange={e => oppdater('salg', parseNumberInput(e.target.value), 'Salgspris oppdatert ✓')} />
+              <input type="number" value={monetaryInputDisplay(bil.salg)} onChange={e => oppdater('salg', parseNumberInput(e.target.value), 'Salgspris oppdatert ✓')} />
             </div>
           </div>
         </div>
@@ -4081,7 +4120,7 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
             <div className="fv" style={{ color: stats.nettoMargin >= 0 ? 'var(--acc)' : 'var(--red)', fontWeight: 800, fontSize: 18 }}>
               {nok(stats.nettoMargin)}
             </div>
-            {numberInputForSave(bil.salg) > 0 ? (
+            {okonomiBelopValue(bil.salg) > 0 ? (
               <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 4 }}>{stats.marginProsent}% av salgspris</div>
             ) : null}
           </div>
@@ -4101,7 +4140,7 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
           return (
             <div key={key}>
               <div className="fl">{label}</div>
-              <input type="number" value={numberInputDisplay(okonomi[key])} onChange={e => settOkonomiFelt(key, e.target.value)} />
+              <input type="number" value={okonomiBelopDisplay(okonomi[key])} onChange={e => settOkonomiFelt(key, e.target.value)} />
             </div>
           );
         })}
@@ -4121,7 +4160,7 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
             />
             <input
               type="number"
-              value={numberInputDisplay(item.belop)}
+              value={okonomiBelopDisplay(item.belop)}
               placeholder="Beløp"
               onChange={e => oppdaterKostnad(item.id, { belop: parseNumberInput(e.target.value) })}
             />
