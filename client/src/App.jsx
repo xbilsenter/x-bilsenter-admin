@@ -1299,11 +1299,6 @@ export default function App() {
           {tab === 'henvendelser' && (
             <HenvendelserView
               henv={henv}
-              epost={epost}
-              setEpost={setEpost}
-              harInnboks={harInnboks}
-              setTab={setTab}
-              setInnboksOpenEpost={setInnboksOpenEpost}
               setModal={setModal}
               updateHenv={updateHenv}
               deleteHenv={deleteHenv}
@@ -7135,36 +7130,16 @@ function HenvStatusFilter({ label, active, color, onClick }) {
   );
 }
 
-function HenvendelserView({ henv, epost, setEpost, harInnboks, setTab, setInnboksOpenEpost, setModal, updateHenv, deleteHenv, lists }) {
+function HenvendelserView({ henv, setModal, updateHenv, deleteHenv, lists }) {
   const [filter, setFilter] = useState('Alle');
 
-  useEffect(function () {
-    if (!harInnboks || epost.length) return;
-    getInnboks({ status: false })
-      .then(function (res) { setEpost(res.items || []); })
-      .catch(function () { /* ignore */ });
-  }, [harInnboks, epost.length, setEpost]);
   const vis = useMemo(function () {
     const list = filter === 'Alle' ? henv : henv.filter(function (h) { return h.status === filter; });
     return sortItemsNyestFirst(list.map(function (h) {
       return { key: 'henv-' + h.id, sortDato: h.sortDato || h.dato || '', data: h };
     })).map(function (row) { return row.data; });
   }, [henv, filter]);
-  const ulestEpost = useMemo(function () {
-    if (!harInnboks) return [];
-    return sortItemsNyestFirst((epost || []).filter(function (e) {
-      return e.retning === 'inn' && !e.lest;
-    }).map(function (e) {
-      return { key: 'epost-' + e.id, sortDato: e.sortDato || e.dato || '', data: e };
-    })).map(function (row) { return row.data; });
-  }, [epost, harInnboks]);
   const colors = lists.henvStatusFarger || DEFAULT_HENV_STATUS_FARGER;
-
-  const openEpostPreview = function (mail) {
-    if (!mail?.id) return;
-    setInnboksOpenEpost(mail);
-    setTab('innboks');
-  };
 
   const slett = async (h) => {
     const ok = await deleteHenv(h.id);
@@ -7238,44 +7213,6 @@ function HenvendelserView({ henv, epost, setEpost, harInnboks, setTab, setInnbok
           </tbody>
         </table>
       </div>
-
-      {harInnboks && (
-        <div className="card table-cards" style={{ marginTop: 14 }}>
-          <div className="card-hd" style={{ padding: '12px 14px', borderBottom: '1px solid var(--b1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span className="card-ht">Ulest e-post ({ulestEpost.length})</span>
-            <button type="button" className="btn btn-g btn-sm" onClick={function () { setTab('innboks'); }}>Gå til innboks →</button>
-          </div>
-          <table className="table-cards">
-            <thead><tr><th>Fra</th><th>Emne</th><th>Konto</th><th>Dato</th><th></th></tr></thead>
-            <tbody>
-              {ulestEpost.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--t4)', padding: 20 }}>Ingen uleste e-poster.</td></tr>
-              )}
-              {ulestEpost.map(function (e) {
-                return (
-                  <tr
-                    key={e.id}
-                    className="dashboard-drill-row"
-                    onClick={function () { openEpostPreview(e); }}
-                  >
-                    <td>
-                      <div style={{ fontWeight: 700, color: 'var(--t1)', fontSize: 12 }}>{e.fraNavn || e.fraEpost || 'Ukjent'}</div>
-                      <div style={{ fontSize: 10, color: 'var(--t4)' }}>{e.fraEpost || '—'}</div>
-                    </td>
-                    <td style={{ maxWidth: 220 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{e.emne || '(Uten emne)'}</div>
-                      <div style={{ fontSize: 10, color: 'var(--t4)', marginTop: 2 }}>{e.snippet || ''}</div>
-                    </td>
-                    <td><span className="tag">{e.kontoNavn || '—'}</span></td>
-                    <td style={{ fontSize: 10, color: 'var(--t4)', whiteSpace: 'nowrap' }}>{e.dato}</td>
-                    <td><span className="chip chip-red">Ulest</span></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
     </>
   );
 }

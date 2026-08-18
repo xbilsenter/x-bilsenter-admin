@@ -95,7 +95,9 @@ const {
   mapTimeregistreringRow,
   weekStartIso,
   addDaysIso,
-  canViewAllTimereg
+  canViewAllTimereg,
+  canApproveTimereg,
+  maskTimeregStatusForViewer
 } = require('./timeregistrering-shared');
 const { readChassisWithOpenAI, getOpenAiApiKey } = require('./chassis-vision');
 
@@ -435,8 +437,8 @@ function formatUserResponse(user) {
   };
 }
 
-function mapTimeregLive(row) {
-  const item = mapTimeregistreringRow(row);
+function mapTimeregLive(row, viewer) {
+  const item = maskTimeregStatusForViewer(mapTimeregistreringRow(row), viewer);
   if (!item) return null;
   if (item.status === 'aktiv' || item.status === 'pause') {
     item.stats = calcTimeregStats(item, nowOsloTime());
@@ -2920,7 +2922,7 @@ app.get('/api/timeregistrering', requireAuth, requirePermission('timeregistrerin
     WHERE user_id = ? AND dato >= ? AND dato <= ?
     ORDER BY dato DESC, start_tid DESC, id DESC
   `).all(userId, fra, til);
-  res.json({ ok: true, items: rows.map(mapTimeregLive).filter(Boolean), fra, til, userId });
+  res.json({ ok: true, items: rows.map(function (row) { return mapTimeregLive(row, req.user); }).filter(Boolean), fra, til, userId });
 });
 
 app.get('/api/timeregistrering/aktiv', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -2931,7 +2933,7 @@ app.get('/api/timeregistrering/aktiv', requireAuth, requirePermission('timeregis
     ORDER BY id DESC
     LIMIT 1
   `).get(userId);
-  res.json({ ok: true, item: row ? mapTimeregLive(row) : null });
+  res.json({ ok: true, item: row ? mapTimeregLive(row, req.user) : null });
 });
 
 app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -2951,7 +2953,7 @@ app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('ti
   const perDag = {};
 
   rows.forEach(function (row) {
-    const item = mapTimeregLive(row);
+    const item = mapTimeregLive(row, req.user);
     if (!item || item.status === 'aktiv' || item.status === 'pause') return;
     nettoMin += item.stats.nettoMin;
     pauseMin += item.stats.pauseMin;
@@ -3000,7 +3002,7 @@ app.post('/api/timeregistrering/stemple-in', requireAuth, requirePermission('tim
   });
 
   const row = await getTimeregRow(info.lastInsertRowid);
-  res.status(201).json({ ok: true, item: mapTimeregLive(row) });
+  res.status(201).json({ ok: true, item: mapTimeregLive(row, req.user) });
 });
 
 app.post('/api/timeregistrering/stemple-ut', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -3035,7 +3037,7 @@ app.post('/api/timeregistrering/stemple-ut', requireAuth, requirePermission('tim
   });
 
   const fresh = await getTimeregRow(row.id);
-  res.json({ ok: true, item: mapTimeregLive(fresh) });
+  res.json({ ok: true, item: mapTimeregLive(fresh, req.user) });
 });
 
 app.post('/api/timeregistrering/pause/start', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -3059,7 +3061,7 @@ app.post('/api/timeregistrering/pause/start', requireAuth, requirePermission('ti
   `).run({ id: row.id, pauser: JSON.stringify(pauser) });
 
   const fresh = await getTimeregRow(row.id);
-  res.json({ ok: true, item: mapTimeregLive(fresh) });
+  res.json({ ok: true, item: mapTimeregLive(fresh, req.user) });
 });
 
 app.post('/api/timeregistrering/pause/slutt', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -3083,7 +3085,7 @@ app.post('/api/timeregistrering/pause/slutt', requireAuth, requirePermission('ti
   `).run({ id: row.id, pauser: JSON.stringify(pauser) });
 
   const fresh = await getTimeregRow(row.id);
-  res.json({ ok: true, item: mapTimeregLive(fresh) });
+  res.json({ ok: true, item: mapTimeregLive(fresh, req.user) });
 });
 
 app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -3119,7 +3121,7 @@ app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistreri
   });
 
   const row = await getTimeregRow(info.lastInsertRowid);
-  res.status(201).json({ ok: true, item: mapTimeregLive(row) });
+  res.status(201).json({ ok: true, item: mapTimeregLive(row, req.user) });
 });
 
 app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -3132,6 +3134,7 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
 
   const body = req.body || {};
   const isAdmin = canViewAllTimereg(req.user);
+  const kanGodkjenne = canApproveTimereg(req.user);
   const isOwner = Number(row.user_id) === Number(req.user.sub);
   const isActive = row.status === 'aktiv' || row.status === 'pause';
   const onlyPauseEdit = body.pauser != null
@@ -3157,7 +3160,21 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
   const sluttTid = (onlyPauseEdit || (isActive && !isAdmin)) ? row.slutt_tid : (body.sluttTid != null ? String(body.sluttTid).slice(0, 5) : row.slutt_tid);
   const pauser = body.pauser != null ? parsePauser(body.pauser) : parsePauser(row.pauser);
   const notat = (onlyPauseEdit || (isActive && !isAdmin)) ? row.notat : (body.notat != null ? String(body.notat) : row.notat);
-  let status = isAdmin && body.status ? String(body.status) : row.status;
+  let status = row.status;
+  if (body.status != null) {
+    const nextStatus = String(body.status);
+    if (nextStatus === 'godkjent' || row.status === 'godkjent') {
+      if (!kanGodkjenne) {
+        return res.status(403).json({ ok: false, error: 'Kun admin kan godkjenne timer.' });
+      }
+      if (row.status !== 'fullfort' && row.status !== 'godkjent') {
+        return res.status(400).json({ ok: false, error: 'Kun fullførte registreringer kan godkjennes.' });
+      }
+      status = nextStatus === 'godkjent' ? 'godkjent' : 'fullfort';
+    } else if (isAdmin) {
+      status = nextStatus;
+    }
+  }
   if (isActive && isOwner && body.pauser != null) {
     const hasOpenPause = pauser.some(function (p) { return p.start && !p.slutt; });
     status = hasOpenPause ? 'pause' : 'aktiv';
@@ -3189,7 +3206,7 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
   });
 
   const fresh = await getTimeregRow(id);
-  res.json({ ok: true, item: mapTimeregLive(fresh) });
+  res.json({ ok: true, item: mapTimeregLive(fresh, req.user) });
 });
 
 app.delete('/api/timeregistrering/:id', requireAuth, requirePermission('timeregistrering'), async function (req, res) {

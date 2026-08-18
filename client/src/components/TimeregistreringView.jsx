@@ -62,19 +62,24 @@ function nok(v) {
   return `kr ${Number(v || 0).toLocaleString('nb-NO')}`;
 }
 
-function statusLabel(status) {
+function statusLabel(status, kanGodkjenne) {
   if (status === 'aktiv') return 'Jobber';
   if (status === 'pause') return 'Pause';
-  if (status === 'godkjent') return 'Godkjent';
-  if (status === 'fullfort') return 'Fullført';
+  if (status === 'godkjent' && kanGodkjenne) return 'Godkjent';
+  if (status === 'fullfort' || status === 'godkjent') return 'Fullført';
   return status || '—';
 }
 
-function statusClass(status) {
+function statusClass(status, kanGodkjenne) {
   if (status === 'aktiv') return 'timereg-status--aktiv';
   if (status === 'pause') return 'timereg-status--pause';
-  if (status === 'godkjent') return 'timereg-status--godkjent';
+  if (status === 'godkjent' && kanGodkjenne) return 'timereg-status--godkjent';
   return 'timereg-status--fullfort';
+}
+
+function visTimeregStatus(item, kanGodkjenne) {
+  if (!kanGodkjenne && item.status === 'godkjent') return 'fullfort';
+  return item.status;
 }
 
 const EMPTY_MANUAL = {
@@ -237,14 +242,28 @@ function PauseEditor({ pauser, onChange, allowOpenEnd }) {
   );
 }
 
-function TimeregEntryActions({ item, busy, kanSeAlle, kanRedigere, onEdit, onDelete }) {
-  if (!kanRedigere(item)) return null;
+function TimeregEntryActions({ item, busy, kanSeAlle, kanGodkjenne, kanRedigere, onEdit, onDelete, onGodkjenn, onAngreGodkjenning }) {
+  if (!kanRedigere(item) && !kanGodkjenne) return null;
+  const kanGodkjennePost = kanGodkjenne && item.status === 'fullfort';
+  const kanAngreGodkjenning = kanGodkjenne && item.status === 'godkjent';
   return (
     <div className="timereg-entry-actions">
-      <button type="button" className="btn btn-g btn-sm" onClick={function () { onEdit(item); }}>
-        Rediger
-      </button>
-      {(item.status === 'fullfort' || item.status === 'godkjent' || kanSeAlle) && (
+      {kanGodkjennePost && (
+        <button type="button" className="btn btn-p btn-sm" disabled={busy} onClick={function () { onGodkjenn(item.id); }}>
+          Godkjenn
+        </button>
+      )}
+      {kanAngreGodkjenning && (
+        <button type="button" className="btn btn-g btn-sm" disabled={busy} onClick={function () { onAngreGodkjenning(item.id); }}>
+          Angre
+        </button>
+      )}
+      {kanRedigere(item) && (
+        <button type="button" className="btn btn-g btn-sm" onClick={function () { onEdit(item); }}>
+          Rediger
+        </button>
+      )}
+      {kanRedigere(item) && (item.status === 'fullfort' || item.status === 'godkjent' || kanSeAlle) && (
         <button type="button" className="btn btn-g btn-sm" disabled={busy} onClick={function () { onDelete(item.id); }}>
           Slett
         </button>
@@ -268,6 +287,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const [valgtUserId, setValgtUserId] = useState(null);
 
   const kanSeAlle = !!(currentUser?.isAdmin || (currentUser?.permissions || []).includes('brukere'));
+  const kanGodkjenne = !!currentUser?.isAdmin;
   const ukeTil = useMemo(function () { return addDaysIso(ukeFra, 6); }, [ukeFra]);
   const targetUserId = kanSeAlle && valgtUserId ? valgtUserId : currentUser?.id;
   const sheetOpen = !!(manual || editItem);
@@ -373,8 +393,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           startTid: editItem.startTid,
           sluttTid: editItem.sluttTid,
           notat: editItem.notat,
-          pauser: editItem.pauser,
-          status: editItem.status
+          pauser: editItem.pauser
         };
       await patchTimeregistrering(editItem.id, body);
       visTost('Registrering oppdatert ✓');
@@ -401,6 +420,19 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     }
   };
 
+  const endreGodkjenning = async function (id, status) {
+    setBusy(true);
+    try {
+      await patchTimeregistrering(id, { status });
+      visTost(status === 'godkjent' ? 'Timer godkjent ✓' : 'Godkjenning angret ✓');
+      await reload();
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke oppdatere godkjenning ✗');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openEdit = function (item) {
     setEditItem({
       ...item,
@@ -412,7 +444,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const visLonn = (currentUser?.timelonn > 0 || kanSeAlle) && oppsummering?.lonnKr > 0;
 
   const kanRedigere = function (item) {
-    if (item.status === 'fullfort' || item.status === 'godkjent' || kanSeAlle) return true;
+    if (item.status === 'fullfort' || (item.status === 'godkjent' && kanGodkjenne) || kanSeAlle) return true;
     if ((item.status === 'aktiv' || item.status === 'pause') && Number(item.userId) === Number(currentUser?.id)) {
       return true;
     }
@@ -460,8 +492,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
             {egenAktiv ? (
               <>
-                <div className={`timereg-status-pill ${statusClass(aktiv.status)}`}>
-                  {statusLabel(aktiv.status)}
+                <div className={`timereg-status-pill ${statusClass(aktiv.status, kanGodkjenne)}`}>
+                  {statusLabel(aktiv.status, kanGodkjenne)}
                   {aktiv.stats?.display ? ` · ${aktiv.stats.display}` : ''}
                 </div>
                 <div className="timereg-meta">
@@ -573,12 +605,13 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           <div className="timereg-entry-list">
             {items.map(function (item) {
               const pauserTxt = pauseSummary(item);
+              const itemStatus = visTimeregStatus(item, kanGodkjenne);
               return (
                 <article key={item.id} className="timereg-entry-card">
                   <div className="timereg-entry-card-top">
                     <div>
                       <div className="timereg-entry-date">{fmtDato(item.dato)}</div>
-                      <span className={`timereg-status-pill ${statusClass(item.status)}`}>{statusLabel(item.status)}</span>
+                      <span className={`timereg-status-pill ${statusClass(itemStatus, kanGodkjenne)}`}>{statusLabel(itemStatus, kanGodkjenne)}</span>
                     </div>
                     <div className="timereg-entry-hours">{item.stats?.display || '—'}</div>
                   </div>
@@ -595,9 +628,12 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                     item={item}
                     busy={busy}
                     kanSeAlle={kanSeAlle}
+                    kanGodkjenne={kanGodkjenne}
                     kanRedigere={kanRedigere}
                     onEdit={openEdit}
                     onDelete={slett}
+                    onGodkjenn={function (id) { endreGodkjenning(id, 'godkjent'); }}
+                    onAngreGodkjenning={function (id) { endreGodkjenning(id, 'fullfort'); }}
                   />
                 </article>
               );
@@ -622,10 +658,11 @@ export default function TimeregistreringView({ currentUser, visTost }) {
               <tbody>
                 {items.map(function (item) {
                   const pauserTxt = pauseSummary(item);
+                  const itemStatus = visTimeregStatus(item, kanGodkjenne);
                   return (
                     <tr key={item.id}>
                       <td>{fmtDato(item.dato)}</td>
-                      <td><span className={`timereg-status-pill ${statusClass(item.status)}`}>{statusLabel(item.status)}</span></td>
+                      <td><span className={`timereg-status-pill ${statusClass(itemStatus, kanGodkjenne)}`}>{statusLabel(itemStatus, kanGodkjenne)}</span></td>
                       <td>{item.startTid || '—'}</td>
                       <td>{item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—')}</td>
                       <td className="timereg-notat" title={pauserTxt}>{pauserTxt}</td>
@@ -637,9 +674,12 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                           item={item}
                           busy={busy}
                           kanSeAlle={kanSeAlle}
+                          kanGodkjenne={kanGodkjenne}
                           kanRedigere={kanRedigere}
                           onEdit={openEdit}
                           onDelete={slett}
+                          onGodkjenn={function (id) { endreGodkjenning(id, 'godkjent'); }}
+                          onAngreGodkjenning={function (id) { endreGodkjenning(id, 'fullfort'); }}
                         />
                       </td>
                     </tr>
@@ -732,18 +772,6 @@ export default function TimeregistreringView({ currentUser, visTost }) {
               onChange={function (next) { setEditItem({ ...editItem, pauser: next }); }}
             />
           </div>
-
-          {!editItem.kunPauser && kanSeAlle && (
-            <div className="timereg-form-section">
-              <div className="modal-sec">Godkjenning</div>
-              <TimeregField label="Status">
-                <select value={editItem.status} onChange={function (e) { setEditItem({ ...editItem, status: e.target.value }); }}>
-                  <option value="fullfort">Fullført</option>
-                  <option value="godkjent">Godkjent</option>
-                </select>
-              </TimeregField>
-            </div>
-          )}
 
           {!editItem.kunPauser && (
             <div className="timereg-form-section">

@@ -132,6 +132,18 @@ function canViewAllTimereg(user) {
   return Array.isArray(user.permissions) && user.permissions.includes('brukere');
 }
 
+function canApproveTimereg(user) {
+  return !!user?.isAdmin;
+}
+
+function maskTimeregStatusForViewer(item, viewer) {
+  if (!item) return item;
+  if (!canApproveTimereg(viewer) && item.status === 'godkjent') {
+    return { ...item, status: 'fullfort' };
+  }
+  return item;
+}
+
 module.exports = {
   NORSK_TIDSSONE,
   nowOsloDate,
@@ -144,5 +156,7 @@ module.exports = {
   mapTimeregistreringRow,
   weekStartIso,
   addDaysIso,
-  canViewAllTimereg
+  canViewAllTimereg,
+  canApproveTimereg,
+  maskTimeregStatusForViewer
 };
