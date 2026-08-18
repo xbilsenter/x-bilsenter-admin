@@ -7528,10 +7528,6 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
           <div className="ph-sub">Fra xbilsenter.no/innbytte · {innbytte.filter(i => i.status === 'Ny').length} nye</div>
         </div>
       </div>
-      <div style={{ background: 'var(--orangel)', border: '1px solid #FDE68A', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 11, color: 'var(--orange)' }}>
-        <strong>Nettside-kobling:</strong> Nye innbytteforespørsler fra xbilsenter.no nettside opprettes automatisk her via API. Skjemaet sender til{' '}
-        <code style={{ background: '#0000001A', padding: '1px 5px', borderRadius: 3 }}>POST /api/ingest/innbytte</code>
-      </div>
       {innbytte.map(inn => (
         <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, innbytteColors)}>
           <div className="inb-card__head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -7599,10 +7595,6 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
           <div className="ph-title">Selg din bil</div>
           <div className="ph-sub">Fra xbilsenter.no/selg-bil · {selgBil.filter(i => i.status === 'Ny').length} nye</div>
         </div>
-      </div>
-      <div style={{ background: 'var(--orangel)', border: '1px solid #FDE68A', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 11, color: 'var(--orange)' }}>
-        <strong>Nettside-kobling:</strong> Nye oppkjøpsforespørsler fra xbilsenter.no nettside opprettes automatisk her via API. Skjemaet sender til{' '}
-        <code style={{ background: '#0000001A', padding: '1px 5px', borderRadius: 3 }}>POST /api/ingest/selg-bil/json</code>
       </div>
       {selgBil.map(inn => (
         <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, statusColors)}>
