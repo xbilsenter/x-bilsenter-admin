@@ -171,6 +171,17 @@ export function nok(v) {
   return `kr ${Number(v || 0).toLocaleString('nb-NO')}`;
 }
 
+function formatForventningDisplay(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  const digits = raw.replace(/\D/g, '');
+  const n = Number(digits);
+  if (digits && Number.isFinite(n) && n > 0 && !raw.replace(/[\d\s.,]/g, '')) {
+    return nok(n);
+  }
+  return raw;
+}
+
 function svvFarge(c) {
   const navn = formatSvvFargeNavn(c);
   const m = {
@@ -7622,7 +7633,7 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-            {[['Forventning', inn.forventning || '—'], ['Tilstand', inn.tilstand], ['Tilbud', inn.tilbud ? nok(inn.tilbud) : 'Ikke gitt'], ['Ansvarlig', inn.ansvarlig || 'Ikke tildelt'], ['Dato', inn.dato]].map(([l, v]) => (
+            {[['Forventning', formatForventningDisplay(inn.forventning)], ['Tilstand', inn.tilstand], ['Tilbud', inn.tilbud ? nok(inn.tilbud) : 'Ikke gitt'], ['Ansvarlig', inn.ansvarlig || 'Ikke tildelt'], ['Dato', inn.dato]].map(([l, v]) => (
               <div key={l}>
                 <div className="fl">{l}</div>
                 <div className="fv" style={{ fontSize: 12, color: l === 'Tilbud' && inn.tilbud ? 'var(--gold)' : 'var(--t2)' }}>{v}</div>
@@ -7830,7 +7841,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
                 {inn.forventning ? (
                   <div className="gap">
                     <div className="fl">Kundens prisforventning</div>
-                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inn.forventning}</div>
+                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{formatForventningDisplay(inn.forventning)}</div>
                   </div>
                 ) : (
                   <div className="fv">Ingen prisforventning oppgitt.</div>
@@ -8209,7 +8220,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
                 {inn.forventning ? (
                   <div className="gap" style={{ marginTop: 14 }}>
                     <div className="fl">Kundens prisforventning</div>
-                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inn.forventning}</div>
+                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{formatForventningDisplay(inn.forventning)}</div>
                   </div>
                 ) : null}
                 {inn.tilbud ? (
