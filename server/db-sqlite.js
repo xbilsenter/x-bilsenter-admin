@@ -322,7 +322,9 @@ function migrateIngestVehicleFields() {
     "ALTER TABLE selg_bil ADD COLUMN forstegangsregistrert TEXT DEFAULT ''",
     "ALTER TABLE selg_bil ADD COLUMN antall_motorer TEXT DEFAULT ''",
     "ALTER TABLE selg_bil ADD COLUMN rekkevidde TEXT DEFAULT ''",
-    "ALTER TABLE selg_bil ADD COLUMN motorer TEXT NOT NULL DEFAULT '[]'"
+    "ALTER TABLE selg_bil ADD COLUMN motorer TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE innbytte ADD COLUMN bruktimport TEXT DEFAULT ''",
+    "ALTER TABLE selg_bil ADD COLUMN bruktimport TEXT DEFAULT ''"
   ];
   columns.forEach(function (sql) {
     try {
@@ -1254,6 +1256,7 @@ function mapInnbytte(row) {
     forstegangsregistrert: row.forstegangsregistrert || '',
     antallMotorer: row.antall_motorer || '',
     rekkevidde: row.rekkevidde || '',
+    bruktimport: row.bruktimport || '',
     motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
@@ -1297,6 +1300,7 @@ function mapSelgBil(row) {
     forstegangsregistrert: row.forstegangsregistrert || '',
     antallMotorer: row.antall_motorer || '',
     rekkevidde: row.rekkevidde || '',
+    bruktimport: row.bruktimport || '',
     motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,

@@ -520,13 +520,13 @@ async function insertInnbytteRow(b, savedFiles) {
     INSERT INTO innbytte (
       navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
       hjuldrift, effekt_hk, effekt_kw, siste_eu_kontroll, neste_eu_kontroll,
-      forstegangsregistrert, antall_motorer, rekkevidde, motorer, kilometerstand,
+      forstegangsregistrert, antall_motorer, rekkevidde, bruktimport, motorer, kilometerstand,
       servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
       kommentar, finn_kode, bilder, kunde_id
     ) VALUES (
       @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
       @hjuldrift, @effekt_hk, @effekt_kw, @siste_eu_kontroll, @neste_eu_kontroll,
-      @forstegangsregistrert, @antall_motorer, @rekkevidde, @motorer, @kilometerstand,
+      @forstegangsregistrert, @antall_motorer, @rekkevidde, @bruktimport, @motorer, @kilometerstand,
       @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
       @kommentar, @finn_kode, @bilder, @kunde_id
     )
@@ -563,13 +563,13 @@ async function insertSelgBilRow(b, savedFiles) {
     INSERT INTO selg_bil (
       navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
       hjuldrift, effekt_hk, effekt_kw, siste_eu_kontroll, neste_eu_kontroll,
-      forstegangsregistrert, antall_motorer, rekkevidde, motorer, kilometerstand,
+      forstegangsregistrert, antall_motorer, rekkevidde, bruktimport, motorer, kilometerstand,
       servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
       kommentar, bilder, kunde_id
     ) VALUES (
       @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
       @hjuldrift, @effekt_hk, @effekt_kw, @siste_eu_kontroll, @neste_eu_kontroll,
-      @forstegangsregistrert, @antall_motorer, @rekkevidde, @motorer, @kilometerstand,
+      @forstegangsregistrert, @antall_motorer, @rekkevidde, @bruktimport, @motorer, @kilometerstand,
       @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
       @kommentar, @bilder, @kunde_id
     )

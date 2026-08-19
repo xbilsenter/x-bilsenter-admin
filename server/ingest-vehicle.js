@@ -30,6 +30,7 @@ async function enrichIngestVehicleBody(body) {
     if (!Array.isArray(next.motorer) || !next.motorer.length) next.motorer = Array.isArray(v.motorer) ? v.motorer : [];
     if (!hasValue(next.farge)) next.farge = formatSvvFargeNavn(v.farge) || v.farge || '';
     if (!hasValue(next.drivstoff)) next.drivstoff = v.drivstoff || '';
+    if (!hasValue(next.bruktimport)) next.bruktimport = v.bruktimport || '';
   } catch (err) {
     console.warn('[ingest/vegvesen]', next.regnr, err.message);
   }
@@ -50,6 +51,7 @@ function ingestVehicleDbFields(body) {
     forstegangsregistrert: b.forstegangsregistrert || '',
     antall_motorer: b.antallMotorer != null && b.antallMotorer !== '' ? String(b.antallMotorer) : '',
     rekkevidde: b.rekkevidde || '',
+    bruktimport: b.bruktimport || '',
     motorer: JSON.stringify(motorer)
   };
 }

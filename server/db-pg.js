@@ -180,6 +180,8 @@ async function ensureSelgBilSchema() {
     ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS antall_motorer TEXT DEFAULT '';
     ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS rekkevidde TEXT DEFAULT '';
     ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS motorer JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS bruktimport TEXT DEFAULT '';
+    ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS bruktimport TEXT DEFAULT '';
     CREATE INDEX IF NOT EXISTS idx_selg_bil_status ON public.selg_bil (status);
     CREATE INDEX IF NOT EXISTS idx_selg_bil_kunde ON public.selg_bil (kunde_id);
   `);
@@ -1062,6 +1064,7 @@ function mapInnbytte(row) {
     forstegangsregistrert: row.forstegangsregistrert || '',
     antallMotorer: row.antall_motorer || '',
     rekkevidde: row.rekkevidde || '',
+    bruktimport: row.bruktimport || '',
     motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
@@ -1106,6 +1109,7 @@ function mapSelgBil(row) {
     forstegangsregistrert: row.forstegangsregistrert || '',
     antallMotorer: row.antall_motorer || '',
     rekkevidde: row.rekkevidde || '',
+    bruktimport: row.bruktimport || '',
     motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,

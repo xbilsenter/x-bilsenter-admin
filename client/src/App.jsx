@@ -7413,6 +7413,7 @@ function mergeIngestVehicleRow(row, vehicle) {
     farge: has(row.farge) ? row.farge : (vehicle.farge || ''),
     nesteEuKontroll: has(row.nesteEuKontroll) ? row.nesteEuKontroll : (vehicle.nesteEuKontroll || ''),
     forstegangsregistrert: has(row.forstegangsregistrert) ? row.forstegangsregistrert : (vehicle.forstegangsregistrert || ''),
+    bruktimport: has(row.bruktimport) ? row.bruktimport : (vehicle.bruktimport || ''),
     effektHk: has(row.effektHk) ? row.effektHk : (vehicle.effektHk ?? ''),
     effektKw: has(row.effektKw) ? row.effektKw : (vehicle.effektKw ?? ''),
     antallMotorer: has(row.antallMotorer) ? row.antallMotorer : (vehicle.antallMotorer ?? ''),
@@ -7468,6 +7469,7 @@ function buildIngestKundensBilItems(row) {
     ['Drivstoff', row.drivstoff],
     ['Farge', formatSvvFargeNavn(row.farge)],
     ['Førstegangsregistrert', row.forstegangsregistrert],
+    ['Bruktimport', row.bruktimport],
     ['Neste EU-kontroll', row.nesteEuKontroll ? formatEuKontrollVisning(row.nesteEuKontroll) : ''],
     ['Effekt', effekt],
   ];
