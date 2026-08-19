@@ -3453,11 +3453,12 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   }, [enqueueTextSave, collectPendingTextPatch]);
 
   useEffect(function () {
-    setBil(data);
-    bilSnapshotRef.current = data;
-    const o = getBilAutosysOverstyrt(data);
+    const next = { ...data, okonomi: normalizeBilOkonomi(data.okonomi) };
+    setBil(next);
+    bilSnapshotRef.current = next;
+    const o = getBilAutosysOverstyrt(next);
     setAutosysOverstyrt(o);
-    bilRef.current = data;
+    bilRef.current = next;
     autosysOverstyrtRef.current = o;
     autosysInitKeyRef.current = '';
   }, [data.id]);
@@ -4051,9 +4052,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 }
 
 function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
-  const okonomi = bil.okonomi && typeof bil.okonomi === 'object'
-    ? bil.okonomi
-    : normalizeBilOkonomi(bil.okonomi);
+  const okonomi = normalizeBilOkonomi(bil.okonomi);
   const stats = calcBilOkonomi(
     bil.innkjop,
     bil.salg,
@@ -7396,6 +7395,69 @@ function formatIngestMotoreffekt(row) {
   return '';
 }
 
+function formatIngestRekkevidde(data) {
+  if (!data) return '';
+  const parts = [];
+  if (data.rekkeviddeKmBlandet) parts.push(`${data.rekkeviddeKmBlandet} km (WLTP blandet)`);
+  else if (data.rekkeviddeKm) parts.push(`${data.rekkeviddeKm} km`);
+  else if (data.rekkeviddeKmNedc) parts.push(`${data.rekkeviddeKmNedc} km (NEDC)`);
+  if (data.rekkeviddeKmBy) parts.push(`${data.rekkeviddeKmBy} km (WLTP by)`);
+  return parts.join(' · ');
+}
+
+function mergeIngestVehicleRow(row, vehicle) {
+  if (!vehicle) return row;
+  const has = function (v) { return v != null && String(v).trim() !== ''; };
+  return {
+    ...row,
+    farge: has(row.farge) ? row.farge : (vehicle.farge || ''),
+    nesteEuKontroll: has(row.nesteEuKontroll) ? row.nesteEuKontroll : (vehicle.nesteEuKontroll || ''),
+    forstegangsregistrert: has(row.forstegangsregistrert) ? row.forstegangsregistrert : (vehicle.forstegangsregistrert || ''),
+    effektHk: has(row.effektHk) ? row.effektHk : (vehicle.effektHk ?? ''),
+    effektKw: has(row.effektKw) ? row.effektKw : (vehicle.effektKw ?? ''),
+    antallMotorer: has(row.antallMotorer) ? row.antallMotorer : (vehicle.antallMotorer ?? ''),
+    rekkevidde: has(row.rekkevidde) ? row.rekkevidde : formatIngestRekkevidde(vehicle),
+    motorer: (Array.isArray(row.motorer) && row.motorer.length)
+      ? row.motorer
+      : (Array.isArray(vehicle.motorer) ? vehicle.motorer : [])
+  };
+}
+
+function IngestKundensBilSeksjon({ row, active }) {
+  const [displayRow, setDisplayRow] = useState(row);
+  const [laster, setLaster] = useState(false);
+
+  useEffect(function () {
+    setDisplayRow(row);
+  }, [row]);
+
+  useEffect(function () {
+    if (!active) return undefined;
+    const reg = String(row?.reg || '').trim().toUpperCase().replace(/\s/g, '');
+    if (!reg || reg.length < 5) return undefined;
+    let cancelled = false;
+    setLaster(true);
+    lookupKjoretoy(reg).then(function (data) {
+      if (cancelled) return;
+      setDisplayRow(function (prev) { return mergeIngestVehicleRow(prev, data?.vehicle); });
+    }).catch(function () {
+      if (!cancelled) setDisplayRow(row);
+    }).finally(function () {
+      if (!cancelled) setLaster(false);
+    });
+    return function () { cancelled = true; };
+  }, [active, row?.id, row?.reg]);
+
+  return (
+    <>
+      {laster ? (
+        <div style={{ fontSize: 11, color: 'var(--t4)', marginBottom: 8 }}>Henter kjøretøydata fra Vegvesen…</div>
+      ) : null}
+      <InfoGrid items={buildIngestKundensBilItems(displayRow)} />
+    </>
+  );
+}
+
 function buildIngestKundensBilItems(row) {
   const effekt = formatIngestMotoreffekt(row);
   const antallMotorer = Number(row?.antallMotorer);
@@ -7854,7 +7916,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
             <div className="inb-modal__grid">
               <section className="inb-modal__panel">
                 <div className="modal-sec">Kundens bil</div>
-                <InfoGrid items={buildIngestKundensBilItems(inn)} />
+                <IngestKundensBilSeksjon row={inn} active={activeTab === 'foresporsel'} />
                 {utstyr.length ? (
                   <div className="gap" style={{ marginTop: 12 }}>
                     <div className="fl">Utstyr</div>
@@ -8203,7 +8265,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
             <div className="inb-modal__grid">
               <section className="inb-modal__panel">
                 <div className="modal-sec">Kundens bil</div>
-                <InfoGrid items={buildIngestKundensBilItems(inn)} />
+                <IngestKundensBilSeksjon row={inn} active={activeTab === 'foresporsel'} />
                 {utstyr.length ? (
                   <div className="gap" style={{ marginTop: 12 }}>
                     <div className="fl">Utstyr</div>
