@@ -2793,7 +2793,19 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
               return String(a.reg || '').localeCompare(String(b.reg || ''));
             }).map(function (bil) {
               return (
-                <div className="bil-arkiv-row" key={bil.id}>
+                <div
+                  className="bil-arkiv-row bil-arkiv-row--clickable"
+                  key={bil.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={function () { openBil(bil); }}
+                  onKeyDown={function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openBil(bil);
+                    }
+                  }}
+                >
                   <div className="bil-arkiv-main">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                       <span className="bil-reg">{bil.reg}</span>
@@ -2808,7 +2820,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
                       {(bil.dokumenter || []).length > 0 ? ` · ${bil.dokumenter.length} dokument${bil.dokumenter.length === 1 ? '' : 'er'}` : ''}
                     </div>
                   </div>
-                  <div className="bil-arkiv-actions">
+                  <div className="bil-arkiv-actions" onClick={function (e) { e.stopPropagation(); }}>
                     <button type="button" className="btn btn-p btn-sm" onClick={function () { openBil(bil); }}>Åpne</button>
                   </div>
                 </div>
@@ -2839,7 +2851,19 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
                 })
                 : '—';
               return (
-                <div className="bil-arkiv-row" key={bil.id}>
+                <div
+                  className="bil-arkiv-row bil-arkiv-row--clickable"
+                  key={bil.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={function () { openBil(bil); }}
+                  onKeyDown={function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openBil(bil);
+                    }
+                  }}
+                >
                   <div className="bil-arkiv-main">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                       <span className="bil-reg">{bil.reg}</span>
@@ -2848,7 +2872,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
                     <div className="bil-name">{bil.merke} {bil.modell}</div>
                     <div className="bil-sub">{bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · Arkivert {archivedLabel}</div>
                   </div>
-                  <div className="bil-arkiv-actions">
+                  <div className="bil-arkiv-actions" onClick={function (e) { e.stopPropagation(); }}>
                     <button type="button" className="btn btn-g btn-sm" onClick={() => openBil(bil)}>Åpne</button>
                     <button type="button" className="btn btn-p btn-sm" onClick={() => restoreBil(bil)}>Gjenopprett</button>
                   </div>
