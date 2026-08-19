@@ -146,8 +146,13 @@ async function ensureSelgBilSchema() {
       kjoretoy_type TEXT DEFAULT '',
       hjuldrift TEXT DEFAULT '',
       effekt_hk TEXT DEFAULT '',
+      effekt_kw TEXT DEFAULT '',
       siste_eu_kontroll TEXT DEFAULT '',
       neste_eu_kontroll TEXT DEFAULT '',
+      forstegangsregistrert TEXT DEFAULT '',
+      antall_motorer TEXT DEFAULT '',
+      rekkevidde TEXT DEFAULT '',
+      motorer JSONB NOT NULL DEFAULT '[]'::jsonb,
       kilometerstand TEXT DEFAULT '',
       servicehistorikk TEXT DEFAULT '',
       siste_service TEXT DEFAULT '',
@@ -165,6 +170,16 @@ async function ensureSelgBilSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS kunde_id BIGINT REFERENCES public.kunder(id) ON DELETE SET NULL;
+    ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS effekt_kw TEXT DEFAULT '';
+    ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS forstegangsregistrert TEXT DEFAULT '';
+    ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS antall_motorer TEXT DEFAULT '';
+    ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS rekkevidde TEXT DEFAULT '';
+    ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS motorer JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS effekt_kw TEXT DEFAULT '';
+    ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS forstegangsregistrert TEXT DEFAULT '';
+    ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS antall_motorer TEXT DEFAULT '';
+    ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS rekkevidde TEXT DEFAULT '';
+    ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS motorer JSONB NOT NULL DEFAULT '[]'::jsonb;
     CREATE INDEX IF NOT EXISTS idx_selg_bil_status ON public.selg_bil (status);
     CREATE INDEX IF NOT EXISTS idx_selg_bil_kunde ON public.selg_bil (kunde_id);
   `);
@@ -1037,8 +1052,17 @@ function mapInnbytte(row) {
     sommerdekk: row.sommerdekk || '',
     vinterdekk: row.vinterdekk || '',
     drivstoff: row.drivstoff || '',
-    farge: row.farge || '',
+    farge: formatSvvFargeNavn(row.farge) || row.farge || '',
     kjoretoyType: row.kjoretoy_type || '',
+    hjuldrift: row.hjuldrift || '',
+    effektHk: row.effekt_hk || '',
+    effektKw: row.effekt_kw || '',
+    sisteEuKontroll: row.siste_eu_kontroll || '',
+    nesteEuKontroll: row.neste_eu_kontroll || '',
+    forstegangsregistrert: row.forstegangsregistrert || '',
+    antallMotorer: row.antall_motorer || '',
+    rekkevidde: row.rekkevidde || '',
+    motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
     onsketBil: row.finn_kode,
@@ -1072,12 +1096,17 @@ function mapSelgBil(row) {
     sommerdekk: row.sommerdekk || '',
     vinterdekk: row.vinterdekk || '',
     drivstoff: row.drivstoff || '',
-    farge: row.farge || '',
+    farge: formatSvvFargeNavn(row.farge) || row.farge || '',
     kjoretoyType: row.kjoretoy_type || '',
     hjuldrift: row.hjuldrift || '',
     effektHk: row.effekt_hk || '',
+    effektKw: row.effekt_kw || '',
     sisteEuKontroll: row.siste_eu_kontroll || '',
     nesteEuKontroll: row.neste_eu_kontroll || '',
+    forstegangsregistrert: row.forstegangsregistrert || '',
+    antallMotorer: row.antall_motorer || '',
+    rekkevidde: row.rekkevidde || '',
+    motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
     status: row.status,

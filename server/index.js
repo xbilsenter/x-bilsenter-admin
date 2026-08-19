@@ -108,6 +108,7 @@ const {
   resolveVehicleFromStoredSvvData,
   toIsoDateFromNorwegian
 } = require('./vegvesen');
+const { enrichIngestVehicleBody, ingestVehicleDbFields } = require('./ingest-vehicle');
 const { isConfigured: isOmregConfigured, lookupOmregistreringsavgift } = require('./skatteetaten-omreg');
 const { lookupFinnAnnonse, resolveFinnMarkedsSok } = require('./finn');
 const { getMailStatus, syncInbox, sendMail, testMailKonto, startBackgroundMailSync } = require('./mail');
@@ -511,45 +512,88 @@ async function saveIngestBilder(bilderMeta) {
   return savedFiles;
 }
 
+async function insertInnbytteRow(b, savedFiles) {
+  const enriched = await enrichIngestVehicleBody(b);
+  const utstyr = Array.isArray(enriched.utstyr) ? enriched.utstyr : [];
+  const vehicle = ingestVehicleDbFields(enriched);
+  return prepare(`
+    INSERT INTO innbytte (
+      navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
+      hjuldrift, effekt_hk, effekt_kw, siste_eu_kontroll, neste_eu_kontroll,
+      forstegangsregistrert, antall_motorer, rekkevidde, motorer, kilometerstand,
+      servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
+      kommentar, finn_kode, bilder, kunde_id
+    ) VALUES (
+      @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
+      @hjuldrift, @effekt_hk, @effekt_kw, @siste_eu_kontroll, @neste_eu_kontroll,
+      @forstegangsregistrert, @antall_motorer, @rekkevidde, @motorer, @kilometerstand,
+      @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
+      @kommentar, @finn_kode, @bilder, @kunde_id
+    )
+  `).run({
+    navn: enriched.navn,
+    epost: enriched.epost,
+    tlf: enriched.mobil || enriched.tlf || '',
+    regnr: String(enriched.regnr).toUpperCase(),
+    merke: enriched.merke || '',
+    modell: enriched.modell || '',
+    arsmodell: enriched.arsmodell || '',
+    drivstoff: enriched.drivstoff || '',
+    kjoretoy_type: enriched.kjoretoyType || '',
+    kilometerstand: enriched.kilometerstand || '',
+    servicehistorikk: enriched.servicehistorikk || '',
+    siste_service: enriched.sisteService || '',
+    utstyr: JSON.stringify(utstyr),
+    sommerdekk: enriched.sommerdekk || '',
+    vinterdekk: enriched.vinterdekk || '',
+    forventning: enriched.forventning || '',
+    kommentar: enriched.kommentar || '',
+    finn_kode: enriched.finnKode || '',
+    bilder: JSON.stringify(savedFiles),
+    kunde_id: null,
+    ...vehicle
+  });
+}
+
 async function insertSelgBilRow(b, savedFiles) {
-  const utstyr = Array.isArray(b.utstyr) ? b.utstyr : [];
+  const enriched = await enrichIngestVehicleBody(b);
+  const utstyr = Array.isArray(enriched.utstyr) ? enriched.utstyr : [];
+  const vehicle = ingestVehicleDbFields(enriched);
   return prepare(`
     INSERT INTO selg_bil (
       navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
-      hjuldrift, effekt_hk, siste_eu_kontroll, neste_eu_kontroll, kilometerstand,
+      hjuldrift, effekt_hk, effekt_kw, siste_eu_kontroll, neste_eu_kontroll,
+      forstegangsregistrert, antall_motorer, rekkevidde, motorer, kilometerstand,
       servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
       kommentar, bilder, kunde_id
     ) VALUES (
       @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
-      @hjuldrift, @effekt_hk, @siste_eu_kontroll, @neste_eu_kontroll, @kilometerstand,
+      @hjuldrift, @effekt_hk, @effekt_kw, @siste_eu_kontroll, @neste_eu_kontroll,
+      @forstegangsregistrert, @antall_motorer, @rekkevidde, @motorer, @kilometerstand,
       @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
       @kommentar, @bilder, @kunde_id
     )
   `).run({
-    navn: b.navn,
-    epost: b.epost,
-    tlf: b.mobil || b.tlf || '',
-    regnr: String(b.regnr).toUpperCase(),
-    merke: b.merke || '',
-    modell: b.modell || '',
-    arsmodell: b.arsmodell || '',
-    drivstoff: b.drivstoff || '',
-    farge: b.farge || '',
-    kjoretoy_type: b.kjoretoyType || '',
-    hjuldrift: b.hjuldrift || '',
-    effekt_hk: b.effektHk != null ? String(b.effektHk) : '',
-    siste_eu_kontroll: b.sisteEuKontroll || '',
-    neste_eu_kontroll: b.nesteEuKontroll || '',
-    kilometerstand: b.kilometerstand || '',
-    servicehistorikk: b.servicehistorikk || '',
-    siste_service: b.sisteService || '',
+    navn: enriched.navn,
+    epost: enriched.epost,
+    tlf: enriched.mobil || enriched.tlf || '',
+    regnr: String(enriched.regnr).toUpperCase(),
+    merke: enriched.merke || '',
+    modell: enriched.modell || '',
+    arsmodell: enriched.arsmodell || '',
+    drivstoff: enriched.drivstoff || '',
+    kjoretoy_type: enriched.kjoretoyType || '',
+    kilometerstand: enriched.kilometerstand || '',
+    servicehistorikk: enriched.servicehistorikk || '',
+    siste_service: enriched.sisteService || '',
     utstyr: JSON.stringify(utstyr),
-    sommerdekk: b.sommerdekk || '',
-    vinterdekk: b.vinterdekk || '',
-    forventning: b.forventning || '',
-    kommentar: b.kommentar || '',
+    sommerdekk: enriched.sommerdekk || '',
+    vinterdekk: enriched.vinterdekk || '',
+    forventning: enriched.forventning || '',
+    kommentar: enriched.kommentar || '',
     bilder: JSON.stringify(savedFiles),
-    kunde_id: null
+    kunde_id: null,
+    ...vehicle
   });
 }
 
@@ -1050,6 +1094,7 @@ app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), asyn
     try { utstyr = JSON.parse(utstyr); } catch { utstyr = utstyr ? [utstyr] : []; }
   }
   if (!Array.isArray(utstyr)) utstyr = [];
+  b.utstyr = utstyr;
 
   let bilderMeta = b.bilder;
   if (typeof bilderMeta === 'string') {
@@ -1066,45 +1111,7 @@ app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), asyn
     savedFiles.push(...base64Files);
   }
 
-  const info = await prepare(`
-    INSERT INTO innbytte (
-      navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
-      hjuldrift, effekt_hk, siste_eu_kontroll, neste_eu_kontroll, kilometerstand,
-      servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
-      kommentar, finn_kode, bilder, kunde_id
-    ) VALUES (
-      @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
-      @hjuldrift, @effekt_hk, @siste_eu_kontroll, @neste_eu_kontroll, @kilometerstand,
-      @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
-      @kommentar, @finn_kode, @bilder, @kunde_id
-    )
-  `).run({
-    navn: b.navn,
-    epost: b.epost,
-    tlf: b.mobil || b.tlf || '',
-    regnr: String(b.regnr).toUpperCase(),
-    merke: b.merke || '',
-    modell: b.modell || '',
-    arsmodell: b.arsmodell || '',
-    drivstoff: b.drivstoff || '',
-    farge: b.farge || '',
-    kjoretoy_type: b.kjoretoyType || '',
-    hjuldrift: b.hjuldrift || '',
-    effekt_hk: b.effektHk != null ? String(b.effektHk) : '',
-    siste_eu_kontroll: b.sisteEuKontroll || '',
-    neste_eu_kontroll: b.nesteEuKontroll || '',
-    kilometerstand: b.kilometerstand || '',
-    servicehistorikk: b.servicehistorikk || '',
-    siste_service: b.sisteService || '',
-    utstyr: JSON.stringify(utstyr),
-    sommerdekk: b.sommerdekk || '',
-    vinterdekk: b.vinterdekk || '',
-    forventning: b.forventning || '',
-    kommentar: b.kommentar || '',
-    finn_kode: b.finnKode || '',
-    bilder: JSON.stringify(savedFiles),
-    kunde_id: null
-  });
+  const info = await insertInnbytteRow(b, savedFiles);
 
   res.status(201).json({ ok: true, id: info.lastInsertRowid });
 });
@@ -1121,47 +1128,7 @@ app.post('/api/ingest/innbytte/json', requireIngest, async function (req, res) {
     return res.status(400).json({ ok: false, error: 'Registreringsnummer, navn, e-post og mobil er påkrevd.' });
   }
 
-  const utstyr = Array.isArray(b.utstyr) ? b.utstyr : [];
-
-  const info = await prepare(`
-    INSERT INTO innbytte (
-      navn, epost, tlf, regnr, merke, modell, arsmodell, drivstoff, farge, kjoretoy_type,
-      hjuldrift, effekt_hk, siste_eu_kontroll, neste_eu_kontroll, kilometerstand,
-      servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
-      kommentar, finn_kode, bilder, kunde_id
-    ) VALUES (
-      @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
-      @hjuldrift, @effekt_hk, @siste_eu_kontroll, @neste_eu_kontroll, @kilometerstand,
-      @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
-      @kommentar, @finn_kode, @bilder, @kunde_id
-    )
-  `).run({
-    navn: b.navn,
-    epost: b.epost,
-    tlf: b.mobil,
-    regnr: String(b.regnr).toUpperCase(),
-    merke: b.merke || '',
-    modell: b.modell || '',
-    arsmodell: b.arsmodell || '',
-    drivstoff: b.drivstoff || '',
-    farge: b.farge || '',
-    kjoretoy_type: b.kjoretoyType || '',
-    hjuldrift: b.hjuldrift || '',
-    effekt_hk: b.effektHk != null ? String(b.effektHk) : '',
-    siste_eu_kontroll: b.sisteEuKontroll || '',
-    neste_eu_kontroll: b.nesteEuKontroll || '',
-    kilometerstand: b.kilometerstand || '',
-    servicehistorikk: b.servicehistorikk || '',
-    siste_service: b.sisteService || '',
-    utstyr: JSON.stringify(utstyr),
-    sommerdekk: b.sommerdekk || '',
-    vinterdekk: b.vinterdekk || '',
-    forventning: b.forventning || '',
-    kommentar: b.kommentar || '',
-    finn_kode: b.finnKode || '',
-    bilder: JSON.stringify(savedFiles),
-    kunde_id: null
-  });
+  const info = await insertInnbytteRow(b, savedFiles);
 
   res.status(201).json({ ok: true, id: info.lastInsertRowid });
 });

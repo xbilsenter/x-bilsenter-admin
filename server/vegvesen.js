@@ -824,6 +824,16 @@ async function lookupVehicle(regNrInput, apiKey) {
   return result.parsed;
 }
 
+function formatRekkeviddeDisplay(parsed) {
+  if (!parsed) return '';
+  const parts = [];
+  if (parsed.rekkeviddeKmBlandet) parts.push(`${parsed.rekkeviddeKmBlandet} km (WLTP blandet)`);
+  else if (parsed.rekkeviddeKm) parts.push(`${parsed.rekkeviddeKm} km`);
+  else if (parsed.rekkeviddeKmNedc) parts.push(`${parsed.rekkeviddeKmNedc} km (NEDC)`);
+  if (parsed.rekkeviddeKmBy) parts.push(`${parsed.rekkeviddeKmBy} km (WLTP by)`);
+  return parts.join(' · ');
+}
+
 module.exports = {
   lookupVehicle,
   lookupVehicleFull,
@@ -836,5 +846,6 @@ module.exports = {
   sectionsFromParsed,
   toIsoDateFromNorwegian,
   nesteEuKontrollIso,
-  resolveVehicleFromStoredSvvData
+  resolveVehicleFromStoredSvvData,
+  formatRekkeviddeDisplay
 };

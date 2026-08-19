@@ -216,6 +216,7 @@ function initDb() {
   migrateModulOppsett();
   migrateInnkjopskalkyleAutosys();
   migrateInnkjopskalkyleUpdatedBy();
+  migrateIngestVehicleFields();
   migrateBilSchemaExtensions();
   migrateBilSlettinger();
   migrateTimeregistrering();
@@ -308,6 +309,28 @@ function migrateInnkjopskalkyleUpdatedBy() {
   } catch {
     /* column exists */
   }
+}
+
+function migrateIngestVehicleFields() {
+  const columns = [
+    "ALTER TABLE innbytte ADD COLUMN effekt_kw TEXT DEFAULT ''",
+    "ALTER TABLE innbytte ADD COLUMN forstegangsregistrert TEXT DEFAULT ''",
+    "ALTER TABLE innbytte ADD COLUMN antall_motorer TEXT DEFAULT ''",
+    "ALTER TABLE innbytte ADD COLUMN rekkevidde TEXT DEFAULT ''",
+    "ALTER TABLE innbytte ADD COLUMN motorer TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE selg_bil ADD COLUMN effekt_kw TEXT DEFAULT ''",
+    "ALTER TABLE selg_bil ADD COLUMN forstegangsregistrert TEXT DEFAULT ''",
+    "ALTER TABLE selg_bil ADD COLUMN antall_motorer TEXT DEFAULT ''",
+    "ALTER TABLE selg_bil ADD COLUMN rekkevidde TEXT DEFAULT ''",
+    "ALTER TABLE selg_bil ADD COLUMN motorer TEXT NOT NULL DEFAULT '[]'"
+  ];
+  columns.forEach(function (sql) {
+    try {
+      db.exec(sql);
+    } catch {
+      /* column exists */
+    }
+  });
 }
 
 function migrateBilSchemaExtensions() {
@@ -1221,8 +1244,17 @@ function mapInnbytte(row) {
     sommerdekk: row.sommerdekk || '',
     vinterdekk: row.vinterdekk || '',
     drivstoff: row.drivstoff || '',
-    farge: row.farge || '',
+    farge: formatSvvFargeNavn(row.farge) || row.farge || '',
     kjoretoyType: row.kjoretoy_type || '',
+    hjuldrift: row.hjuldrift || '',
+    effektHk: row.effekt_hk || '',
+    effektKw: row.effekt_kw || '',
+    sisteEuKontroll: row.siste_eu_kontroll || '',
+    nesteEuKontroll: row.neste_eu_kontroll || '',
+    forstegangsregistrert: row.forstegangsregistrert || '',
+    antallMotorer: row.antall_motorer || '',
+    rekkevidde: row.rekkevidde || '',
+    motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
     onsketBil: row.finn_kode,
@@ -1255,12 +1287,17 @@ function mapSelgBil(row) {
     sommerdekk: row.sommerdekk || '',
     vinterdekk: row.vinterdekk || '',
     drivstoff: row.drivstoff || '',
-    farge: row.farge || '',
+    farge: formatSvvFargeNavn(row.farge) || row.farge || '',
     kjoretoyType: row.kjoretoy_type || '',
     hjuldrift: row.hjuldrift || '',
     effektHk: row.effekt_hk || '',
+    effektKw: row.effekt_kw || '',
     sisteEuKontroll: row.siste_eu_kontroll || '',
     nesteEuKontroll: row.neste_eu_kontroll || '',
+    forstegangsregistrert: row.forstegangsregistrert || '',
+    antallMotorer: row.antall_motorer || '',
+    rekkevidde: row.rekkevidde || '',
+    motorer: parseJson(row.motorer, []),
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
     status: row.status,

@@ -7378,6 +7378,53 @@ function InfoGrid({ items }) {
   );
 }
 
+function formatIngestMotoreffekt(row) {
+  const motorer = Array.isArray(row?.motorer) ? row.motorer.filter(Boolean) : [];
+  if (motorer.length > 1) {
+    return motorer.map(function (m) {
+      const eff = m.effektHk ? `${m.effektHk} hk` : (m.effektKw ? `${m.effektKw} kW` : '—');
+      return `Motor ${m.nr || ''}: ${eff}`.replace('Motor :', 'Motor');
+    }).join(' · ');
+  }
+  if (motorer.length === 1) {
+    const m = motorer[0];
+    if (m.effektHk) return `${m.effektHk} hk${m.effektKw ? ` (${m.effektKw} kW)` : ''}`;
+    if (m.effektKw) return `${m.effektKw} kW`;
+  }
+  if (row?.effektHk) return `${row.effektHk} hk${row.effektKw ? ` (${row.effektKw} kW)` : ''}`;
+  if (row?.effektKw) return `${row.effektKw} kW`;
+  return '';
+}
+
+function buildIngestKundensBilItems(row) {
+  const effekt = formatIngestMotoreffekt(row);
+  const antallMotorer = Number(row?.antallMotorer);
+  const items = [
+    ['Registreringsnr.', row.reg],
+    ['Merke / modell', [row.merke, row.modell, row.aar].filter(Boolean).join(' ')],
+    ['Kilometerstand', row.km ? `${fmtKm(row.km)} km` : ''],
+    ['Drivstoff', row.drivstoff],
+    ['Farge', formatSvvFargeNavn(row.farge)],
+    ['Førstegangsregistrert', row.forstegangsregistrert],
+    ['Neste EU-kontroll', row.nesteEuKontroll ? formatEuKontrollVisning(row.nesteEuKontroll) : ''],
+    ['Effekt', effekt],
+  ];
+  if (antallMotorer > 1) {
+    items.push(['Antall motorer', String(antallMotorer)]);
+  }
+  if (row.rekkevidde) {
+    items.push(['Rekkevidde', row.rekkevidde]);
+  }
+  items.push(
+    ['Kjøretøytype', row.kjoretoyType],
+    ['Servicehistorikk', row.servicehistorikk || row.tilstand],
+    ['Siste service', row.sisteService],
+    ['Sommerdekk', row.sommerdekk],
+    ['Vinterdekk', row.vinterdekk]
+  );
+  return items;
+}
+
 function ModalTabs({ tabs, active, onChange }) {
   return (
     <div className="modal-tabs" role="tablist" aria-label="Visning">
@@ -7807,18 +7854,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
             <div className="inb-modal__grid">
               <section className="inb-modal__panel">
                 <div className="modal-sec">Kundens bil</div>
-                <InfoGrid items={[
-                  ['Registreringsnr.', inn.reg],
-                  ['Merke / modell', [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ')],
-                  ['Kilometerstand', inn.km ? `${fmtKm(inn.km)} km` : ''],
-                  ['Drivstoff', inn.drivstoff],
-                  ['Farge', inn.farge],
-                  ['Kjøretøytype', inn.kjoretoyType],
-                  ['Servicehistorikk', inn.servicehistorikk || inn.tilstand],
-                  ['Siste service', inn.sisteService],
-                  ['Sommerdekk', inn.sommerdekk],
-                  ['Vinterdekk', inn.vinterdekk]
-                ]} />
+                <InfoGrid items={buildIngestKundensBilItems(inn)} />
                 {utstyr.length ? (
                   <div className="gap" style={{ marginTop: 12 }}>
                     <div className="fl">Utstyr</div>
@@ -8167,18 +8203,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
             <div className="inb-modal__grid">
               <section className="inb-modal__panel">
                 <div className="modal-sec">Kundens bil</div>
-                <InfoGrid items={[
-                  ['Registreringsnr.', inn.reg],
-                  ['Merke / modell', [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ')],
-                  ['Kilometerstand', inn.km ? `${fmtKm(inn.km)} km` : ''],
-                  ['Drivstoff', inn.drivstoff],
-                  ['Farge', inn.farge],
-                  ['Kjøretøytype', inn.kjoretoyType],
-                  ['Servicehistorikk', inn.servicehistorikk || inn.tilstand],
-                  ['Siste service', inn.sisteService],
-                  ['Sommerdekk', inn.sommerdekk],
-                  ['Vinterdekk', inn.vinterdekk]
-                ]} />
+                <InfoGrid items={buildIngestKundensBilItems(inn)} />
                 {utstyr.length ? (
                   <div className="gap" style={{ marginTop: 12 }}>
                     <div className="fl">Utstyr</div>
