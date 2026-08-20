@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useIsMobile from './useIsMobile.js';
 import Login from './components/Login.jsx';
 import InnkjopskalkyleView from './components/InnkjopskalkyleView.jsx';
+import OkonomiView from './components/OkonomiView.jsx';
 import TimeregistreringView from './components/TimeregistreringView.jsx';
 import ChassisScanPanel from './components/ChassisScanPanel.jsx';
 import {
@@ -38,8 +39,9 @@ import {
   buildModulTabs, normalizeModulOppsett, DEFAULT_MODUL_OPPSATT, MODUL_ICONS, getDefaultTabForUser,
   buildNyeHenvendelserItems,
   sortItemsNyestFirst,
-  ansvarligSelectOptions, normalizeBilOkonomi, mergeBilOkonomi, calcBilOkonomi,
+  ansvarligSelectOptions,   normalizeBilOkonomi, mergeBilOkonomi, calcBilOkonomi,
   okonomiBelopDisplay, monetaryInputDisplay, okonomiBelopValue,
+  formatProfittUke, parseProfittUke, getCurrentProfittUke, getIsoWeeksInYear, formatProfittUkeLabel,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
@@ -1359,6 +1361,9 @@ export default function App() {
               visTost={visTost}
               currentUser={user}
             />
+          )}
+          {tab === 'okonomi' && (
+            <OkonomiView biler={biler} setModal={setModal} />
           )}
           {tab === 'oppgaver' && (
             <OppgaverView biler={biler} updateBil={updateBil} visTost={visTost} />
@@ -4097,8 +4102,21 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
     bil.salg,
     okonomi
   );
+  const parsedUke = parseProfittUke(okonomi.profittUke);
+  const ukeYear = parsedUke?.year || getCurrentProfittUke()?.slice(0, 4) || String(new Date().getFullYear());
+  const ukeNum = parsedUke?.week || '';
+  const maxWeek = getIsoWeeksInYear(Number(ukeYear));
   const [nyKostLabel, setNyKostLabel] = useState('');
   const [nyKostBelop, setNyKostBelop] = useState('');
+
+  const settProfittUke = (year, week) => {
+    if (!year || !week) {
+      oppdaterOkonomi({ profittUke: null }, 'Profittuke fjernet ✓');
+      return;
+    }
+    const next = formatProfittUke(year, week);
+    oppdaterOkonomi({ profittUke: next }, 'Profittuke oppdatert ✓');
+  };
 
   const settOkonomiFelt = (key, value) => {
     oppdaterOkonomi({ [key]: parseNumberInput(value) });
@@ -4169,6 +4187,58 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
             ) : null}
           </div>
         </div>
+      </div>
+
+      <div className="modal-sec">Profittuke</div>
+      <div className="bil-okonomi-uke">
+        <div>
+          <div className="fl">År</div>
+          <select
+            value={String(ukeYear)}
+            onChange={e => settProfittUke(Number(e.target.value), ukeNum || 1)}
+          >
+            {Array.from({ length: 6 }, function (_, i) {
+              const y = new Date().getFullYear() + 1 - i;
+              return <option key={y} value={String(y)}>{y}</option>;
+            })}
+          </select>
+        </div>
+        <div>
+          <div className="fl">Uke</div>
+          <select
+            value={ukeNum ? String(ukeNum) : ''}
+            onChange={e => settProfittUke(ukeYear, Number(e.target.value))}
+          >
+            <option value="">Velg uke…</option>
+            {Array.from({ length: maxWeek }, function (_, i) {
+              const w = i + 1;
+              return <option key={w} value={String(w)}>Uke {w}</option>;
+            })}
+          </select>
+        </div>
+        <div className="bil-okonomi-uke__actions">
+          <button
+            type="button"
+            className="btn btn-g btn-sm"
+            onClick={function () {
+              const current = getCurrentProfittUke();
+              const parsed = parseProfittUke(current);
+              if (parsed) settProfittUke(parsed.year, parsed.week);
+            }}
+          >
+            Denne uken
+          </button>
+          {okonomi.profittUke ? (
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { settProfittUke(null, null); }}>
+              Fjern
+            </button>
+          ) : null}
+        </div>
+        {okonomi.profittUke ? (
+          <div className="bil-okonomi-uke__label">{formatProfittUkeLabel(okonomi.profittUke)}</div>
+        ) : (
+          <div className="bil-okonomi-uke__label bil-okonomi-uke__label--empty">Ikke satt — telles ikke i ukentlig profitt</div>
+        )}
       </div>
 
       <div className="modal-sec">Faste kostnader</div>

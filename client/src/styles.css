@@ -259,6 +259,27 @@ tr:hover td{background:var(--accl);}
 .bil-okonomi-summary{display:flex;flex-direction:column;gap:10px;background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:14px;}
 .bil-okonomi-summary__item--highlight{padding-top:8px;border-top:1px solid var(--b1);}
 .bil-okonomi-kostnader{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;}
+.bil-okonomi-uke{display:grid;grid-template-columns:100px 120px 1fr;gap:12px;align-items:end;margin-bottom:16px;padding:12px 14px;background:var(--s2);border:1px solid var(--b1);border-radius:10px;}
+.bil-okonomi-uke__actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.bil-okonomi-uke__label{grid-column:1/-1;font-size:12px;color:var(--acc);font-weight:600;}
+.bil-okonomi-uke__label--empty{color:var(--t4);font-weight:500;}
+.okonomi-year-filter{display:flex;flex-direction:column;gap:4px;min-width:120px;}
+.okonomi-summary-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:20px;}
+.okonomi-summary-card{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:14px;}
+.okonomi-summary-card__value{font-size:18px;margin-top:6px;}
+.okonomi-week-table-wrap{overflow:auto;border:1px solid var(--b1);border-radius:10px;background:var(--s2);}
+.okonomi-week-table{margin:0;}
+.okonomi-week-row{cursor:pointer;transition:background .12s;}
+.okonomi-week-row:hover,.okonomi-week-row--open{background:rgba(25,186,96,.06);}
+.okonomi-week-detail-row td{padding:0!important;border-top:none;}
+.okonomi-week-detail{padding:8px 12px 12px;background:var(--s1);border-top:1px solid var(--b1);}
+.okonomi-bil-row{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:10px 12px;margin-bottom:6px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;text-align:left;cursor:pointer;transition:.12s;}
+.okonomi-bil-row:hover{border-color:var(--acc);}
+.okonomi-bil-row strong{display:block;font-size:12px;color:var(--acc);}
+.okonomi-bil-row span{font-size:11px;color:var(--t3);}
+.okonomi-bil-row__stats{display:flex;gap:16px;font-size:11px;color:var(--t2);flex-shrink:0;}
+.okonomi-bil-row--muted{opacity:.85;}
+.okonomi-uten-uke{margin-top:24px;}
 .bil-kostnad-row{display:grid;grid-template-columns:1fr 120px auto;gap:8px;margin-bottom:8px;align-items:center;}
 .bil-kostnad-row--new{margin-top:10px;}
 .tilstandsrapport-seksjon{margin-bottom:16px;}
@@ -270,6 +291,8 @@ tr:hover td{background:var(--accl);}
 @media(max-width:900px){
   .bil-modal__grid,.bil-okonomi-grid,.bil-okonomi-kostnader{grid-template-columns:1fr;}
   .bil-okonomi-summary{order:-1;}
+  .bil-okonomi-uke{grid-template-columns:1fr 1fr;}
+  .okonomi-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr));}
 }
 .modal.sm{width:480px;}
 .modal-title{font-size:18px;font-weight:800;color:var(--t1);margin-bottom:18px;}

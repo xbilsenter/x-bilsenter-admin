@@ -1450,6 +1450,7 @@ const PERMISSION_DEFS = [
   { id: 'selgbil', label: 'Selg bil' },
   { id: 'kalender', label: 'Kalender' },
   { id: 'innkjopskalkyle', label: 'Innkjøpskalkyle' },
+  { id: 'okonomi', label: 'Økonomi' },
   { id: 'oppgaver', label: 'Oppgaver' },
   { id: 'timeregistrering', label: 'Timeregistrering' },
   { id: 'vegvesen', label: 'Vegvesen-oppslag' },
@@ -1461,7 +1462,7 @@ const ALL_PERMISSION_IDS = PERMISSION_DEFS.map(function (p) { return p.id; });
 
 const ROLE_TEMPLATES = {
   'Daglig leder': ALL_PERMISSION_IDS,
-  Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'kalender', 'vegvesen'],
+  Innkjøpssjef: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innbytte', 'selgbil', 'innkjopskalkyle', 'okonomi', 'kalender', 'vegvesen'],
   Selger: ['dashboard', 'biler', 'kunder', 'henvendelser', 'innboks', 'innbytte', 'selgbil', 'kalender', 'vegvesen'],
   Klargjører: ['dashboard', 'biler', 'oppgaver', 'timeregistrering', 'vegvesen'],
   Verksted: ['dashboard', 'biler', 'oppgaver', 'timeregistrering', 'vegvesen'],

@@ -549,6 +549,7 @@ export const TAB_PERMISSIONS = {
   selgbil: 'selgbil',
   kalender: 'kalender',
   innkjopskalkyle: 'innkjopskalkyle',
+  okonomi: 'okonomi',
   oppgaver: 'oppgaver',
   timeregistrering: 'timeregistrering',
   vegvesen: 'vegvesen',
@@ -729,7 +730,8 @@ export const DEFAULT_BIL_OKONOMI = {
   aukGebyr: null,
   garantikost: null,
   omregAvgift: null,
-  kostnader: []
+  kostnader: [],
+  profittUke: null
 };
 
 export function okonomiBelopValue(value) {
@@ -783,6 +785,59 @@ export function mergeBilOkonomi(prev, patch) {
   return next;
 }
 
+export function getIsoWeekInfo(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const isoYear = utc.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+  return { year: isoYear, week };
+}
+
+export function formatProfittUke(year, week) {
+  const y = Number(year);
+  const w = Number(week);
+  if (!Number.isFinite(y) || !Number.isFinite(w) || w < 1 || w > 53) return null;
+  return `${y}-W${String(w).padStart(2, '0')}`;
+}
+
+export function parseProfittUke(value) {
+  const m = String(value || '').trim().match(/^(\d{4})-W(\d{1,2})$/i);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(week) || week < 1 || week > 53) return null;
+  return { year, week };
+}
+
+export function normalizeProfittUke(value) {
+  const parsed = parseProfittUke(value);
+  if (!parsed) return null;
+  return formatProfittUke(parsed.year, parsed.week);
+}
+
+export function getCurrentProfittUke(date) {
+  const info = getIsoWeekInfo(date || new Date());
+  return info ? formatProfittUke(info.year, info.week) : null;
+}
+
+export function formatProfittUkeLabel(value) {
+  const parsed = parseProfittUke(value);
+  if (!parsed) return '—';
+  return `Uke ${parsed.week}, ${parsed.year}`;
+}
+
+export function getIsoWeeksInYear(year) {
+  const y = Number(year);
+  if (!Number.isFinite(y)) return 52;
+  const dec28 = new Date(Date.UTC(y, 11, 28));
+  const info = getIsoWeekInfo(dec28);
+  return info && info.year === y ? info.week : 52;
+}
+
 export function normalizeBilOkonomi(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
   return {
@@ -790,7 +845,8 @@ export function normalizeBilOkonomi(raw) {
     aukGebyr: okonomiBelopForSave(o.aukGebyr),
     garantikost: okonomiBelopForSave(o.garantikost),
     omregAvgift: okonomiBelopForSave(o.omregAvgift),
-    kostnader: normalizeBilOkonomiKostnader(o.kostnader)
+    kostnader: normalizeBilOkonomiKostnader(o.kostnader),
+    profittUke: normalizeProfittUke(o.profittUke)
   };
 }
 
@@ -1271,6 +1327,55 @@ export function calcBilOkonomi(innkjop, salg, okonomi) {
   };
 }
 
+export function aggregateUkentligProfitt(biler, options) {
+  const yearFilter = options?.year != null && options.year !== '' ? Number(options.year) : null;
+  const byWeek = {};
+  const utenUke = [];
+
+  (Array.isArray(biler) ? biler : []).forEach(function (bil) {
+    const okonomi = normalizeBilOkonomi(bil.okonomi);
+    const stats = calcBilOkonomi(bil.innkjop, bil.salg, okonomi);
+    const entry = { bil, stats, profittUke: okonomi.profittUke };
+    const harOkonomi = okonomiBelopValue(bil.innkjop) > 0
+      || okonomiBelopValue(bil.salg) > 0
+      || stats.totaltKostnader > 0;
+
+    if (!okonomi.profittUke) {
+      if (harOkonomi) utenUke.push(entry);
+      return;
+    }
+
+    const parsed = parseProfittUke(okonomi.profittUke);
+    if (!parsed) return;
+    if (yearFilter != null && Number.isFinite(yearFilter) && parsed.year !== yearFilter) return;
+
+    if (!byWeek[okonomi.profittUke]) {
+      byWeek[okonomi.profittUke] = {
+        profittUke: okonomi.profittUke,
+        year: parsed.year,
+        week: parsed.week,
+        biler: [],
+        bruttoMargin: 0,
+        nettoMargin: 0,
+        totaltKostnader: 0
+      };
+    }
+
+    const group = byWeek[okonomi.profittUke];
+    group.biler.push(entry);
+    group.bruttoMargin += stats.bruttoMargin;
+    group.nettoMargin += stats.nettoMargin;
+    group.totaltKostnader += stats.totaltKostnader;
+  });
+
+  const weeks = Object.values(byWeek).sort(function (a, b) {
+    if (a.year !== b.year) return b.year - a.year;
+    return b.week - a.week;
+  });
+
+  return { weeks, utenUke };
+}
+
 export function canDeleteHenvKommentar(comment, user) {
   if (!user || !comment) return false;
   if (user.isAdmin) return true;
@@ -1459,6 +1564,7 @@ export const MODUL_ICONS = {
   selgbil: '💰',
   kalender: '📅',
   innkjopskalkyle: '🧮',
+  okonomi: '📊',
   oppgaver: '☑',
   timeregistrering: '⏱',
   vegvesen: '🔍',
@@ -1475,6 +1581,7 @@ export const DEFAULT_MODUL_OPPSATT = [
   { id: 'selgbil', label: 'Selg bil' },
   { id: 'kalender', label: 'Kalender' },
   { id: 'innkjopskalkyle', label: 'Innkjøpskalkyle' },
+  { id: 'okonomi', label: 'Økonomi' },
   { id: 'oppgaver', label: 'Oppgaver' },
   { id: 'timeregistrering', label: 'Timeregistrering' },
   { id: 'vegvesen', label: 'Vegvesen-oppslag' },
