@@ -264,9 +264,11 @@ tr:hover td{background:var(--accl);}
 .bil-okonomi-uke__label{grid-column:1/-1;font-size:12px;color:var(--acc);font-weight:600;}
 .bil-okonomi-uke__label--empty{color:var(--t4);font-weight:500;}
 .okonomi-year-filter{display:flex;flex-direction:column;gap:4px;min-width:120px;}
-.okonomi-summary-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:20px;}
+.okonomi-summary-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px;}
 .okonomi-summary-card{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:14px;}
+.okonomi-summary-card--highlight{border-color:rgba(25,186,96,.35);background:rgba(25,186,96,.04);}
 .okonomi-summary-card__value{font-size:18px;margin-top:6px;}
+.okonomi-summary-card__value--meta{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--t2);font-weight:600;}
 .okonomi-week-table-wrap{overflow:auto;border:1px solid var(--b1);border-radius:10px;background:var(--s2);}
 .okonomi-week-table{margin:0;}
 .okonomi-week-row{cursor:pointer;transition:background .12s;}
@@ -279,7 +281,14 @@ tr:hover td{background:var(--accl);}
 .okonomi-bil-row span{font-size:11px;color:var(--t3);}
 .okonomi-bil-row__stats{display:flex;gap:16px;font-size:11px;color:var(--t2);flex-shrink:0;}
 .okonomi-bil-row--muted{opacity:.85;}
-.okonomi-uten-uke{margin-top:24px;}
+.okonomi-uten-uke{margin-top:20px;}
+.okonomi-uten-uke__toggle{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;background:var(--s2);border:1px solid var(--b1);border-radius:10px;font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;text-align:left;transition:border-color .12s,background .12s;}
+.okonomi-uten-uke__toggle:hover{border-color:var(--b2);background:var(--s1);}
+.okonomi-uten-uke__toggle--open{border-color:var(--b2);border-bottom-left-radius:0;border-bottom-right-radius:0;}
+.okonomi-uten-uke__toggle-meta{margin-left:auto;font-size:11px;font-weight:500;color:var(--t4);}
+.okonomi-uten-uke__chevron{font-size:10px;color:var(--t4);transition:transform .15s;}
+.okonomi-uten-uke__toggle--open .okonomi-uten-uke__chevron{transform:rotate(180deg);}
+.okonomi-uten-uke__panel{border:1px solid var(--b1);border-top:none;border-radius:0 0 10px 10px;background:var(--s1);}
 .bil-kostnad-row{display:grid;grid-template-columns:1fr 120px auto;gap:8px;margin-bottom:8px;align-items:center;}
 .bil-kostnad-row--new{margin-top:10px;}
 .tilstandsrapport-seksjon{margin-bottom:16px;}

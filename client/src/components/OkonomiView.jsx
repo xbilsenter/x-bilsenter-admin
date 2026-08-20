@@ -27,6 +27,7 @@ export default function OkonomiView({ biler, setModal }) {
   const currentYear = getIsoWeekInfo(new Date())?.year || new Date().getFullYear();
   const [year, setYear] = useState(String(currentYear));
   const [expandedWeek, setExpandedWeek] = useState(null);
+  const [utenUkeOpen, setUtenUkeOpen] = useState(false);
 
   const years = useMemo(function () {
     const set = new Set([currentYear]);
@@ -47,12 +48,17 @@ export default function OkonomiView({ biler, setModal }) {
   const arTotal = useMemo(function () {
     return weeks.reduce(function (acc, row) {
       acc.nettoMargin += row.nettoMargin;
-      acc.bruttoMargin += row.bruttoMargin;
       acc.totaltKostnader += row.totaltKostnader;
       acc.antall += row.biler.length;
       return acc;
-    }, { nettoMargin: 0, bruttoMargin: 0, totaltKostnader: 0, antall: 0 });
+    }, { nettoMargin: 0, totaltKostnader: 0, antall: 0 });
   }, [weeks]);
+
+  const utenUkeNetto = useMemo(function () {
+    return utenUke.reduce(function (sum, entry) {
+      return sum + (entry.stats?.nettoMargin || 0);
+    }, 0);
+  }, [utenUke]);
 
   const openBil = function (bil) {
     if (setModal) setModal({ t: 'visBil', d: bil });
@@ -84,13 +90,9 @@ export default function OkonomiView({ biler, setModal }) {
       </div>
 
       <div className="okonomi-summary-cards">
-        <div className="okonomi-summary-card">
+        <div className="okonomi-summary-card okonomi-summary-card--highlight">
           <div className="fl">Netto profitt</div>
           <div className="okonomi-summary-card__value">{nok(arTotal.nettoMargin)}</div>
-        </div>
-        <div className="okonomi-summary-card">
-          <div className="fl">Brutto margin</div>
-          <div className="okonomi-summary-card__value">{nok(arTotal.bruttoMargin)}</div>
         </div>
         <div className="okonomi-summary-card">
           <div className="fl">Totale kostnader</div>
@@ -99,9 +101,10 @@ export default function OkonomiView({ biler, setModal }) {
           </div>
         </div>
         <div className="okonomi-summary-card">
-          <div className="fl">Denne uken</div>
-          <div className="okonomi-summary-card__value" style={{ fontSize: 14, color: 'var(--t2)' }}>
-            {formatProfittUkeLabel(getCurrentProfittUke())}
+          <div className="fl">Biler / denne uken</div>
+          <div className="okonomi-summary-card__value okonomi-summary-card__value--meta">
+            <span>{arTotal.antall} biler</span>
+            <span>{formatProfittUkeLabel(getCurrentProfittUke())}</span>
           </div>
         </div>
       </div>
@@ -120,7 +123,6 @@ export default function OkonomiView({ biler, setModal }) {
               <tr>
                 <th>Uke</th>
                 <th>Biler</th>
-                <th>Brutto</th>
                 <th>Kostnader</th>
                 <th>Netto profitt</th>
               </tr>
@@ -136,13 +138,12 @@ export default function OkonomiView({ biler, setModal }) {
                     >
                       <td><strong>{formatProfittUkeLabel(row.profittUke)}</strong></td>
                       <td>{row.biler.length}</td>
-                      <td>{marginCell(row.bruttoMargin)}</td>
                       <td>{`kr ${row.totaltKostnader.toLocaleString('nb-NO')}`}</td>
                       <td>{marginCell(row.nettoMargin)}</td>
                     </tr>
                     {open ? (
                       <tr className="okonomi-week-detail-row">
-                        <td colSpan={5}>
+                        <td colSpan={4}>
                           <div className="okonomi-week-detail">
                             {row.biler.map(function (entry) {
                               const bil = entry.bil;
@@ -182,29 +183,42 @@ export default function OkonomiView({ biler, setModal }) {
 
       {utenUke.length > 0 ? (
         <div className="okonomi-uten-uke">
-          <div className="modal-sec">Uten profittuke ({utenUke.length})</div>
-          <div className="okonomi-week-detail">
-            {utenUke.map(function (entry) {
-              const bil = entry.bil;
-              const stats = entry.stats;
-              return (
-                <button
-                  key={bil.id}
-                  type="button"
-                  className="okonomi-bil-row okonomi-bil-row--muted"
-                  onClick={function () { openBil(bil); }}
-                >
-                  <div>
-                    <strong>{bil.reg || '—'}</strong>
-                    <span>{bil.merke} {bil.modell}</span>
-                  </div>
-                  <div className="okonomi-bil-row__stats">
-                    <span>Netto {marginCell(stats.nettoMargin)}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            className={'okonomi-uten-uke__toggle' + (utenUkeOpen ? ' okonomi-uten-uke__toggle--open' : '')}
+            aria-expanded={utenUkeOpen}
+            onClick={function () { setUtenUkeOpen(function (v) { return !v; }); }}
+          >
+            <span>Uten profittuke ({utenUke.length})</span>
+            <span className="okonomi-uten-uke__toggle-meta">
+              Netto {`kr ${utenUkeNetto.toLocaleString('nb-NO')}`}
+            </span>
+            <span className="okonomi-uten-uke__chevron" aria-hidden="true">▾</span>
+          </button>
+          {utenUkeOpen ? (
+            <div className="okonomi-week-detail okonomi-uten-uke__panel">
+              {utenUke.map(function (entry) {
+                const bil = entry.bil;
+                const stats = entry.stats;
+                return (
+                  <button
+                    key={bil.id}
+                    type="button"
+                    className="okonomi-bil-row okonomi-bil-row--muted"
+                    onClick={function () { openBil(bil); }}
+                  >
+                    <div>
+                      <strong>{bil.reg || '—'}</strong>
+                      <span>{bil.merke} {bil.modell}</span>
+                    </div>
+                    <div className="okonomi-bil-row__stats">
+                      <span>Netto {marginCell(stats.nettoMargin)}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </>
