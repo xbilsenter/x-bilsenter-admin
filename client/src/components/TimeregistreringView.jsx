@@ -4,29 +4,15 @@ import {
   deleteTimeregistrering,
   getBrukere,
   getTimeregistrering,
-  getTimeregistreringAktiv,
   getTimeregistreringOppsummering,
   patchTimeregistrering,
-  postTimeregistrering,
-  sluttPauseTimereg,
-  startPauseTimereg,
-  stempleInnTimereg,
-  stempleUtTimereg
+  postTimeregistrering
 } from '../api.js';
 
 const NORSK_TIDSSONE = 'Europe/Oslo';
 
 function idag() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: NORSK_TIDSSONE });
-}
-
-function klokke() {
-  return new Date().toLocaleTimeString('sv-SE', {
-    timeZone: NORSK_TIDSSONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
 }
 
 function weekStartIso(dateIso) {
@@ -274,10 +260,8 @@ function TimeregEntryActions({ item, busy, kanSeAlle, kanGodkjenne, kanRedigere,
 
 export default function TimeregistreringView({ currentUser, visTost }) {
   const isMobile = useIsMobile();
-  const [now, setNow] = useState(function () { return klokke(); });
   const [ukeFra, setUkeFra] = useState(function () { return weekStartIso(idag()); });
   const [items, setItems] = useState([]);
-  const [aktiv, setAktiv] = useState(null);
   const [oppsummering, setOppsummering] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -291,11 +275,6 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const ukeTil = useMemo(function () { return addDaysIso(ukeFra, 6); }, [ukeFra]);
   const targetUserId = kanSeAlle && valgtUserId ? valgtUserId : currentUser?.id;
   const sheetOpen = !!(manual || editItem);
-
-  useEffect(function () {
-    const t = setInterval(function () { setNow(klokke()); }, 1000);
-    return function () { clearInterval(t); };
-  }, []);
 
   useEffect(function () {
     if (!sheetOpen) return;
@@ -316,13 +295,11 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     try {
       const params = { fra: ukeFra, til: ukeTil };
       if (targetUserId) params.userId = targetUserId;
-      const [listRes, aktivRes, sumRes] = await Promise.all([
+      const [listRes, sumRes] = await Promise.all([
         getTimeregistrering(params),
-        getTimeregistreringAktiv(targetUserId),
         getTimeregistreringOppsummering(params)
       ]);
       setItems(listRes.items || []);
-      setAktiv(aktivRes.item || null);
       setOppsummering(sumRes.oppsummering || null);
     } catch (err) {
       visTost(err.message || 'Kunne ikke laste timeregistrering ✗');
@@ -333,32 +310,10 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
   useEffect(function () { reload(); }, [reload]);
 
-  useEffect(function () {
-    if (!aktiv) return;
-    const t = setInterval(function () { reload(); }, 30000);
-    return function () { clearInterval(t); };
-  }, [aktiv, reload]);
-
-  const egenAktiv = aktiv && Number(aktiv.userId) === Number(currentUser?.id);
-  const visStempling = !kanSeAlle || !valgtUserId || Number(valgtUserId) === Number(currentUser?.id);
-
   const idagPoster = useMemo(function () {
     const today = idag();
     return items.filter(function (item) { return item.dato === today; });
   }, [items]);
-
-  const runAction = async function (fn, okMsg) {
-    setBusy(true);
-    try {
-      await fn();
-      visTost(okMsg);
-      await reload();
-    } catch (err) {
-      visTost(err.message || 'Handling feilet ✗');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const lagreManual = async function () {
     if (!manual) return;
@@ -386,15 +341,13 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     if (!editItem) return;
     setBusy(true);
     try {
-      const body = editItem.kunPauser
-        ? { pauser: editItem.pauser }
-        : {
-          dato: editItem.dato,
-          startTid: editItem.startTid,
-          sluttTid: editItem.sluttTid,
-          notat: editItem.notat,
-          pauser: editItem.pauser
-        };
+      const body = {
+        dato: editItem.dato,
+        startTid: editItem.startTid,
+        sluttTid: editItem.sluttTid,
+        notat: editItem.notat,
+        pauser: editItem.pauser
+      };
       await patchTimeregistrering(editItem.id, body);
       visTost('Registrering oppdatert ✓');
       setEditItem(null);
@@ -436,8 +389,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const openEdit = function (item) {
     setEditItem({
       ...item,
-      pauser: normalizePauserList(item.pauser),
-      kunPauser: item.status === 'aktiv' || item.status === 'pause'
+      pauser: normalizePauserList(item.pauser)
     });
   };
 
@@ -457,7 +409,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         <div>
           <div className="ph-title">Timeregistrering</div>
           <div className="ph-sub">
-            Stemple inn og ut, registrer pauser og få ukeoversikt
+            Registrer arbeidstid manuelt og få ukeoversikt
             {currentUser?.name ? ` · ${currentUser.name}` : ''}
           </div>
         </div>
@@ -477,76 +429,12 @@ export default function TimeregistreringView({ currentUser, visTost }) {
             </select>
           )}
           <button type="button" className="btn btn-p" onClick={function () { setManual({ ...EMPTY_MANUAL }); }}>
-            + Manuell registrering
+            + Registrer timer
           </button>
         </div>
       </div>
 
       <div className={`timereg-top ${isMobile ? 'timereg-top--mobile' : ''}`}>
-        {visStempling && (
-          <div className="timereg-clock-card card">
-            <div className="timereg-clock-ring">
-              <div className="timereg-clock">{now.slice(0, 5)}</div>
-              <div className="timereg-clock-sub">{fmtDato(idag())}</div>
-            </div>
-
-            {egenAktiv ? (
-              <>
-                <div className={`timereg-status-pill ${statusClass(aktiv.status, kanGodkjenne)}`}>
-                  {statusLabel(aktiv.status, kanGodkjenne)}
-                  {aktiv.stats?.display ? ` · ${aktiv.stats.display}` : ''}
-                </div>
-                <div className="timereg-meta">
-                  Inn {aktiv.startTid}
-                  {aktiv.stats?.pauseDisplay && aktiv.stats.pauseMin > 0 ? ` · Pause ${aktiv.stats.pauseDisplay}` : ''}
-                </div>
-                <div className="timereg-actions">
-                  {aktiv.status === 'aktiv' && (
-                    <>
-                      <button type="button" className="btn btn-g timereg-action-btn" disabled={busy} onClick={function () {
-                        runAction(startPauseTimereg, 'Pause startet ✓');
-                      }}>
-                        Start pause
-                      </button>
-                      <button type="button" className="btn btn-p timereg-action-btn" disabled={busy} onClick={function () {
-                        runAction(stempleUtTimereg, 'Stemplet ut ✓');
-                      }}>
-                        Stemple ut
-                      </button>
-                    </>
-                  )}
-                  {aktiv.status === 'pause' && (
-                    <>
-                      <button type="button" className="btn btn-p timereg-action-btn" disabled={busy} onClick={function () {
-                        runAction(sluttPauseTimereg, 'Pause avsluttet ✓');
-                      }}>
-                        Avslutt pause
-                      </button>
-                      <button type="button" className="btn btn-g timereg-action-btn" disabled={busy} onClick={function () {
-                        runAction(stempleUtTimereg, 'Stemplet ut ✓');
-                      }}>
-                        Stemple ut
-                      </button>
-                    </>
-                  )}
-                </div>
-                <button type="button" className="btn btn-g btn-sm timereg-link-btn" disabled={busy} onClick={function () { openEdit(aktiv); }}>
-                  Rediger pauser
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="timereg-status-pill timereg-status--idle">Ikke stemplet inn</div>
-                <button type="button" className="btn btn-p timereg-stemple-inn" disabled={busy} onClick={function () {
-                  runAction(stempleInnTimereg, 'Stemplet inn ✓');
-                }}>
-                  Stemple inn
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
         <div className="timereg-stats-grid">
           <div className="timereg-stat card">
             <div className="timereg-stat-label">Denne uken</div>
@@ -693,8 +581,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
       {manual && (
         <TimeregSheet
-          title="Manuell registrering"
-          subtitle="Legg inn arbeidstid og pauser for en dag du ikke stemplet digitalt."
+          title="Registrer timer"
+          subtitle="Legg inn dato, arbeidstid og eventuelle pauser."
           busy={busy}
           onClose={function () { setManual(null); }}
           onSave={lagreManual}
@@ -739,54 +627,47 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
       {editItem && (
         <TimeregSheet
-          title={editItem.kunPauser ? 'Rediger pauser' : 'Rediger registrering'}
-          subtitle={editItem.kunPauser
-            ? 'Juster pauser for pågående arbeidsøkt. Inn- og utstempling gjøres via klokken.'
-            : `${fmtDato(editItem.dato)} · ${editItem.startTid || '—'}–${editItem.sluttTid || '—'}`}
+          title="Rediger registrering"
+          subtitle={`${fmtDato(editItem.dato)} · ${editItem.startTid || '—'}–${editItem.sluttTid || '—'}`}
           busy={busy}
           onClose={function () { setEditItem(null); }}
           onSave={lagreEdit}
           saveLabel="Lagre endringer"
         >
-          {!editItem.kunPauser && (
-            <div className="timereg-form-section">
-              <div className="modal-sec">Arbeidstid</div>
-              <div className="form-row3 timereg-form-grid">
-                <TimeregField label="Dato">
-                  <input type="date" value={editItem.dato} onChange={function (e) { setEditItem({ ...editItem, dato: e.target.value }); }} />
-                </TimeregField>
-                <TimeregField label="Start">
-                  <input type="time" value={editItem.startTid} onChange={function (e) { setEditItem({ ...editItem, startTid: e.target.value }); }} />
-                </TimeregField>
-                <TimeregField label="Slutt">
-                  <input type="time" value={editItem.sluttTid || ''} onChange={function (e) { setEditItem({ ...editItem, sluttTid: e.target.value }); }} />
-                </TimeregField>
-              </div>
+          <div className="timereg-form-section">
+            <div className="modal-sec">Arbeidstid</div>
+            <div className="form-row3 timereg-form-grid">
+              <TimeregField label="Dato">
+                <input type="date" value={editItem.dato} onChange={function (e) { setEditItem({ ...editItem, dato: e.target.value }); }} />
+              </TimeregField>
+              <TimeregField label="Start">
+                <input type="time" value={editItem.startTid} onChange={function (e) { setEditItem({ ...editItem, startTid: e.target.value }); }} />
+              </TimeregField>
+              <TimeregField label="Slutt">
+                <input type="time" value={editItem.sluttTid || ''} onChange={function (e) { setEditItem({ ...editItem, sluttTid: e.target.value }); }} />
+              </TimeregField>
             </div>
-          )}
+          </div>
 
           <div className="timereg-form-section">
             <PauseEditor
               pauser={editItem.pauser}
-              allowOpenEnd={editItem.kunPauser}
               onChange={function (next) { setEditItem({ ...editItem, pauser: next }); }}
             />
           </div>
 
-          {!editItem.kunPauser && (
-            <div className="timereg-form-section">
-              <div className="modal-sec">Notat</div>
-              <TimeregField label="Kommentar" hint="Valgfritt">
-                <textarea
-                  rows={3}
-                  className="timereg-textarea"
-                  value={editItem.notat || ''}
-                  onChange={function (e) { setEditItem({ ...editItem, notat: e.target.value }); }}
-                  placeholder="Tilleggsinfo om arbeidsdagen"
-                />
-              </TimeregField>
-            </div>
-          )}
+          <div className="timereg-form-section">
+            <div className="modal-sec">Notat</div>
+            <TimeregField label="Kommentar" hint="Valgfritt">
+              <textarea
+                rows={3}
+                className="timereg-textarea"
+                value={editItem.notat || ''}
+                onChange={function (e) { setEditItem({ ...editItem, notat: e.target.value }); }}
+                placeholder="Tilleggsinfo om arbeidsdagen"
+              />
+            </TimeregField>
+          </div>
         </TimeregSheet>
       )}
     </div>

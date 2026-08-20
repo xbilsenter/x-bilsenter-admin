@@ -2945,114 +2945,20 @@ app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('ti
   });
 });
 
-app.post('/api/timeregistrering/stemple-in', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
-  const userId = Number(req.user.sub);
-  const user = await getUserById(userId);
-  if (!user) return res.status(401).json({ ok: false, error: 'Bruker ikke funnet.' });
-
-  const aktiv = await prepare(`
-    SELECT id FROM timeregistrering WHERE user_id = ? AND status IN ('aktiv', 'pause') LIMIT 1
-  `).get(userId);
-  if (aktiv) return res.status(400).json({ ok: false, error: 'Du er allerede stemplet inn.' });
-
-  const dato = nowOsloDate();
-  const startTid = nowOsloTime();
-  const info = await prepare(`
-    INSERT INTO timeregistrering (user_id, bruker_navn, dato, status, start_tid, pauser, timelonn)
-    VALUES (@user_id, @bruker_navn, @dato, 'aktiv', @start_tid, '[]', @timelonn)
-  `).run({
-    user_id: userId,
-    bruker_navn: user.name || user.username,
-    dato,
-    start_tid: startTid,
-    timelonn: Math.max(0, Math.round(Number(user.timelonn) || 0))
-  });
-
-  const row = await getTimeregRow(info.lastInsertRowid);
-  res.status(201).json({ ok: true, item: mapTimeregLive(row, req.user) });
+app.post('/api/timeregistrering/stemple-in', requireAuth, requirePermission('timeregistrering'), async function (_req, res) {
+  return res.status(410).json({ ok: false, error: 'Stempling er deaktivert. Bruk manuell registrering.' });
 });
 
-app.post('/api/timeregistrering/stemple-ut', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
-  const userId = Number(req.user.sub);
-  const row = await prepare(`
-    SELECT * FROM timeregistrering WHERE user_id = ? AND status IN ('aktiv', 'pause') ORDER BY id DESC LIMIT 1
-  `).get(userId);
-  if (!row) return res.status(400).json({ ok: false, error: 'Ingen aktiv registrering å stemple ut fra.' });
-
-  const sluttTid = nowOsloTime();
-  let pauser = parsePauser(row.pauser);
-  if (row.status === 'pause') {
-    for (let i = pauser.length - 1; i >= 0; i -= 1) {
-      if (pauser[i].start && !pauser[i].slutt) {
-        pauser[i].slutt = sluttTid;
-        break;
-      }
-    }
-  }
-
-  await prepare(`
-    UPDATE timeregistrering SET
-      status = 'fullfort',
-      slutt_tid = @slutt_tid,
-      pauser = @pauser,
-      updated_at = datetime('now')
-    WHERE id = @id
-  `).run({
-    id: row.id,
-    slutt_tid: sluttTid,
-    pauser: JSON.stringify(pauser)
-  });
-
-  const fresh = await getTimeregRow(row.id);
-  res.json({ ok: true, item: mapTimeregLive(fresh, req.user) });
+app.post('/api/timeregistrering/stemple-ut', requireAuth, requirePermission('timeregistrering'), async function (_req, res) {
+  return res.status(410).json({ ok: false, error: 'Stempling er deaktivert. Bruk manuell registrering.' });
 });
 
-app.post('/api/timeregistrering/pause/start', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
-  const userId = Number(req.user.sub);
-  const row = await prepare(`
-    SELECT * FROM timeregistrering WHERE user_id = ? AND status = 'aktiv' ORDER BY id DESC LIMIT 1
-  `).get(userId);
-  if (!row) return res.status(400).json({ ok: false, error: 'Du må være stemplet inn for å starte pause.' });
-
-  const pauser = parsePauser(row.pauser);
-  pauser.push({
-    id: `p${Date.now()}`,
-    start: nowOsloTime(),
-    slutt: '',
-    type: req.body?.type || 'pause',
-    notat: String(req.body?.notat || '')
-  });
-
-  await prepare(`
-    UPDATE timeregistrering SET status = 'pause', pauser = @pauser, updated_at = datetime('now') WHERE id = @id
-  `).run({ id: row.id, pauser: JSON.stringify(pauser) });
-
-  const fresh = await getTimeregRow(row.id);
-  res.json({ ok: true, item: mapTimeregLive(fresh, req.user) });
+app.post('/api/timeregistrering/pause/start', requireAuth, requirePermission('timeregistrering'), async function (_req, res) {
+  return res.status(410).json({ ok: false, error: 'Stempling er deaktivert. Registrer pauser manuelt.' });
 });
 
-app.post('/api/timeregistrering/pause/slutt', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
-  const userId = Number(req.user.sub);
-  const row = await prepare(`
-    SELECT * FROM timeregistrering WHERE user_id = ? AND status = 'pause' ORDER BY id DESC LIMIT 1
-  `).get(userId);
-  if (!row) return res.status(400).json({ ok: false, error: 'Ingen aktiv pause å avslutte.' });
-
-  const slutt = nowOsloTime();
-  const pauser = parsePauser(row.pauser);
-  for (let i = pauser.length - 1; i >= 0; i -= 1) {
-    if (pauser[i].start && !pauser[i].slutt) {
-      pauser[i].slutt = slutt;
-      break;
-    }
-  }
-
-  await prepare(`
-    UPDATE timeregistrering SET status = 'aktiv', pauser = @pauser, updated_at = datetime('now') WHERE id = @id
-  `).run({ id: row.id, pauser: JSON.stringify(pauser) });
-
-  const fresh = await getTimeregRow(row.id);
-  res.json({ ok: true, item: mapTimeregLive(fresh, req.user) });
+app.post('/api/timeregistrering/pause/slutt', requireAuth, requirePermission('timeregistrering'), async function (_req, res) {
+  return res.status(410).json({ ok: false, error: 'Stempling er deaktivert. Registrer pauser manuelt.' });
 });
 
 app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -3104,29 +3010,16 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
   const kanGodkjenne = canApproveTimereg(req.user);
   const isOwner = Number(row.user_id) === Number(req.user.sub);
   const isActive = row.status === 'aktiv' || row.status === 'pause';
-  const onlyPauseEdit = body.pauser != null
-    && body.dato == null
-    && body.startTid == null
-    && body.start_tid == null
-    && body.sluttTid == null
-    && body.slutt_tid == null
-    && body.status == null
-    && body.notat == null;
 
-  if (isActive && !isAdmin) {
-    if (!isOwner) {
-      return res.status(403).json({ ok: false, error: 'Ingen tilgang.' });
-    }
-    if (!onlyPauseEdit) {
-      return res.status(400).json({ ok: false, error: 'Kan kun redigere pauser på aktiv registrering. Stemple ut for å endre resten.' });
-    }
+  if (isActive && !isAdmin && !isOwner) {
+    return res.status(403).json({ ok: false, error: 'Ingen tilgang.' });
   }
 
-  const dato = (onlyPauseEdit || (isActive && !isAdmin)) ? row.dato : (body.dato != null ? String(body.dato).slice(0, 10) : row.dato);
-  const startTid = (onlyPauseEdit || (isActive && !isAdmin)) ? row.start_tid : (body.startTid != null ? String(body.startTid).slice(0, 5) : row.start_tid);
-  const sluttTid = (onlyPauseEdit || (isActive && !isAdmin)) ? row.slutt_tid : (body.sluttTid != null ? String(body.sluttTid).slice(0, 5) : row.slutt_tid);
-  const pauser = body.pauser != null ? parsePauser(body.pauser) : parsePauser(row.pauser);
-  const notat = (onlyPauseEdit || (isActive && !isAdmin)) ? row.notat : (body.notat != null ? String(body.notat) : row.notat);
+  const dato = body.dato != null ? String(body.dato).slice(0, 10) : row.dato;
+  const startTid = body.startTid != null ? String(body.startTid).slice(0, 5) : (body.start_tid != null ? String(body.start_tid).slice(0, 5) : row.start_tid);
+  let sluttTid = body.sluttTid != null ? String(body.sluttTid).slice(0, 5) : (body.slutt_tid != null ? String(body.slutt_tid).slice(0, 5) : row.slutt_tid);
+  let pauser = body.pauser != null ? parsePauser(body.pauser) : parsePauser(row.pauser);
+  const notat = body.notat != null ? String(body.notat) : row.notat;
   let status = row.status;
   if (body.status != null) {
     const nextStatus = String(body.status);
@@ -3142,7 +3035,13 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
       status = nextStatus;
     }
   }
-  if (isActive && isOwner && body.pauser != null) {
+  if (isActive && sluttTid) {
+    status = 'fullfort';
+    pauser = pauser.map(function (p) {
+      if (p.start && !p.slutt) return { ...p, slutt: sluttTid };
+      return p;
+    });
+  } else if (isActive && body.pauser != null) {
     const hasOpenPause = pauser.some(function (p) { return p.start && !p.slutt; });
     status = hasOpenPause ? 'pause' : 'aktiv';
   }
