@@ -3286,6 +3286,9 @@ function mergeBilAfterAutosysSave(prevBil, saved) {
   BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
     next[key] = prevBil[key];
   });
+  next.innkjop = prevBil.innkjop;
+  next.salg = prevBil.salg;
+  next.okonomi = mergeBilOkonomi(saved.okonomi, prevBil.okonomi);
   next.svvData = mergeAutosysOverstyrtIntoSvvData(saved.svvData, o);
   return next;
 }
@@ -3658,21 +3661,33 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
         [k]: stored,
         ...(patch.svvData != null ? { svvData: patch.svvData } : {})
       };
+      if (k === 'innkjop' || k === 'salg') {
+        bilSnapshotRef.current = { ...bilSnapshotRef.current, [k]: stored };
+      }
       bilRef.current = next;
       return next;
     });
   };
 
   const oppdaterOkonomi = (patch, msg) => {
-    let forSave;
-    setBil(function (prev) {
-      const local = mergeBilOkonomi(prev.okonomi, patch);
-      forSave = normalizeBilOkonomi(local);
-      const next = { ...prev, okonomi: local };
-      bilRef.current = next;
-      return next;
+    const prev = bilRef.current || bil;
+    const local = mergeBilOkonomi(prev.okonomi, patch);
+    const normalized = normalizeBilOkonomi(local);
+    const next = { ...prev, okonomi: normalized };
+    bilRef.current = next;
+    bilSnapshotRef.current = { ...bilSnapshotRef.current, okonomi: normalized };
+    setBil(next);
+    saveImmediate({ okonomi: normalized }, msg || 'Økonomi oppdatert ✓').then(function (saved) {
+      if (!saved) return;
+      setBil(function (current) {
+        const merged = {
+          ...current,
+          okonomi: normalizeBilOkonomi(saved.okonomi)
+        };
+        bilRef.current = merged;
+        return merged;
+      });
     });
-    saveImmediate({ okonomi: forSave }, msg || 'Økonomi oppdatert ✓');
   };
 
   const oppdaterArsprove = (patch, msg) => {

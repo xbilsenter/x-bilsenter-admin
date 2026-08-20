@@ -2167,7 +2167,7 @@ async function mapBilerForApi(rows, kundeMap) {
 const BIL_LIST_COLUMNS = [
   'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'sort_order', 'pipeline_nummer',
   'ansvarlig', 'frist', 'notater', 'eu_kontroll', 'forsikring', 'finn_kode', 'chassisnr',
-  'drivstoff', 'girkasse', 'utstyr', 'intern_info', 'sjekkliste', 'sjekklister', 'kunde_id',
+  'drivstoff', 'girkasse', 'utstyr', 'intern_info', 'sjekkliste', 'sjekklister', 'okonomi', 'kunde_id',
   'archived', 'archived_at', 'tilstandsrapport'
 ].join(', ');
 
@@ -2183,7 +2183,7 @@ async function mapBilersLiteForApi(rows, kundeMap) {
       logg: [],
       kommentarer: [],
       dokumenter: [],
-      okonomi: {}
+      okonomi: item.okonomi && typeof item.okonomi === 'object' ? item.okonomi : {}
     };
   });
 }

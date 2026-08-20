@@ -741,8 +741,7 @@ export function okonomiBelopValue(value) {
 export function okonomiBelopDisplay(value) {
   if (value === '' || value === null || value === undefined) return '';
   const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return '';
-  return n;
+  return Number.isFinite(n) ? n : '';
 }
 
 export function okonomiBelopForSave(value) {
@@ -1234,6 +1233,11 @@ export function mergeBilDebouncedTextFields(saved, local) {
   BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
     if (local[key] !== undefined) next[key] = local[key];
   });
+  if (local.innkjop !== undefined && local.innkjop !== '') next.innkjop = local.innkjop;
+  if (local.salg !== undefined && local.salg !== '') next.salg = local.salg;
+  if (local.okonomi && typeof local.okonomi === 'object') {
+    next.okonomi = mergeBilOkonomi(saved.okonomi, local.okonomi);
+  }
   return next;
 }
 
