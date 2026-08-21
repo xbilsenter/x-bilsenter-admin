@@ -87,6 +87,13 @@ export function refreshFinnInventory() {
   return request('/drift/finn-refresh', { method: 'POST' });
 }
 
+export function syncFinnBilerStatus(body = {}) {
+  return request('/biler/sync-finn-status', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
 export function getVedlikehold() {
   return request('/vedlikehold');
 }

@@ -65,7 +65,7 @@ import {
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
-  getBiler, getBil, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
+  getBiler, getBil, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll, syncFinnBilerStatus,
   getKalender, postKalender, patchKalender, deleteKalender,
   getInnkjopskalkyle,
   lookupKjoretoy, lookupKjoretoyByUnderstell, getInnstillinger, getLister, patchInnstillinger,
@@ -1036,6 +1036,36 @@ export default function App() {
     }
   };
 
+  const syncFinnBilerTilAnnonsert = async function () {
+    const klarCount = biler.filter(function (b) {
+      return !b.archived && b.status === 'Klar til annonsering';
+    }).length;
+    if (!klarCount) {
+      visTost('Ingen biler i «Klar til annonsering».');
+      return null;
+    }
+    if (!window.confirm(
+      'Sjekke ' + klarCount + ' bil(er) i «Klar til annonsering» mot FINN/nettsiden og flytte treff til «Annonsert»?'
+    )) {
+      return null;
+    }
+    try {
+      const res = await syncFinnBilerStatus({ apply: true, refresh: true });
+      if (Array.isArray(res.items) && res.items.length) {
+        setBiler(function (prev) {
+          const byId = Object.fromEntries(res.items.map(function (item) { return [item.id, item]; }));
+          const next = prev.map(function (b) { return byId[b.id] || b; });
+          writeBilerCache(next);
+          return next;
+        });
+      }
+      return res;
+    } catch (err) {
+      visTost(err?.message || 'FINN-synk feilet ✗');
+      return null;
+    }
+  };
+
   const updateHenv = async (id, patch, localMsg) => {
     setHenv(prev => prev.map(h => h.id === id ? { ...h, ...patch } : h));
     try {
@@ -1300,6 +1330,8 @@ export default function App() {
               reorderBiler={reorderBiler}
               kunder={kunder}
               currentUser={user}
+              visTost={visTost}
+              onSyncFinnStatus={syncFinnBilerTilAnnonsert}
             />
           )}
           {tab === 'kunder' && (
@@ -2408,7 +2440,7 @@ function BilOrderBadge({ value, editing, onEditingChange, onSave, revealAdd }) {
   );
 }
 
-function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser }) {
+function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser, visTost, onSyncFinnStatus }) {
   const kanLeggeTilBil = canAddBil(currentUser);
   const [mFilter, setMFilter] = useState('Alle');
   const [sFilter, setSFilter] = useState('Alle');
@@ -2418,6 +2450,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
   const [dragId, setDragId] = useState(null);
   const [dropStatus, setDropStatus] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const [finnSyncing, setFinnSyncing] = useState(false);
   const skipClick = useRef(false);
   const harInnboks = canAccess(currentUser, 'innboks');
   const aktiveBiler = biler.filter(isBilAktiv);
@@ -2426,6 +2459,9 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
   const merker = bilMerker(aktiveBiler);
   const pipelineStatuser = kanbanStatuses(lists, aktiveBiler);
   const filterStatuser = kanbanStatuses(lists, sourceBiler);
+  const klarTilAnnonseringCount = aktiveBiler.filter(function (b) {
+    return b.status === 'Klar til annonsering';
+  }).length;
   const merkeFiltered = mFilter === 'Alle'
     ? sourceBiler
     : sourceBiler.filter(function (b) { return b.merke === mFilter; });
@@ -2671,6 +2707,32 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
               : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · klikk «Nr.» på kortet for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
+        {section !== 'arkiv' && klarTilAnnonseringCount > 0 && onSyncFinnStatus && (
+          <div className="ph-actions">
+            <button
+              type="button"
+              className="btn btn-g btn-sm"
+              disabled={finnSyncing}
+              onClick={async function () {
+                setFinnSyncing(true);
+                try {
+                  const res = await onSyncFinnStatus();
+                  if (!res) return;
+                  const msg = res.updated
+                    ? `Flyttet ${res.updated} bil${res.updated === 1 ? '' : 'er'} til Annonsert ✓`
+                    : `Ingen nye treff mot FINN (${res.unmatchedCount || 0} står fortsatt i «Klar til annonsering»)`;
+                  if (visTost) visTost(msg);
+                } catch (err) {
+                  if (visTost) visTost(err?.message || 'FINN-synk feilet ✗');
+                } finally {
+                  setFinnSyncing(false);
+                }
+              }}
+            >
+              {finnSyncing ? 'Sjekker FINN…' : `Synk FINN → Annonsert (${klarTilAnnonseringCount})`}
+            </button>
+          </div>
+        )}
       </div>
       <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
         <div className="fl">Søk i alle biler</div>

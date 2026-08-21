@@ -132,6 +132,12 @@ const {
 } = require('./mail-sync');
 const { createPreviewToken, PREVIEW_TTL_MS } = require('./preview-access');
 const { getSiteOrigin } = require('./site-origin');
+const {
+  KLAR_STATUS,
+  ANNONSERT_STATUS,
+  loadFinnInventory,
+  matchKlarBilerToFinn
+} = require('./finn-bil-match');
 const { runMailSyncCron } = require('./cron-mail-sync');
 const { getDashboardCache, setDashboardCache } = require('./dashboard-cache');
 const {
@@ -838,6 +844,116 @@ app.post('/api/drift/finn-refresh', requireAuth, requirePermission('innstillinge
       ok: false,
       error: 'Kunne ikke nå nettsideserveren for FINN-oppdatering.'
     });
+  }
+});
+
+async function appendBilSystemLogg(row, tekst, av) {
+  const logg = parseJson(row.logg, []);
+  logg.unshift({
+    dato: new Date().toLocaleString('nb-NO'),
+    av: av || 'System',
+    tekst: tekst
+  });
+  return logg.slice(0, 200);
+}
+
+app.post('/api/biler/sync-finn-status', requireAuth, requirePermission('biler'), async function (req, res) {
+  const apply = !!(req.body && req.body.apply);
+  const refresh = req.body?.refresh !== false;
+
+  try {
+    const klarRows = await prepare(
+      "SELECT * FROM biler WHERE COALESCE(archived, 0) = 0 AND status = ? ORDER BY id"
+    ).all(KLAR_STATUS);
+
+    const finnCars = await loadFinnInventory(getSiteOrigin(), { refresh });
+    const { matches, unmatched } = matchKlarBilerToFinn(klarRows, finnCars);
+
+    const preview = matches.map(function (m) {
+      return {
+        bilId: m.bil.id,
+        reg: m.bil.reg,
+        merke: m.bil.merke,
+        modell: m.bil.modell,
+        finnId: m.finn.id,
+        finnTitle: [m.finn.make, m.finn.model, m.finn.year].filter(Boolean).join(' '),
+        score: m.score
+      };
+    });
+
+    if (!apply) {
+      return res.json({
+        ok: true,
+        applied: false,
+        klarCount: klarRows.length,
+        finnCount: finnCars.length,
+        matchCount: matches.length,
+        unmatchedCount: unmatched.length,
+        matches: preview,
+        unmatched: unmatched.map(function (b) {
+          return { id: b.id, reg: b.reg, merke: b.merke, modell: b.modell, aar: b.aar };
+        })
+      });
+    }
+
+    const settings = await getInnstillinger();
+    const updatedItems = [];
+
+    for (const match of matches) {
+      const row = await prepare('SELECT * FROM biler WHERE id = ?').get(match.bil.id);
+      if (!row || row.status !== KLAR_STATUS) continue;
+
+      const currentSjekklister = parseBilSjekklisterObject(row);
+      const sjekklister = ensureSjekklisterForStatus(
+        currentSjekklister,
+        ANNONSERT_STATUS,
+        settings.bilSjekklister
+      );
+      const sjekkliste = getAktivSjekklisteFromRow({ ...row, status: ANNONSERT_STATUS }, sjekklister);
+      const logg = await appendBilSystemLogg(
+        row,
+        'Flyttet automatisk til ' + ANNONSERT_STATUS + ' (FINN ' + match.finn.id + ').',
+        req.user?.sub || 'FINN-sync'
+      );
+
+      await prepare(`
+        UPDATE biler SET
+          status = @status,
+          finn_kode = @finn_kode,
+          sjekkliste = @sjekkliste,
+          sjekklister = @sjekklister,
+          logg = @logg,
+          updated_at = datetime('now')
+        WHERE id = @id
+      `).run({
+        id: row.id,
+        status: ANNONSERT_STATUS,
+        finn_kode: String(match.finn.id),
+        sjekkliste: JSON.stringify(sjekkliste),
+        sjekklister: JSON.stringify(sjekklister),
+        logg: JSON.stringify(logg)
+      });
+
+      updatedItems.push(await mapBilForApi(await prepare('SELECT * FROM biler WHERE id = ?').get(row.id)));
+    }
+
+    res.json({
+      ok: true,
+      applied: true,
+      klarCount: klarRows.length,
+      finnCount: finnCars.length,
+      matchCount: matches.length,
+      unmatchedCount: unmatched.length,
+      updated: updatedItems.length,
+      matches: preview,
+      unmatched: unmatched.map(function (b) {
+        return { id: b.id, reg: b.reg, merke: b.merke, modell: b.modell, aar: b.aar };
+      }),
+      items: updatedItems
+    });
+  } catch (err) {
+    console.error('POST /api/biler/sync-finn-status feilet:', err.message);
+    res.status(502).json({ ok: false, error: err.message || 'Kunne ikke synkronisere mot FINN.' });
   }
 });
 
