@@ -7742,6 +7742,50 @@ function InternKommentarerSeksjon({ kommentarer, currentUser, onChange, title, p
   );
 }
 
+function IngestKundeInfoPanel({ row, kundeId, kunder, setModal, setKunder, onKundeChange }) {
+  const tlf = String(row.tlf || '').trim();
+  const epost = String(row.epost || '').trim();
+  const navn = String(row.navn || '').trim() || 'Ukjent kunde';
+  const beskrivelse = String(row.beskrivelse || '').trim();
+
+  return (
+    <section className="inb-modal__panel inb-modal__panel--kunde">
+      <div className="modal-sec">Info fra kunden</div>
+      <div className="inb-kunde-card">
+        <div className="inb-kunde-card__navn">{navn}</div>
+        <div className="inb-kunde-card__kontakt">
+          {tlf ? (
+            <a className="inb-kunde-card__link" href={`tel:${tlf.replace(/\s/g, '')}`}>{tlf}</a>
+          ) : (
+            <span className="inb-kunde-card__muted">Ingen telefon</span>
+          )}
+          {epost ? (
+            <a className="inb-kunde-card__link" href={`mailto:${epost}`}>{epost}</a>
+          ) : (
+            <span className="inb-kunde-card__muted">Ingen e-post</span>
+          )}
+        </div>
+      </div>
+      <div className="gap" style={{ marginTop: 14 }}>
+        <div className="fl">Beskrivelse / kommentar</div>
+        <div className={`inb-modal__quote${beskrivelse ? ' inb-modal__quote--kunde' : ''}`}>{beskrivelse || '—'}</div>
+      </div>
+      <IngestBilderSeksjon bilder={row.bilder} />
+      <div style={{ marginTop: 12 }}>
+        <KundeVelger
+          kundeId={kundeId}
+          kunder={kunder}
+          setModal={setModal}
+          setKunder={setKunder}
+          kontakt={{ navn: row.navn, epost: row.epost, tlf: row.tlf }}
+          kilde="Manuell"
+          onChange={onKundeChange}
+        />
+      </div>
+    </section>
+  );
+}
+
 function IngestBilderSeksjon({ bilder }) {
   const files = Array.isArray(bilder) ? bilder : [];
 
@@ -8096,8 +8140,17 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
 
         <div className="inb-modal__body">
           {activeTab === 'foresporsel' ? (
-            <div className="inb-modal__grid">
-              <section className="inb-modal__panel">
+            <div className="inb-modal__grid inb-modal__grid--ingest">
+              <IngestKundeInfoPanel
+                row={inn}
+                kundeId={inn.kundeId}
+                kunder={kunder}
+                setModal={setModal}
+                setKunder={setKunder}
+                onKundeChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
+              />
+
+              <section className="inb-modal__panel inb-modal__panel--bil">
                 <div className="modal-sec">Kundens bil</div>
                 <IngestKundensBilSeksjon row={inn} active={activeTab === 'foresporsel'} />
                 {utstyr.length ? (
@@ -8117,7 +8170,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
                 </div>
               </section>
 
-              <section className="inb-modal__panel">
+              <section className="inb-modal__panel inb-modal__panel--secondary">
                 <div className="modal-sec">Oppkjøp</div>
                 {inn.forventning ? (
                   <div className="gap">
@@ -8135,33 +8188,6 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
                 ) : null}
                 <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 14, lineHeight: 1.45 }}>
                   Direkte oppkjøp fra xbilsenter.no/selg-bil · vurder bilen mot markedet på FINN før du sender tilbud.
-                </div>
-              </section>
-
-              <section className="inb-modal__panel inb-modal__panel--full">
-                <div className="modal-sec">Fra kunden</div>
-                <div className="gap">
-                  <div className="fl">Beskrivelse / kommentar</div>
-                  <div className="inb-modal__quote">{inn.beskrivelse || '—'}</div>
-                </div>
-                <IngestBilderSeksjon bilder={inn.bilder} />
-
-                <div className="modal-sec">Kontakt</div>
-                <InfoGrid items={[
-                  ['Navn', inn.navn],
-                  ['Telefon', inn.tlf],
-                  ['E-post', inn.epost]
-                ]} />
-                <div style={{ marginTop: 12 }}>
-                  <KundeVelger
-                    kundeId={inn.kundeId}
-                    kunder={kunder}
-                    setModal={setModal}
-                    setKunder={setKunder}
-                    kontakt={{ navn: inn.navn, epost: inn.epost, tlf: inn.tlf }}
-                    kilde="Manuell"
-                    onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
-                  />
                 </div>
               </section>
             </div>
@@ -8445,8 +8471,17 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
 
         <div className="inb-modal__body">
           {activeTab === 'foresporsel' ? (
-            <div className="inb-modal__grid">
-              <section className="inb-modal__panel">
+            <div className="inb-modal__grid inb-modal__grid--ingest">
+              <IngestKundeInfoPanel
+                row={inn}
+                kundeId={inn.kundeId}
+                kunder={kunder}
+                setModal={setModal}
+                setKunder={setKunder}
+                onKundeChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
+              />
+
+              <section className="inb-modal__panel inb-modal__panel--bil">
                 <div className="modal-sec">Kundens bil</div>
                 <IngestKundensBilSeksjon row={inn} active={activeTab === 'foresporsel'} />
                 {utstyr.length ? (
@@ -8466,7 +8501,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
                 </div>
               </section>
 
-              <section className="inb-modal__panel">
+              <section className="inb-modal__panel inb-modal__panel--secondary">
                 <div className="modal-sec">Ønsket bil hos oss</div>
                 {finnLaster ? (
                   <div className="fv" style={{ fontSize: 12, color: 'var(--t3)' }}>Henter annonse fra FINN…</div>
@@ -8499,33 +8534,6 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
                     <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{nok(inn.tilbud)}</div>
                   </div>
                 ) : null}
-              </section>
-
-              <section className="inb-modal__panel inb-modal__panel--full">
-                <div className="modal-sec">Fra kunden</div>
-                <div className="gap">
-                  <div className="fl">Beskrivelse / kommentar</div>
-                  <div className="inb-modal__quote">{inn.beskrivelse || '—'}</div>
-                </div>
-                <IngestBilderSeksjon bilder={inn.bilder} />
-
-                <div className="modal-sec">Kontakt</div>
-                <InfoGrid items={[
-                  ['Navn', inn.navn],
-                  ['Telefon', inn.tlf],
-                  ['E-post', inn.epost]
-                ]} />
-                <div style={{ marginTop: 12 }}>
-                  <KundeVelger
-                    kundeId={inn.kundeId}
-                    kunder={kunder}
-                    setModal={setModal}
-                    setKunder={setKunder}
-                    kontakt={{ navn: inn.navn, epost: inn.epost, tlf: inn.tlf }}
-                    kilde="Manuell"
-                    onChange={function (id) { opp('kundeId', id, 'Kunde koblet ✓'); }}
-                  />
-                </div>
               </section>
             </div>
           ) : null}
