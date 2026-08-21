@@ -734,7 +734,8 @@ select option{background:var(--s1);}
   .inbox-shell.inbox-shell--list .inbox-detail{display:none;}
   .inbox-shell.inbox-shell--list:not(.inbox-shell--folders) .inbox-folders{display:none;}
   .inbox-shell.inbox-shell--detail .inbox-folders,
-  .inbox-shell.inbox-shell--detail .inbox-layout{display:none;}
+  .inbox-shell.inbox-shell--detail .inbox-list{display:none;}
+  .inbox-shell.inbox-shell--detail .inbox-layout{display:flex;flex:1;min-height:0;}
   .inbox-shell.inbox-shell--detail .inbox-detail{
     display:flex;flex-direction:column;flex:1;min-height:calc(100dvh - 260px);
   }
