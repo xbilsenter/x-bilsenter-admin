@@ -320,8 +320,8 @@ function parseArsmodellYear(value) {
   return n;
 }
 
-/** Modellår fra tekniske data; ellers år fra 1. gangs registrering (visningsår i bruktbil). */
-function resolveArsmodell({ generelt, ovrige, kg, forstegang, registrering, forstegangRegistrertRaw, vehicle }) {
+/** Modellår fra tekniske data; ellers år fra 1. gangs registrering — aldri 1. reg. Norge. */
+function resolveArsmodell({ generelt, ovrige, kg, forstegangRegistrertRaw }) {
   const explicitRaw = generelt.arModell
     || generelt.arsmodell
     || generelt.aarsmodell
@@ -330,23 +330,11 @@ function resolveArsmodell({ generelt, ovrige, kg, forstegang, registrering, fors
     || lookupOvrigTekniskData(ovrige, 'modellaar');
   const explicitYear = parseArsmodellYear(explicitRaw);
 
-  const regYear = yearFromDateValue(
-    vehicle.forstegangsregistrering?.registrertForstegangNorgeDato
-    || forstegang.registrertForstegangNorgeDato
-    || forstegangRegistrertRaw
-    || registrering.registrertForstegangNorge
-  );
-
+  const firstRegYear = yearFromDateValue(forstegangRegistrertRaw);
   const godkjenningsAr = parseArsmodellYear(kg.nasjonalGodkjenning?.nasjonaltGodkjenningsAr);
 
-  if (explicitYear != null) {
-    if (regYear != null && regYear > explicitYear && regYear - explicitYear <= 2) {
-      return String(regYear);
-    }
-    return String(explicitYear);
-  }
-
-  if (regYear != null) return String(regYear);
+  if (explicitYear != null) return String(explicitYear);
+  if (firstRegYear != null) return String(firstRegYear);
   if (godkjenningsAr != null) return String(godkjenningsAr);
   return null;
 }
@@ -442,10 +430,7 @@ function parseVehicle(raw) {
     generelt,
     ovrige,
     kg,
-    forstegang,
-    registrering,
-    forstegangRegistrertRaw,
-    vehicle
+    forstegangRegistrertRaw
   });
 
   return {

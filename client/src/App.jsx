@@ -7586,7 +7586,10 @@ function mergeIngestVehicleRow(row, vehicle) {
   const has = function (v) { return v != null && String(v).trim() !== ''; };
   return {
     ...row,
+    aar: vehicle.arsmodell || row.aar || '',
+    girkasse: vehicle.girkasse || row.girkasse || '',
     farge: has(row.farge) ? row.farge : (vehicle.farge || ''),
+    drivstoff: has(row.drivstoff) ? row.drivstoff : (vehicle.drivstoff || ''),
     nesteEuKontroll: has(row.nesteEuKontroll) ? row.nesteEuKontroll : (vehicle.nesteEuKontroll || ''),
     forstegangsregistrert: has(row.forstegangsregistrert) ? row.forstegangsregistrert : (vehicle.forstegangsregistrert || ''),
     bruktimport: has(row.bruktimport) ? row.bruktimport : (vehicle.bruktimport || ''),
@@ -7640,9 +7643,11 @@ function buildIngestKundensBilItems(row) {
   const antallMotorer = Number(row?.antallMotorer);
   const items = [
     ['Registreringsnr.', row.reg],
-    ['Merke / modell', [row.merke, row.modell, row.aar].filter(Boolean).join(' ')],
+    ['Merke / modell', [row.merke, row.modell].filter(Boolean).join(' ')],
+    ['Årsmodell', row.aar],
     ['Kilometerstand', row.km ? `${fmtKm(row.km)} km` : ''],
     ['Drivstoff', row.drivstoff],
+    ['Girkasse', row.girkasse],
     ['Farge', formatSvvFargeNavn(row.farge)],
     ['Førstegangsregistrert', row.forstegangsregistrert],
     ['Bruktimport', row.bruktimport],
