@@ -6112,7 +6112,12 @@ function InnboksView({ epost, mailStatus, setEpost, setMailStatus, setHenv, visT
     }
   };
 
-  const handleMailClick = (mail) => {
+  const handleMailClick = async (mail) => {
+    if (isMobile) {
+      await previewMail(mail);
+      markMailRead(mail);
+      return;
+    }
     previewMail(mail);
   };
 
