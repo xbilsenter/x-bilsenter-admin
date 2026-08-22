@@ -939,11 +939,28 @@ select option{background:var(--s1);}
 .tag-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
 .tag-list .tag{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#fff;border:1px solid var(--b1);font-size:11px;color:var(--t2);}
 
+.bil-reservasjon__layout{display:grid;grid-template-columns:minmax(280px,340px) 1fr;gap:18px;align-items:start;}
+.bil-reservasjon__panel{background:var(--s2);border:1px solid var(--b1);border-radius:12px;padding:14px;}
+.bil-reservasjon__hint{font-size:11px;color:var(--t3);line-height:1.5;margin:0 0 14px;}
+.bil-reservasjon__actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;}
+.bil-reservasjon__warn{font-size:11px;color:var(--gold);margin:10px 0 0;}
+.bil-reservasjon-preview{background:#fff;border:1px solid var(--b1);border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.06);}
+.bil-reservasjon-preview__head{padding:18px 22px 14px;border-bottom:1px solid var(--b1);background:linear-gradient(180deg,#f8fbf9 0%,#fff 100%);}
+.bil-reservasjon-preview__brand{font-size:18px;font-weight:800;color:var(--t1);}
+.bil-reservasjon-preview__sub{font-size:11px;color:var(--t3);margin-top:2px;}
+.bil-reservasjon-preview__body{padding:20px 22px 18px;font-size:12px;line-height:1.65;color:var(--t2);}
+.bil-reservasjon-preview__body h4{margin:16px 0 6px;font-size:12px;font-weight:800;color:var(--t1);}
+.bil-reservasjon-preview__body p{margin:0 0 10px;}
+.bil-reservasjon-preview__body a{color:var(--acc);word-break:break-all;}
+.bil-reservasjon-preview__thanks{margin-top:14px!important;font-weight:600;}
+.bil-reservasjon-preview__footer{margin-top:14px;padding-top:12px;border-top:1px solid var(--b1);font-size:10px;color:var(--t3);}
+
 @media(max-width:900px){
   .inb-modal__grid{grid-template-columns:1fr;}
   .inb-modal__grid--ingest{grid-template-areas:"kunde" "bil" "secondary";}
   .inb-modal__toolbar{align-items:stretch;flex-direction:column;}
   .inb-modal__toolbar .btn{width:100%;justify-content:center;}
+  .bil-reservasjon__layout{grid-template-columns:1fr;}
 }
 
 @media(max-width:520px){

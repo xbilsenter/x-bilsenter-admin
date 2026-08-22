@@ -3,6 +3,7 @@ import useIsMobile from './useIsMobile.js';
 import Login from './components/Login.jsx';
 import InnkjopskalkyleView from './components/InnkjopskalkyleView.jsx';
 import OkonomiView from './components/OkonomiView.jsx';
+import BilReservasjonTab from './components/BilReservasjonTab.jsx';
 import TimeregistreringView from './components/TimeregistreringView.jsx';
 import ChassisScanPanel from './components/ChassisScanPanel.jsx';
 import {
@@ -3649,6 +3650,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     { id: 'informasjon', label: 'Informasjon' },
     { id: 'autosys', label: 'Autosys' },
     { id: 'okonomi', label: 'Økonomi' },
+    { id: 'reservasjon', label: 'Reservasjon' },
     { id: 'arsprove', label: 'Årsprøvekjennemerke' },
     { id: 'vedlegg', label: docCount ? `Vedlegg (${docCount})` : 'Vedlegg' }
   ];
@@ -4093,6 +4095,10 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
         {activeTab === 'okonomi' && (
           <BilOkonomiTab bil={bil} oppdater={oppdater} oppdaterOkonomi={oppdaterOkonomi} />
+        )}
+
+        {activeTab === 'reservasjon' && (
+          <BilReservasjonTab bil={bil} kunder={kunder} oppdaterOkonomi={oppdaterOkonomi} visTost={visTost} />
         )}
 
         {activeTab === 'arsprove' && (

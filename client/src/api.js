@@ -248,6 +248,24 @@ export function syncBilerEuKontroll(options = {}) {
   });
 }
 
+export async function downloadReservasjonPdf(id) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const res = await fetch(`${BASE}/biler/${id}/reservasjon-pdf`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+  if (!res.ok) {
+    let message = 'Kunne ikke lage PDF.';
+    try {
+      const data = await res.json();
+      if (data.error) message = data.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message);
+  }
+  return res.blob();
+}
+
 export async function uploadBilDokumenter(id, files) {
   const token = localStorage.getItem(TOKEN_KEY);
   const form = new FormData();

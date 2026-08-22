@@ -99,7 +99,8 @@ const {
   canApproveTimereg,
   maskTimeregStatusForViewer
 } = require('./timeregistrering-shared');
-const { readChassisWithOpenAI, getOpenAiApiKey } = require('./chassis-vision');
+const { buildReservasjonPdfBuffer } = require('./reservasjon-pdf');
+const { normalizeBilReservasjon } = require('../shared/reservasjon');
 
 const {
   lookupVehicleFull,
@@ -2643,6 +2644,36 @@ app.delete('/api/biler/:id', requireAuth, async function (req, res) {
   } catch (err) {
     console.error('DELETE /api/biler/:id feilet:', err.message);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke slette bil.' });
+  }
+});
+
+app.get('/api/biler/:id/reservasjon-pdf', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+
+  try {
+    const row = await prepare('SELECT * FROM biler WHERE id = ?').get(id);
+    if (!row) return res.status(404).json({ ok: false, error: 'Bilen finnes ikke.' });
+
+    const kundeMap = await getAllBilKundeIdsMap();
+    const bil = await mapBilForApi(row, kundeMap[id] || []);
+    const kundeIds = bil.kundeIds || [];
+    let kunde = null;
+    if (kundeIds.length) {
+      const kundeRow = await prepare('SELECT * FROM kunder WHERE id = ?').get(kundeIds[0]);
+      if (kundeRow) kunde = mapKunde(kundeRow);
+    }
+
+    const okonomi = parseJson(row.okonomi, {});
+    const reservasjon = normalizeBilReservasjon(okonomi.reservasjon);
+    const pdf = await buildReservasjonPdfBuffer(bil, kunde, reservasjon);
+    const filnavn = ['Reservasjon', bil.reg || id].filter(Boolean).join('-').replace(/\s+/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filnavn}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    console.error('GET /api/biler/:id/reservasjon-pdf feilet:', err.message);
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke lage PDF.' });
   }
 });
 

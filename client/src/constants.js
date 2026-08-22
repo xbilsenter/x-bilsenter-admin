@@ -731,7 +731,8 @@ export const DEFAULT_BIL_OKONOMI = {
   garantikost: null,
   omregAvgift: null,
   kostnader: [],
-  profittUke: null
+  profittUke: null,
+  reservasjon: null
 };
 
 export function okonomiBelopValue(value) {
@@ -770,6 +771,9 @@ function normalizeBilOkonomiKostnader(kostnader) {
 export function mergeBilOkonomi(prev, patch) {
   const base = prev && typeof prev === 'object' ? { ...prev } : { ...DEFAULT_BIL_OKONOMI };
   const next = { ...base, ...patch };
+  if (patch?.reservasjon && typeof patch.reservasjon === 'object') {
+    next.reservasjon = { ...(base.reservasjon && typeof base.reservasjon === 'object' ? base.reservasjon : {}), ...patch.reservasjon };
+  }
   if (Array.isArray(patch?.kostnader)) {
     next.kostnader = patch.kostnader.map(function (item, index) {
       const belop = item?.belop;
@@ -840,13 +844,21 @@ export function getIsoWeeksInYear(year) {
 
 export function normalizeBilOkonomi(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
+  let reservasjon = null;
+  if (o.reservasjon && typeof o.reservasjon === 'object') {
+    reservasjon = { ...o.reservasjon };
+    if (reservasjon.depositum != null) {
+      reservasjon.depositum = okonomiBelopForSave(reservasjon.depositum);
+    }
+  }
   return {
     pakost: okonomiBelopForSave(o.pakost),
     aukGebyr: okonomiBelopForSave(o.aukGebyr),
     garantikost: okonomiBelopForSave(o.garantikost),
     omregAvgift: okonomiBelopForSave(o.omregAvgift),
     kostnader: normalizeBilOkonomiKostnader(o.kostnader),
-    profittUke: normalizeProfittUke(o.profittUke)
+    profittUke: normalizeProfittUke(o.profittUke),
+    reservasjon
   };
 }
 
