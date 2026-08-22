@@ -9,6 +9,9 @@ export const RESERVASJON_FIRMA = {
   reservasjonDager: 14
 };
 
+export const BETALINGSMATE_BANKOVERFORING = 'bankoverforing';
+export const BETALINGSMATE_BANKTERMINAL = 'bankterminal';
+
 export function isoDateOnly(value) {
   if (!value) return '';
   const s = String(value).trim();
@@ -46,6 +49,10 @@ function belopForLagring(value) {
   return n;
 }
 
+export function normalizeBetalingsmate(value) {
+  return value === BETALINGSMATE_BANKTERMINAL ? BETALINGSMATE_BANKTERMINAL : BETALINGSMATE_BANKOVERFORING;
+}
+
 export function resolveKjopesum(reservasjon, bil) {
   const fraReservasjon = belopForLagring(reservasjon?.kjopesum);
   if (fraReservasjon != null) return fraReservasjon;
@@ -64,7 +71,7 @@ export function normalizeBilReservasjon(raw, defaults, bil) {
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
     reservasjonTil: isoDateOnly(o.reservasjonTil || base.reservasjonTil || addDaysIso(new Date(), RESERVASJON_FIRMA.reservasjonDager)),
-    kontonummer: String(o.kontonummer || base.kontonummer || RESERVASJON_FIRMA.kontonummer).trim()
+    betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate)
   };
   if (normalized.kjopesum == null) {
     normalized.kjopesum = resolveKjopesum(null, bil);
@@ -88,20 +95,48 @@ export function buildFinnItemUrl(finnKode) {
   return digits.length >= 6 ? `https://www.finn.no/mobility/item/${digits}` : '';
 }
 
+export function buildDepositumIntro(data) {
+  if (data.betalingsmate === BETALINGSMATE_BANKTERMINAL) {
+    return `Vi har avtalt et depositum på ${data.depositumTekst} for bilen med forfall i dag ${data.depositumForfallTekst}. Depositum betales med bankterminal i butikk hos ${RESERVASJON_FIRMA.navn}.`;
+  }
+  return `Vi har avtalt et depositum på ${data.depositumTekst} for bilen med forfall i dag ${data.depositumForfallTekst}. Vårt kontonummer er ${RESERVASJON_FIRMA.kontonummer} (${RESERVASJON_FIRMA.navn}).`;
+}
+
+export function buildDepositumVilkar() {
+  return 'Depositumet blir selvfølgelig trukket fra kjøpesum/egenkapital ved gjennomføring av handel. Ved kansellering fra din side vil depositum ikke være refunderbart. Ved sen betaling av depositum, forbeholder X Bilsenter AS seg retten til å refundere depositum og kansellere handel.';
+}
+
+export function buildAnnetTekst(betalingsmate) {
+  if (betalingsmate === BETALINGSMATE_BANKTERMINAL) {
+    return 'Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt at depositum er betalt i butikk, settes bilen som solgt på FINN- og holdes av til deg.';
+  }
+  return 'Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt kvittering på utført betaling av depositum, settes bilen som solgt på FINN- og holdes av til deg.';
+}
+
 export function buildReservasjonPreviewData(bil, kunde, reservasjon) {
   const bilNavn = buildBilVisningsnavn(bil);
   const finnUrl = buildFinnItemUrl(bil?.finnKode);
   const kundeNavn = String(kunde?.navn || '').trim();
   const kjopesum = resolveKjopesum(reservasjon, bil);
+  const betalingsmate = normalizeBetalingsmate(reservasjon.betalingsmate);
+  const depositumTekst = reservasjon.depositum != null ? formatNokBelop(reservasjon.depositum) : '—';
+  const depositumForfallTekst = formatNorskDato(reservasjon.depositumForfall);
 
-  return {
+  const previewData = {
     kundeNavn,
     bilNavn,
     finnUrl,
     kjopesumTekst: kjopesum != null && Number.isFinite(kjopesum) ? formatNokBelop(kjopesum) : '—',
-    depositumTekst: reservasjon.depositum != null ? formatNokBelop(reservasjon.depositum) : '—',
-    depositumForfallTekst: formatNorskDato(reservasjon.depositumForfall),
+    depositumTekst,
+    depositumForfallTekst,
     reservasjonTilTekst: formatNorskDato(reservasjon.reservasjonTil),
-    kontonummer: reservasjon.kontonummer
+    betalingsmate
+  };
+
+  return {
+    ...previewData,
+    depositumIntro: buildDepositumIntro({ ...previewData, betalingsmate }),
+    depositumVilkar: buildDepositumVilkar(),
+    annetTekst: buildAnnetTekst(betalingsmate)
   };
 }

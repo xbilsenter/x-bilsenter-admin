@@ -9,6 +9,9 @@ const RESERVASJON_FIRMA = {
   reservasjonDager: 14
 };
 
+const BETALINGSMATE_BANKOVERFORING = 'bankoverforing';
+const BETALINGSMATE_BANKTERMINAL = 'bankterminal';
+
 function isoDateOnly(value) {
   if (!value) return '';
   const s = String(value).trim();
@@ -46,6 +49,10 @@ function belopForLagring(value) {
   return n;
 }
 
+function normalizeBetalingsmate(value) {
+  return value === BETALINGSMATE_BANKTERMINAL ? BETALINGSMATE_BANKTERMINAL : BETALINGSMATE_BANKOVERFORING;
+}
+
 function resolveKjopesum(reservasjon, bil) {
   const fraReservasjon = belopForLagring(reservasjon?.kjopesum);
   if (fraReservasjon != null) return fraReservasjon;
@@ -64,7 +71,7 @@ function normalizeBilReservasjon(raw, defaults, bil) {
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
     reservasjonTil: isoDateOnly(o.reservasjonTil || base.reservasjonTil || addDaysIso(new Date(), RESERVASJON_FIRMA.reservasjonDager)),
-    kontonummer: String(o.kontonummer || base.kontonummer || RESERVASJON_FIRMA.kontonummer).trim()
+    betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate)
   };
   if (normalized.kjopesum == null) {
     normalized.kjopesum = resolveKjopesum(null, bil);
@@ -81,6 +88,24 @@ function buildBilVisningsnavn(bil) {
 function buildFinnItemUrl(finnKode) {
   const digits = String(finnKode || '').replace(/\D/g, '');
   return digits.length >= 6 ? `https://www.finn.no/mobility/item/${digits}` : '';
+}
+
+function buildDepositumIntro(data) {
+  if (data.betalingsmate === BETALINGSMATE_BANKTERMINAL) {
+    return `Vi har avtalt et depositum på ${data.depositumTekst} for bilen med forfall i dag ${data.depositumForfallTekst}. Depositum betales med bankterminal i butikk hos ${data.firma.navn}.`;
+  }
+  return `Vi har avtalt et depositum på ${data.depositumTekst} for bilen med forfall i dag ${data.depositumForfallTekst}. Vårt kontonummer er ${data.firma.kontonummer} (${data.firma.navn}).`;
+}
+
+function buildDepositumVilkar() {
+  return 'Depositumet blir selvfølgelig trukket fra kjøpesum/egenkapital ved gjennomføring av handel. Ved kansellering fra din side vil depositum ikke være refunderbart. Ved sen betaling av depositum, forbeholder X Bilsenter AS seg retten til å refundere depositum og kansellere handel.';
+}
+
+function buildAnnetTekst(data) {
+  if (data.betalingsmate === BETALINGSMATE_BANKTERMINAL) {
+    return 'Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt at depositum er betalt i butikk, settes bilen som solgt på FINN- og holdes av til deg.';
+  }
+  return 'Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt kvittering på utført betaling av depositum, settes bilen som solgt på FINN- og holdes av til deg.';
 }
 
 function buildReservasjonDocumentData(bil, kunde, reservasjonRaw) {
@@ -103,57 +128,70 @@ function buildReservasjonDocumentData(bil, kunde, reservasjonRaw) {
     depositumForfallTekst: formatNorskDato(reservasjon.depositumForfall),
     reservasjonTil: reservasjon.reservasjonTil,
     reservasjonTilTekst: formatNorskDato(reservasjon.reservasjonTil),
-    kontonummer: reservasjon.kontonummer
+    betalingsmate: reservasjon.betalingsmate,
+    depositumIntro: '',
+    depositumVilkar: buildDepositumVilkar(),
+    annetTekst: ''
+  };
+}
+
+function enrichReservasjonDocumentData(data) {
+  return {
+    ...data,
+    depositumIntro: buildDepositumIntro(data),
+    annetTekst: buildAnnetTekst(data)
   };
 }
 
 function reservasjonSeksjoner(data) {
-  const finnDel = data.finnUrl
-    ? ` (${data.finnUrl})`
-    : '';
+  const doc = enrichReservasjonDocumentData(data);
+  const finnDel = doc.finnUrl ? ` (${doc.finnUrl})` : '';
 
   return [
     {
       title: null,
       body: [
-        data.kundeNavn ? `Hei ${data.kundeNavn}` : 'Hei',
+        doc.kundeNavn ? `Hei ${doc.kundeNavn}` : 'Hei',
         '',
-        `Takk for en hyggelig avtale vedr. kjøp av vår ${data.bilNavn}${finnDel}.`
+        `Takk for en hyggelig avtale vedr. kjøp av vår ${doc.bilNavn}${finnDel}.`
       ].join('\n')
     },
     {
       title: 'Kjøpesum',
-      body: `Avtalt kjøpesum på vår ${data.bilNavn} er ${data.kjopesumTekst}.`
+      body: `Avtalt kjøpesum på vår ${doc.bilNavn} er ${doc.kjopesumTekst}.`
     },
     {
       title: 'Depositum',
-      body: [
-        `Vi har avtalt et depositum på ${data.depositumTekst} for bilen med forfall i dag ${data.depositumForfallTekst}. Vårt kontonummer er ${data.kontonummer} (${data.firma.navn}).`,
-        '',
-        'Depositumet blir selvfølgelig trukket fra kjøpesum/egenkapital ved gjennomføring av handel. Ved kansellering fra din side vil depositum ikke være refunderbart. Ved sen betaling av depositum, forbeholder X Bilsenter AS seg retten til å refundere depositum og kansellere handel.'
-      ].join('\n')
+      body: [doc.depositumIntro, '', doc.depositumVilkar].join('\n')
     },
     {
       title: 'Forbehold',
-      body: `Bilen reserveres til deg ut ${data.reservasjonTilTekst}. Mottar vi ikke fullt oppgjør eller at handel ikke er ferdigstilt før denne tid, anses det som en kansellering fra din side – ved tilfelle vil depositum ikke være refunderbart.`
+      body: `Bilen reserveres til deg ut ${doc.reservasjonTilTekst}. Mottar vi ikke fullt oppgjør eller at handel ikke er ferdigstilt før denne tid, anses det som en kansellering fra din side – ved tilfelle vil depositum ikke være refunderbart.`
     },
     {
       title: 'Annet',
-      body: 'Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt kvittering på utført betaling av depositum, settes bilen som solgt på FINN- og holdes av til deg.'
+      body: doc.annetTekst
     }
   ];
 }
 
 module.exports = {
   RESERVASJON_FIRMA,
+  BETALINGSMATE_BANKOVERFORING,
+  BETALINGSMATE_BANKTERMINAL,
   isoDateOnly,
   addDaysIso,
   formatNorskDato,
   formatNok,
+  normalizeBetalingsmate,
   normalizeBilReservasjon,
   resolveKjopesum,
   buildBilVisningsnavn,
   buildFinnItemUrl,
   buildReservasjonDocumentData,
+  enrichReservasjonDocumentData,
+  buildDepositumIntro,
+  buildDepositumVilkar,
+  buildAnnetTekst,
   reservasjonSeksjoner
 };

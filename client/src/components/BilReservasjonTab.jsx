@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   RESERVASJON_FIRMA,
+  BETALINGSMATE_BANKOVERFORING,
+  BETALINGSMATE_BANKTERMINAL,
   addDaysIso,
   buildBilVisningsnavn,
   buildFinnItemUrl,
@@ -43,15 +45,8 @@ function ReservasjonPreview({ bil, kunde, reservasjon }) {
         <p>Avtalt kjøpesum på vår {escapeHtml(data.bilNavn)} er {data.kjopesumTekst}.</p>
 
         <h4>Depositum</h4>
-        <p>
-          Vi har avtalt et depositum på {data.depositumTekst} for bilen med forfall i dag {data.depositumForfallTekst}.
-          {' '}Vårt kontonummer er {escapeHtml(data.kontonummer)} ({RESERVASJON_FIRMA.navn}).
-        </p>
-        <p>
-          Depositumet blir selvfølgelig trukket fra kjøpesum/egenkapital ved gjennomføring av handel.
-          Ved kansellering fra din side vil depositum ikke være refunderbart.
-          Ved sen betaling av depositum, forbeholder X Bilsenter AS seg retten til å refundere depositum og kansellere handel.
-        </p>
+        <p>{data.depositumIntro}</p>
+        <p>{data.depositumVilkar}</p>
 
         <h4>Forbehold</h4>
         <p>
@@ -60,10 +55,7 @@ function ReservasjonPreview({ bil, kunde, reservasjon }) {
         </p>
 
         <h4>Annet</h4>
-        <p>
-          Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt kvittering på utført betaling av depositum,
-          settes bilen som solgt på FINN- og holdes av til deg.
-        </p>
+        <p>{data.annetTekst}</p>
 
         <p className="bil-reservasjon-preview__thanks">Takk for en hyggelig handel!</p>
         <p>Med vennlig hilsen,<br /><strong>{RESERVASJON_FIRMA.navn}</strong><br /><em>{RESERVASJON_FIRMA.tagline}</em></p>
@@ -86,6 +78,7 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
 
   const [lasterPdf, setLasterPdf] = useState(false);
   const bilNavn = buildBilVisningsnavn(bil);
+  const erBankoverforing = reservasjon.betalingsmate === BETALINGSMATE_BANKOVERFORING;
 
   const oppdater = function (patch, msg) {
     oppdaterOkonomi({ reservasjon: { ...reservasjon, ...patch } }, msg);
@@ -125,7 +118,7 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
         <div className="bil-reservasjon__panel">
           <div className="modal-sec">Avtaledetaljer</div>
           <p className="bil-reservasjon__hint">
-            Fyll inn kjøpesum, depositum og datoer. Salgspris fra Økonomi foreslås automatisk hvis kjøpesum er tom. PDF-en kan sendes til kunden som reservasjonsbekreftelse.
+            Fyll inn kjøpesum, depositum og datoer. Velg hvordan kunden skal betale depositum — teksten i PDF-en tilpasses valget.
           </p>
 
           <div className="gap">
@@ -144,6 +137,26 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
           <div className="gap">
             <div className="fl">Bil</div>
             <div className="fv">{bilNavn}{bil.reg ? ` · ${bil.reg}` : ''}</div>
+          </div>
+
+          <div className="gap">
+            <div className="fl">Betaling av depositum</div>
+            <div className="view-toggle" role="group" aria-label="Betaling av depositum">
+              <button
+                type="button"
+                className={`btn btn-sm ${erBankoverforing ? 'btn-p' : 'btn-g'}`}
+                onClick={function () { oppdater({ betalingsmate: BETALINGSMATE_BANKOVERFORING }, 'Betaling satt til bankoverføring ✓'); }}
+              >
+                Bankoverføring
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${!erBankoverforing ? 'btn-p' : 'btn-g'}`}
+                onClick={function () { oppdater({ betalingsmate: BETALINGSMATE_BANKTERMINAL }, 'Betaling satt til bankterminal ✓'); }}
+              >
+                Bankterminal i butikk
+              </button>
+            </div>
           </div>
 
           <div className="form-row gap">
@@ -192,14 +205,6 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
                 onChange={function (e) { oppdater({ reservasjonTil: e.target.value }, 'Reservasjonstid oppdatert ✓'); }}
               />
             </div>
-          </div>
-
-          <div className="gap">
-            <div className="fl">Kontonummer</div>
-            <input
-              value={reservasjon.kontonummer || ''}
-              onChange={function (e) { oppdater({ kontonummer: e.target.value }, 'Kontonummer oppdatert ✓'); }}
-            />
           </div>
 
           <div className="bil-reservasjon__actions">
