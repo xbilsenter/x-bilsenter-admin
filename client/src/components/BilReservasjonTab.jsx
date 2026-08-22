@@ -6,13 +6,14 @@ import {
   addDaysIso,
   buildBilVisningsnavn,
   buildReservasjonPreviewModel,
+  getRawReservasjonFromOkonomi,
   getReservasjonFromOkonomi,
   isoDateOnly
 } from '../lib/reservasjon.js';
 import { downloadReservasjonPdf } from '../api.js';
 
-function ReservasjonPreview({ bil, kunde, reservasjon }) {
-  const model = buildReservasjonPreviewModel(bil, kunde, reservasjon);
+function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
+  const model = buildReservasjonPreviewModel(bil, kunde, reservasjonVisning);
 
   return (
     <div className="bil-reservasjon-preview">
@@ -105,8 +106,9 @@ function ReservasjonPreview({ bil, kunde, reservasjon }) {
   );
 }
 
-export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTost }) {
-  const reservasjon = getReservasjonFromOkonomi(bil.okonomi, bil);
+export default function BilReservasjonTab({ bil, kunder, oppdaterReservasjon, visTost }) {
+  const rawReservasjon = getRawReservasjonFromOkonomi(bil.okonomi);
+  const reservasjonVisning = getReservasjonFromOkonomi(bil.okonomi, bil);
   const kundeIds = bil.kundeIds || (bil.kundeId ? [bil.kundeId] : []);
   const kunde = useMemo(function () {
     const id = kundeIds[0];
@@ -116,10 +118,10 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
 
   const [lasterPdf, setLasterPdf] = useState(false);
   const bilNavn = buildBilVisningsnavn(bil);
-  const erBankoverforing = reservasjon.betalingsmate === BETALINGSMATE_BANKOVERFORING;
+  const erBankoverforing = rawReservasjon.betalingsmate === BETALINGSMATE_BANKOVERFORING;
 
   const oppdater = function (patch, msg) {
-    oppdaterOkonomi({ reservasjon: { ...reservasjon, ...patch } }, msg);
+    oppdaterReservasjon(patch, msg);
   };
 
   const settStandardVarighet = function () {
@@ -204,10 +206,10 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
                 type="number"
                 min="0"
                 placeholder={bil.salg != null && bil.salg !== '' ? String(bil.salg) : 'f.eks. 189000'}
-                value={reservasjon.kjopesum ?? ''}
+                value={rawReservasjon.kjopesum ?? ''}
                 onChange={function (e) {
                   const val = e.target.value;
-                  oppdater({ kjopesum: val === '' ? null : Number(val) }, 'Kjøpesum oppdatert ✓');
+                  oppdater({ kjopesum: val === '' ? null : Number(val) });
                 }}
               />
             </div>
@@ -217,10 +219,10 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
                 type="number"
                 min="0"
                 placeholder="f.eks. 30000"
-                value={reservasjon.depositum ?? ''}
+                value={rawReservasjon.depositum ?? ''}
                 onChange={function (e) {
                   const val = e.target.value;
-                  oppdater({ depositum: val === '' ? null : Number(val) }, 'Depositum oppdatert ✓');
+                  oppdater({ depositum: val === '' ? null : Number(val) });
                 }}
               />
             </div>
@@ -231,16 +233,16 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
               <div className="fl">Depositum forfall</div>
               <input
                 type="date"
-                value={reservasjon.depositumForfall || ''}
-                onChange={function (e) { oppdater({ depositumForfall: e.target.value }, 'Depositum-forfall oppdatert ✓'); }}
+                value={rawReservasjon.depositumForfall || ''}
+                onChange={function (e) { oppdater({ depositumForfall: e.target.value }); }}
               />
             </div>
             <div>
               <div className="fl">Reservert til</div>
               <input
                 type="date"
-                value={reservasjon.reservasjonTil || ''}
-                onChange={function (e) { oppdater({ reservasjonTil: e.target.value }, 'Reservasjonstid oppdatert ✓'); }}
+                value={rawReservasjon.reservasjonTil || ''}
+                onChange={function (e) { oppdater({ reservasjonTil: e.target.value }); }}
               />
             </div>
           </div>
@@ -252,18 +254,18 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
             <button
               type="button"
               className="btn btn-p"
-              disabled={lasterPdf || !reservasjon.kjopesum}
+              disabled={lasterPdf || !reservasjonVisning.kjopesum}
               onClick={lastNedPdf}
             >
               {lasterPdf ? 'Lager PDF…' : 'Last ned PDF'}
             </button>
           </div>
-          {!reservasjon.kjopesum ? (
+          {!reservasjonVisning.kjopesum ? (
             <p className="bil-reservasjon__warn">Legg inn kjøpesum for å generere PDF.</p>
           ) : null}
         </div>
 
-        <ReservasjonPreview bil={bil} kunde={kunde} reservasjon={reservasjon} />
+        <ReservasjonPreview bil={bil} kunde={kunde} reservasjonVisning={reservasjonVisning} />
       </div>
     </div>
   );

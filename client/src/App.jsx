@@ -3751,13 +3751,21 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
       setBil(function (current) {
         const merged = {
           ...current,
-          okonomi: normalizeBilOkonomi(saved.okonomi)
+          okonomi: normalizeBilOkonomi(mergeBilOkonomi(saved.okonomi, (bilRef.current || current).okonomi))
         };
         bilRef.current = merged;
         return merged;
       });
     });
   };
+
+  const oppdaterReservasjon = useCallback(function (patch, msg) {
+    const prev = bilRef.current || bil;
+    const base = prev.okonomi?.reservasjon && typeof prev.okonomi.reservasjon === 'object'
+      ? prev.okonomi.reservasjon
+      : {};
+    oppdaterOkonomi({ reservasjon: { ...base, ...patch } }, msg);
+  }, [bil, oppdaterOkonomi]);
 
   const oppdaterArsprove = (patch, msg) => {
     const arsprovekjennemerke = { ...normalizeBilArsprovekjennemerke(bil.arsprovekjennemerke), ...patch };
@@ -4098,7 +4106,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
         )}
 
         {activeTab === 'reservasjon' && (
-          <BilReservasjonTab bil={bil} kunder={kunder} oppdaterOkonomi={oppdaterOkonomi} visTost={visTost} />
+          <BilReservasjonTab bil={bil} kunder={kunder} oppdaterReservasjon={oppdaterReservasjon} visTost={visTost} />
         )}
 
         {activeTab === 'arsprove' && (

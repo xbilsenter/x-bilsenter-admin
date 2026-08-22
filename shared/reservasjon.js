@@ -73,7 +73,7 @@ function normalizeBilReservasjon(raw, defaults, bil) {
     reservasjonTil: isoDateOnly(o.reservasjonTil || base.reservasjonTil || addDaysIso(new Date(), RESERVASJON_FIRMA.reservasjonDager)),
     betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate)
   };
-  if (normalized.kjopesum == null) {
+  if (bil && normalized.kjopesum == null) {
     normalized.kjopesum = resolveKjopesum(null, bil);
   }
   return normalized;

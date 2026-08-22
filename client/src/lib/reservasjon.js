@@ -73,10 +73,15 @@ export function normalizeBilReservasjon(raw, defaults, bil) {
     reservasjonTil: isoDateOnly(o.reservasjonTil || base.reservasjonTil || addDaysIso(new Date(), RESERVASJON_FIRMA.reservasjonDager)),
     betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate)
   };
-  if (normalized.kjopesum == null) {
+  if (bil && normalized.kjopesum == null) {
     normalized.kjopesum = resolveKjopesum(null, bil);
   }
   return normalized;
+}
+
+export function getRawReservasjonFromOkonomi(okonomi) {
+  const o = okonomi && typeof okonomi === 'object' ? okonomi : {};
+  return normalizeBilReservasjon(o.reservasjon, null, null);
 }
 
 export function getReservasjonFromOkonomi(okonomi, bil) {
