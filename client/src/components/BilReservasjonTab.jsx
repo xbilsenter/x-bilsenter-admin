@@ -5,63 +5,101 @@ import {
   BETALINGSMATE_BANKTERMINAL,
   addDaysIso,
   buildBilVisningsnavn,
-  buildFinnItemUrl,
-  buildReservasjonPreviewData,
+  buildReservasjonPreviewModel,
   getReservasjonFromOkonomi,
   isoDateOnly
 } from '../lib/reservasjon.js';
 import { downloadReservasjonPdf } from '../api.js';
 
-function escapeHtml(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 function ReservasjonPreview({ bil, kunde, reservasjon }) {
-  const data = buildReservasjonPreviewData(bil, kunde, reservasjon);
-  const finnUrl = buildFinnItemUrl(bil?.finnKode);
-  const hilsen = data.kundeNavn ? `Hei ${escapeHtml(data.kundeNavn)}` : 'Hei';
+  const model = buildReservasjonPreviewModel(bil, kunde, reservasjon);
 
   return (
     <div className="bil-reservasjon-preview">
+      <div className="bil-reservasjon-preview__accent" />
       <div className="bil-reservasjon-preview__head">
-        <div className="bil-reservasjon-preview__brand">{RESERVASJON_FIRMA.navn}</div>
-        <div className="bil-reservasjon-preview__sub">Reservasjonsbekreftelse</div>
-      </div>
-      <div className="bil-reservasjon-preview__body">
-        <p>{hilsen}</p>
-        <p>
-          Takk for en hyggelig avtale vedr. kjøp av vår {escapeHtml(data.bilNavn)}
-          {finnUrl ? (
-            <> (<a href={finnUrl} target="_blank" rel="noopener noreferrer">{finnUrl}</a>)</>
-          ) : null}
-          .
-        </p>
-
-        <h4>Kjøpesum</h4>
-        <p>Avtalt kjøpesum på vår {escapeHtml(data.bilNavn)} er {data.kjopesumTekst}.</p>
-
-        <h4>Depositum</h4>
-        <p>{data.depositumIntro}</p>
-        <p>{data.depositumVilkar}</p>
-
-        <h4>Forbehold</h4>
-        <p>
-          Bilen reserveres til deg ut {data.reservasjonTilTekst}. Mottar vi ikke fullt oppgjør eller at handel ikke er ferdigstilt før denne tid,
-          anses det som en kansellering fra din side – ved tilfelle vil depositum ikke være refunderbart.
-        </p>
-
-        <h4>Annet</h4>
-        <p>{data.annetTekst}</p>
-
-        <p className="bil-reservasjon-preview__thanks">Takk for en hyggelig handel!</p>
-        <p>Med vennlig hilsen,<br /><strong>{RESERVASJON_FIRMA.navn}</strong><br /><em>{RESERVASJON_FIRMA.tagline}</em></p>
-        <div className="bil-reservasjon-preview__footer">
-          {RESERVASJON_FIRMA.adresse} | Mobil {RESERVASJON_FIRMA.mobil} | {RESERVASJON_FIRMA.epost} | {RESERVASJON_FIRMA.web}
+        <div>
+          <div className="bil-reservasjon-preview__brand">X BILSENTER</div>
+          <div className="bil-reservasjon-preview__tagline">{RESERVASJON_FIRMA.tagline}</div>
         </div>
+        <div className="bil-reservasjon-preview__doc-type">
+          <div>RESERVASJON</div>
+          <span>Bekreftelse</span>
+        </div>
+      </div>
+
+      <div className="bil-reservasjon-preview__hero">
+        <div>
+          <h3>{model.dokument.tittel}</h3>
+          <p>{model.dokument.undertittel}</p>
+        </div>
+        <div className="bil-reservasjon-preview__meta">
+          <div><span>Dato</span><strong>{model.dokument.dato}</strong></div>
+          {model.dokument.referanse ? <div><span>Referanse</span><strong>{model.dokument.referanse}</strong></div> : null}
+          <div><span>Kunde</span><strong>{model.kundeNavn}</strong></div>
+        </div>
+      </div>
+
+      <div className="bil-reservasjon-preview__body">
+        <p className="bil-reservasjon-preview__intro">{model.intro}</p>
+        {model.finnUrl ? (
+          <p className="bil-reservasjon-preview__finn">
+            Annonse: <a href={model.finnUrl} target="_blank" rel="noopener noreferrer">{model.finnUrl}</a>
+          </p>
+        ) : null}
+
+        <div className="bil-reservasjon-preview__section">
+          <h4>Avtalen i korthet</h4>
+          <div className="bil-reservasjon-preview__table">
+            {model.summaryRows.map(function (row) {
+              return (
+                <div className={`bil-reservasjon-preview__row${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="bil-reservasjon-preview__section">
+          <h4>Depositum og betaling</h4>
+          <div className="bil-reservasjon-preview__payment">
+            <div className="bil-reservasjon-preview__payment-title">{model.payment.title}</div>
+            {model.payment.lines.map(function (line) {
+              return <p key={line}>{line}</p>;
+            })}
+          </div>
+        </div>
+
+        <div className="bil-reservasjon-preview__section">
+          <h4>Vilkår</h4>
+          <ul className="bil-reservasjon-preview__list">
+            {model.vilkar.map(function (item) {
+              return <li key={item}>{item}</li>;
+            })}
+          </ul>
+        </div>
+
+        <div className="bil-reservasjon-preview__section">
+          <h4>Neste steg</h4>
+          <ol className="bil-reservasjon-preview__steps">
+            {model.nesteSteg.map(function (item) {
+              return <li key={item}>{item}</li>;
+            })}
+          </ol>
+        </div>
+
+        <p className="bil-reservasjon-preview__closing">{model.avslutning}</p>
+        <p className="bil-reservasjon-preview__signoff">
+          Med vennlig hilsen,<br />
+          <strong>{RESERVASJON_FIRMA.navn}</strong><br />
+          <em>{RESERVASJON_FIRMA.tagline}</em>
+        </p>
+      </div>
+
+      <div className="bil-reservasjon-preview__footer">
+        {RESERVASJON_FIRMA.adresse} · Mobil {RESERVASJON_FIRMA.mobil} · {RESERVASJON_FIRMA.epost} · {RESERVASJON_FIRMA.web}
       </div>
     </div>
   );

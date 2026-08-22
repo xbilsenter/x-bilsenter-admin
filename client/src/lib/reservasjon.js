@@ -113,30 +113,77 @@ export function buildAnnetTekst(betalingsmate) {
   return 'Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt kvittering på utført betaling av depositum, settes bilen som solgt på FINN- og holdes av til deg.';
 }
 
-export function buildReservasjonPreviewData(bil, kunde, reservasjon) {
+export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
   const bilNavn = buildBilVisningsnavn(bil);
   const finnUrl = buildFinnItemUrl(bil?.finnKode);
   const kundeNavn = String(kunde?.navn || '').trim();
   const kjopesum = resolveKjopesum(reservasjon, bil);
   const betalingsmate = normalizeBetalingsmate(reservasjon.betalingsmate);
+  const erTerminal = betalingsmate === BETALINGSMATE_BANKTERMINAL;
+  const kjopesumTekst = kjopesum != null && Number.isFinite(kjopesum) ? formatNokBelop(kjopesum) : '—';
   const depositumTekst = reservasjon.depositum != null ? formatNokBelop(reservasjon.depositum) : '—';
   const depositumForfallTekst = formatNorskDato(reservasjon.depositumForfall);
+  const reservasjonTilTekst = formatNorskDato(reservasjon.reservasjonTil);
 
-  const previewData = {
-    kundeNavn,
-    bilNavn,
-    finnUrl,
-    kjopesumTekst: kjopesum != null && Number.isFinite(kjopesum) ? formatNokBelop(kjopesum) : '—',
-    depositumTekst,
-    depositumForfallTekst,
-    reservasjonTilTekst: formatNorskDato(reservasjon.reservasjonTil),
-    betalingsmate
+  const summaryRows = [
+    { label: 'Kjøretøy', value: bilNavn },
+    bil?.reg ? { label: 'Registreringsnr.', value: String(bil.reg).toUpperCase() } : null,
+    { label: 'Kjøpesum', value: kjopesumTekst, highlight: true },
+    { label: 'Depositum', value: depositumTekst, highlight: true },
+    { label: 'Depositum senest', value: depositumForfallTekst },
+    { label: 'Reservert til', value: reservasjonTilTekst },
+    { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+  ].filter(Boolean);
+
+  const payment = {
+    title: erTerminal ? 'Betaling i butikk' : 'Betaling via bankoverføring',
+    lines: erTerminal
+      ? [
+          `Depositum på ${depositumTekst} betales med bankterminal i butikk hos ${RESERVASJON_FIRMA.navn}.`,
+          `Betaling må være registrert senest ${depositumForfallTekst}.`
+        ]
+      : [
+          `Depositum på ${depositumTekst} overføres til konto ${RESERVASJON_FIRMA.kontonummer}.`,
+          `Mottaker: ${RESERVASJON_FIRMA.navn}.`,
+          `Betalingsfrist: ${depositumForfallTekst}.`
+        ]
   };
 
   return {
-    ...previewData,
-    depositumIntro: buildDepositumIntro({ ...previewData, betalingsmate }),
-    depositumVilkar: buildDepositumVilkar(),
-    annetTekst: buildAnnetTekst(betalingsmate)
+    dokument: {
+      tittel: 'Reservasjonsbekreftelse',
+      undertittel: 'Avtale om reservasjon av kjøretøy',
+      dato: formatNorskDato(isoDateOnly(new Date())),
+      referanse: bil?.reg ? String(bil.reg).toUpperCase() : ''
+    },
+    kundeNavn: kundeNavn || 'Kunde',
+    intro: kundeNavn
+      ? `Hei ${kundeNavn}, takk for avtalen om kjøp av ${bilNavn}.`
+      : `Hei, takk for avtalen om kjøp av ${bilNavn}.`,
+    finnUrl,
+    summaryRows,
+    payment,
+    vilkar: [
+      'Depositum trekkes fra kjøpesum ved gjennomført handel.',
+      'Ved kansellering fra kundens side refunderes ikke depositum.',
+      `Bilen holdes reservert til ${reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
+      'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen og refundere depositum.'
+    ],
+    nesteSteg: erTerminal
+      ? [
+          'Bekreft at du aksepterer vilkårene i dette dokumentet.',
+          'Betale avtalt depositum med bankterminal i butikk innen fristen.',
+          'Vi markerer bilen som reservert og holder den av til deg.'
+        ]
+      : [
+          'Bekreft at du aksepterer vilkårene i dette dokumentet.',
+          'Overfør avtalt depositum innen fristen og send oss kvittering.',
+          'Vi markerer bilen som reservert og holder den av til deg.'
+        ],
+    avslutning: 'Vi ser frem til å fullføre handelen sammen med deg.'
   };
+}
+
+export function buildReservasjonPreviewData(bil, kunde, reservasjon) {
+  return buildReservasjonPreviewModel(bil, kunde, reservasjon);
 }

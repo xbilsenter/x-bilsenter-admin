@@ -143,6 +143,84 @@ function enrichReservasjonDocumentData(data) {
   };
 }
 
+function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
+  const base = buildReservasjonDocumentData(bil, kunde, reservasjonRaw);
+  const doc = enrichReservasjonDocumentData(base);
+  const idag = formatNorskDato(isoDateOnly(new Date()));
+  const erTerminal = doc.betalingsmate === BETALINGSMATE_BANKTERMINAL;
+
+  const summaryRows = [
+    { label: 'Kjøretøy', value: doc.bilNavn },
+    bil?.reg ? { label: 'Registreringsnr.', value: String(bil.reg).toUpperCase() } : null,
+    { label: 'Kjøpesum', value: doc.kjopesumTekst, highlight: true },
+    { label: 'Depositum', value: doc.depositumTekst, highlight: true },
+    { label: 'Depositum senest', value: doc.depositumForfallTekst },
+    { label: 'Reservert til', value: doc.reservasjonTilTekst },
+    { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+  ].filter(Boolean);
+
+  const paymentLines = erTerminal
+    ? [
+        `Depositum på ${doc.depositumTekst} betales med bankterminal i butikk hos ${doc.firma.navn}.`,
+        `Betaling må være registrert senest ${doc.depositumForfallTekst}.`
+      ]
+    : [
+        `Depositum på ${doc.depositumTekst} overføres til konto ${doc.firma.kontonummer}.`,
+        `Mottaker: ${doc.firma.navn}.`,
+        `Betalingsfrist: ${doc.depositumForfallTekst}.`
+      ];
+
+  const vilkar = [
+    'Depositum trekkes fra kjøpesum ved gjennomført handel.',
+    'Ved kansellering fra kundens side refunderes ikke depositum.',
+    `Bilen holdes reservert til ${doc.reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
+    'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen og refundere depositum.'
+  ];
+
+  const nesteSteg = erTerminal
+    ? [
+        'Bekreft at du aksepterer vilkårene i dette dokumentet.',
+        'Betale avtalt depositum med bankterminal i butikk innen fristen.',
+        'Vi markerer bilen som reservert og holder den av til deg.'
+      ]
+    : [
+        'Bekreft at du aksepterer vilkårene i dette dokumentet.',
+        'Overfør avtalt depositum innen fristen og send oss kvittering.',
+        'Vi markerer bilen som reservert og holder den av til deg.'
+      ];
+
+  return {
+    firma: doc.firma,
+    dokument: {
+      tittel: 'Reservasjonsbekreftelse',
+      undertittel: 'Avtale om reservasjon av kjøretøy',
+      dato: idag,
+      referanse: bil?.reg ? String(bil.reg).toUpperCase() : (bil?.id ? `Bil #${bil.id}` : '')
+    },
+    kunde: {
+      navn: doc.kundeNavn || 'Kunde',
+      epost: String(kunde?.epost || '').trim(),
+      tlf: String(kunde?.tlf || '').trim()
+    },
+    bil: {
+      navn: doc.bilNavn,
+      reg: bil?.reg ? String(bil.reg).toUpperCase() : '',
+      finnUrl: doc.finnUrl || ''
+    },
+    summaryRows,
+    payment: {
+      title: erTerminal ? 'Betaling i butikk' : 'Betaling via bankoverføring',
+      lines: paymentLines
+    },
+    vilkar,
+    nesteSteg,
+    intro: doc.kundeNavn
+      ? `Hei ${doc.kundeNavn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
+      : `Hei, takk for avtalen om kjøp av ${doc.bilNavn}.`,
+    avslutning: 'Vi ser frem til å fullføre handelen sammen med deg.'
+  };
+}
+
 function reservasjonSeksjoner(data) {
   const doc = enrichReservasjonDocumentData(data);
   const finnDel = doc.finnUrl ? ` (${doc.finnUrl})` : '';
@@ -193,5 +271,6 @@ module.exports = {
   buildDepositumIntro,
   buildDepositumVilkar,
   buildAnnetTekst,
+  buildReservasjonPdfModel,
   reservasjonSeksjoner
 };
