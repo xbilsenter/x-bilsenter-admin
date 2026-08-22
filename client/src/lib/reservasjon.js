@@ -46,20 +46,35 @@ function belopForLagring(value) {
   return n;
 }
 
-export function normalizeBilReservasjon(raw, defaults) {
+export function resolveKjopesum(reservasjon, bil) {
+  const fraReservasjon = belopForLagring(reservasjon?.kjopesum);
+  if (fraReservasjon != null) return fraReservasjon;
+  if (bil?.salg != null && bil.salg !== '') {
+    const fraSalg = Number(bil.salg);
+    if (Number.isFinite(fraSalg) && fraSalg > 0) return fraSalg;
+  }
+  return null;
+}
+
+export function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
-  return {
+  const normalized = {
+    kjopesum: belopForLagring(o.kjopesum ?? base.kjopesum),
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
     reservasjonTil: isoDateOnly(o.reservasjonTil || base.reservasjonTil || addDaysIso(new Date(), RESERVASJON_FIRMA.reservasjonDager)),
     kontonummer: String(o.kontonummer || base.kontonummer || RESERVASJON_FIRMA.kontonummer).trim()
   };
+  if (normalized.kjopesum == null) {
+    normalized.kjopesum = resolveKjopesum(null, bil);
+  }
+  return normalized;
 }
 
-export function getReservasjonFromOkonomi(okonomi) {
+export function getReservasjonFromOkonomi(okonomi, bil) {
   const o = okonomi && typeof okonomi === 'object' ? okonomi : {};
-  return normalizeBilReservasjon(o.reservasjon);
+  return normalizeBilReservasjon(o.reservasjon, null, bil);
 }
 
 export function buildBilVisningsnavn(bil) {
@@ -77,7 +92,7 @@ export function buildReservasjonPreviewData(bil, kunde, reservasjon) {
   const bilNavn = buildBilVisningsnavn(bil);
   const finnUrl = buildFinnItemUrl(bil?.finnKode);
   const kundeNavn = String(kunde?.navn || '').trim();
-  const kjopesum = bil?.salg != null && bil.salg !== '' ? Number(bil.salg) : null;
+  const kjopesum = resolveKjopesum(reservasjon, bil);
 
   return {
     kundeNavn,

@@ -76,7 +76,7 @@ function ReservasjonPreview({ bil, kunde, reservasjon }) {
 }
 
 export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTost }) {
-  const reservasjon = getReservasjonFromOkonomi(bil.okonomi);
+  const reservasjon = getReservasjonFromOkonomi(bil.okonomi, bil);
   const kundeIds = bil.kundeIds || (bil.kundeId ? [bil.kundeId] : []);
   const kunde = useMemo(function () {
     const id = kundeIds[0];
@@ -125,7 +125,7 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
         <div className="bil-reservasjon__panel">
           <div className="modal-sec">Avtaledetaljer</div>
           <p className="bil-reservasjon__hint">
-            Fyll inn depositum og datoer. Kjøpesum hentes fra salgspris på bilen. PDF-en kan sendes til kunden som reservasjonsbekreftelse.
+            Fyll inn kjøpesum, depositum og datoer. Salgspris fra Økonomi foreslås automatisk hvis kjøpesum er tom. PDF-en kan sendes til kunden som reservasjonsbekreftelse.
           </p>
 
           <div className="gap">
@@ -148,10 +148,17 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
 
           <div className="form-row gap">
             <div>
-              <div className="fl">Kjøpesum (fra salgspris)</div>
-              <div className="fv" style={{ fontWeight: 600, color: 'var(--gold)' }}>
-                {bil.salg != null && bil.salg !== '' ? `kr ${Number(bil.salg).toLocaleString('nb-NO')}` : '—'}
-              </div>
+              <div className="fl">Kjøpesum (kr)</div>
+              <input
+                type="number"
+                min="0"
+                placeholder={bil.salg != null && bil.salg !== '' ? String(bil.salg) : 'f.eks. 189000'}
+                value={reservasjon.kjopesum ?? ''}
+                onChange={function (e) {
+                  const val = e.target.value;
+                  oppdater({ kjopesum: val === '' ? null : Number(val) }, 'Kjøpesum oppdatert ✓');
+                }}
+              />
             </div>
             <div>
               <div className="fl">Depositum (kr)</div>
@@ -202,14 +209,14 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterOkonomi, visTos
             <button
               type="button"
               className="btn btn-p"
-              disabled={lasterPdf || !bil.salg}
+              disabled={lasterPdf || !reservasjon.kjopesum}
               onClick={lastNedPdf}
             >
               {lasterPdf ? 'Lager PDF…' : 'Last ned PDF'}
             </button>
           </div>
-          {!bil.salg ? (
-            <p className="bil-reservasjon__warn">Legg inn salgspris under Økonomi for å generere PDF.</p>
+          {!reservasjon.kjopesum ? (
+            <p className="bil-reservasjon__warn">Legg inn kjøpesum for å generere PDF.</p>
           ) : null}
         </div>
 

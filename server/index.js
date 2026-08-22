@@ -2665,7 +2665,7 @@ app.get('/api/biler/:id/reservasjon-pdf', requireAuth, async function (req, res)
     }
 
     const okonomi = parseJson(row.okonomi, {});
-    const reservasjon = normalizeBilReservasjon(okonomi.reservasjon);
+    const reservasjon = normalizeBilReservasjon(okonomi.reservasjon, null, bil);
     const pdf = await buildReservasjonPdfBuffer(bil, kunde, reservasjon);
     const filnavn = ['Reservasjon', bil.reg || id].filter(Boolean).join('-').replace(/\s+/g, '-');
     res.setHeader('Content-Type', 'application/pdf');

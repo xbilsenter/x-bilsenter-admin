@@ -847,6 +847,9 @@ export function normalizeBilOkonomi(raw) {
   let reservasjon = null;
   if (o.reservasjon && typeof o.reservasjon === 'object') {
     reservasjon = { ...o.reservasjon };
+    if (reservasjon.kjopesum != null) {
+      reservasjon.kjopesum = okonomiBelopForSave(reservasjon.kjopesum);
+    }
     if (reservasjon.depositum != null) {
       reservasjon.depositum = okonomiBelopForSave(reservasjon.depositum);
     }
