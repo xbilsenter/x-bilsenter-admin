@@ -47,11 +47,11 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
         <div>
           <img
             className="bil-reservasjon-preview__logo"
-            src="/assets/reservasjon-logo.png"
-            alt="X Bilsenter"
+            src="/assets/logo.svg"
+            alt="X Bilsenter AS"
           />
         </div>
-        <div className="bil-reservasjon-preview__doc-type">
+        <div className="bil-reservasjon-preview__doc-type bil-reservasjon-preview__doc-type--panel">
           <div>RESERVASJONSBEKREFTELSE</div>
           <span>{model.dokument.dato} · Ref. {model.dokument.referanse || '—'}</span>
           <strong>{model.kundeNavn}</strong>
@@ -59,7 +59,7 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
       </div>
 
       <div className="bil-reservasjon-preview__body">
-        <p className="bil-reservasjon-preview__intro">{model.intro}</p>
+        <p className="bil-reservasjon-preview__intro-box">{model.intro}</p>
         {model.finnUrl ? (
           <p className="bil-reservasjon-preview__finn">
             FINN: <a href={model.finnUrl} target="_blank" rel="noopener noreferrer">{model.finnUrl}</a>
@@ -133,16 +133,15 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
 
         <div className="bil-reservasjon-preview__closing-row">
           <p className="bil-reservasjon-preview__closing">{model.avslutning}</p>
-          <div className="bil-reservasjon-preview__signoff-box">
-            <img className="bil-reservasjon-preview__signoff-logo" src="/assets/reservasjon-logo.png" alt="" />
-            <p className="bil-reservasjon-preview__signoff">
-              Med vennlig hilsen,<br />
-              <strong>{RESERVASJON_FIRMA.navn}</strong><br />
-              <em>{RESERVASJON_FIRMA.tagline}</em>
-            </p>
-            <div className="bil-reservasjon-preview__signoff-line">Signatur kunde</div>
+          <div className="bil-reservasjon-preview__signature">
+            <div className="bil-reservasjon-preview__signature-line" />
+            <div className="bil-reservasjon-preview__signature-label">Signatur kunde</div>
           </div>
         </div>
+      </div>
+
+      <div className="bil-reservasjon-preview__footer">
+        {RESERVASJON_FIRMA.adresse} · Mobil {RESERVASJON_FIRMA.mobil} · {RESERVASJON_FIRMA.epost} · {RESERVASJON_FIRMA.web}
       </div>
     </div>
   );

@@ -34,6 +34,7 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.17.2",
+    "svg-to-pdfkit": "^0.1.8",
     "pg": "^8.22.0",
     "serverless-http": "^3.2.0"
   },
