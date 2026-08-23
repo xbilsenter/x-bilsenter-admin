@@ -56,7 +56,9 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
           <h4>Depositum og betaling</h4>
           <div className="bil-reservasjon-preview__payment">
             <div className="bil-reservasjon-preview__payment-title">{model.payment.title}</div>
-            <p>{model.payment.lines.join(' ')}</p>
+            {model.payment.lines.map(function (line) {
+              return <p key={line}>{line}</p>;
+            })}
           </div>
         </div>
 
