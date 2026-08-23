@@ -51,20 +51,31 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
             alt="X Bilsenter AS"
           />
         </div>
-        <div className="bil-reservasjon-preview__doc-type bil-reservasjon-preview__doc-type--panel">
-          <div>RESERVASJONSBEKREFTELSE</div>
-          <span>{model.dokument.dato} · Ref. {model.dokument.referanse || '—'}</span>
-          <strong>{model.kundeNavn}</strong>
+        <div className="bil-reservasjon-preview__meta">
+          <div className="bil-reservasjon-preview__meta-label">Reservasjonsbekreftelse</div>
+          <div className="bil-reservasjon-preview__meta-row">
+            <span>Dato</span>
+            <strong>{model.dokument.dato}</strong>
+          </div>
+          <div className="bil-reservasjon-preview__meta-row">
+            <span>Referanse</span>
+            <strong>{model.dokument.referanse || '—'}</strong>
+          </div>
+          <div className="bil-reservasjon-preview__meta-row bil-reservasjon-preview__meta-row--customer">
+            <span>Kunde</span>
+            <strong>{model.kundeNavn}</strong>
+          </div>
         </div>
       </div>
 
       <div className="bil-reservasjon-preview__body">
         <div className="bil-reservasjon-preview__doc-title">{model.dokument.tittel}</div>
         <div className="bil-reservasjon-preview__doc-subtitle">{model.dokument.undertittel}</div>
-        <p className="bil-reservasjon-preview__intro-box">{model.intro}</p>
+        <p className="bil-reservasjon-preview__intro">{model.intro}</p>
         {model.finnUrl ? (
           <p className="bil-reservasjon-preview__finn">
-            FINN: <a href={model.finnUrl} target="_blank" rel="noopener noreferrer">{model.finnUrl}</a>
+            <span>FINN-annonse</span>
+            <a href={model.finnUrl} target="_blank" rel="noopener noreferrer">{model.finnUrl}</a>
           </p>
         ) : null}
 
@@ -146,7 +157,7 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
       </div>
 
       <div className="bil-reservasjon-preview__footer">
-        {RESERVASJON_FIRMA.adresse} · Mobil {RESERVASJON_FIRMA.mobil} · {RESERVASJON_FIRMA.epost} · {RESERVASJON_FIRMA.web}
+        {RESERVASJON_FIRMA.navn} · {RESERVASJON_FIRMA.adresse} · {RESERVASJON_FIRMA.mobil} · {RESERVASJON_FIRMA.epost} · {RESERVASJON_FIRMA.web}
       </div>
     </div>
   );
