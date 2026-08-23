@@ -1,16 +1,20 @@
+const path = require('path');
+const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const {
   RESERVASJON_FIRMA,
   buildReservasjonPdfModel
 } = require('../shared/reservasjon');
 
+const LOGO_PATH = path.join(__dirname, 'assets', 'reservasjon-logo.png');
+const HAS_LOGO = fs.existsSync(LOGO_PATH);
+
 const PAGE = {
   w: 595.28,
   h: 841.89,
   left: 48,
   right: 547,
-  width: 499,
-  footerY: 804
+  width: 499
 };
 
 const C = {
@@ -24,31 +28,22 @@ const C = {
 };
 
 const SECTION_GAP = 18;
-const CONTENT_BOTTOM = 726;
-const CLOSING_H = 68;
+const CLOSING_H = 78;
+const CONTENT_BOTTOM = PAGE.h - CLOSING_H - 12;
 
 function sectionTitleHeight() {
   return 18;
 }
 
-function drawFooter(doc) {
-  doc.moveTo(PAGE.left, PAGE.footerY).lineTo(PAGE.right, PAGE.footerY).strokeColor(C.line).lineWidth(0.75).stroke();
-  doc.font('Helvetica').fontSize(7.5).fillColor(C.muted)
-    .text(
-      `${RESERVASJON_FIRMA.navn} · ${RESERVASJON_FIRMA.adresse} · ${RESERVASJON_FIRMA.mobil} · ${RESERVASJON_FIRMA.epost} · ${RESERVASJON_FIRMA.web}`,
-      PAGE.left,
-      PAGE.footerY + 10,
-      { width: PAGE.width, align: 'center', lineGap: 1 }
-    );
-}
-
 function drawHeader(doc, model) {
   doc.rect(0, 0, PAGE.w, 6).fill(C.accent);
 
-  doc.font('Helvetica-Bold').fontSize(22).fillColor(C.text)
-    .text('X BILSENTER', PAGE.left, 28, { lineBreak: false });
-  doc.font('Helvetica').fontSize(8).fillColor(C.muted)
-    .text(RESERVASJON_FIRMA.tagline.toUpperCase(), PAGE.left, 54, { characterSpacing: 0.5 });
+  if (HAS_LOGO) {
+    doc.image(LOGO_PATH, PAGE.left, 24, { width: 128 });
+  } else {
+    doc.font('Helvetica-Bold').fontSize(22).fillColor(C.text)
+      .text('X BILSENTER', PAGE.left, 28, { lineBreak: false });
+  }
 
   const rx = PAGE.right - 190;
   doc.font('Helvetica-Bold').fontSize(9).fillColor(C.accentDark)
@@ -113,6 +108,18 @@ function drawSummaryTable(doc, y, rows, rowH) {
     rowY += rowH;
   });
 
+  return y + boxH;
+}
+
+function drawInnbytteComment(doc, y, kommentar) {
+  const pad = 14;
+  const boxH = 48;
+  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 8).fill('#FFFFFF');
+  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 8).strokeColor(C.line).lineWidth(0.75).stroke();
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(C.accentDark)
+    .text('KOMMENTAR', PAGE.left + pad, y + 10);
+  doc.font('Helvetica').fontSize(9.5).fillColor(C.text)
+    .text(kommentar, PAGE.left + pad, y + 24, { width: PAGE.width - pad * 2, lineGap: 2 });
   return y + boxH;
 }
 
@@ -189,38 +196,60 @@ function drawClosing(doc, y, model) {
   doc.roundedRect(PAGE.left, y, PAGE.width, CLOSING_H, 8).strokeColor(C.line).lineWidth(0.75).stroke();
 
   doc.font('Helvetica').fontSize(10.5).fillColor(C.text)
-    .text(model.avslutning, PAGE.left + 16, y + 16, { width: PAGE.width * 0.58, lineGap: 2 });
+    .text(model.avslutning, PAGE.left + 16, y + 18, { width: PAGE.width * 0.52, lineGap: 2 });
 
-  const signX = PAGE.left + PAGE.width * 0.6;
-  doc.font('Helvetica').fontSize(9).fillColor(C.muted).text('Med vennlig hilsen,', signX, y + 14);
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(C.text).text(model.firma.navn, signX, doc.y + 4);
-  doc.font('Helvetica-Oblique').fontSize(9).fillColor(C.muted).text(model.firma.tagline, signX, doc.y + 3);
+  const signX = PAGE.left + PAGE.width * 0.56;
+  const signW = PAGE.width * 0.44 - 12;
+  const signBoxY = y + 10;
+  const signBoxH = CLOSING_H - 20;
 
-  doc.moveTo(signX, y + CLOSING_H - 16).lineTo(PAGE.right - 16, y + CLOSING_H - 16).strokeColor(C.line).lineWidth(0.5).stroke();
+  doc.roundedRect(signX, signBoxY, signW, signBoxH, 6).fill('#FFFFFF');
+  doc.roundedRect(signX, signBoxY, signW, signBoxH, 6).strokeColor(C.line).lineWidth(0.75).stroke();
+
+  let textY = signBoxY + 12;
+  if (HAS_LOGO) {
+    doc.image(LOGO_PATH, signX + 12, signBoxY + 10, { width: 72 });
+    textY = signBoxY + 38;
+  }
+
+  doc.font('Helvetica').fontSize(9).fillColor(C.muted).text('Med vennlig hilsen,', signX + 12, textY);
+  doc.font('Helvetica-Bold').fontSize(10.5).fillColor(C.text).text(model.firma.navn, signX + 12, doc.y + 3);
+  doc.font('Helvetica-Oblique').fontSize(8.5).fillColor(C.muted).text(model.firma.tagline, signX + 12, doc.y + 2, {
+    width: signW - 24,
+    lineGap: 1
+  });
+
+  doc.moveTo(signX + 12, signBoxY + signBoxH - 14).lineTo(signX + signW - 12, signBoxY + signBoxH - 14)
+    .strokeColor(C.line).lineWidth(0.5).stroke();
   doc.font('Helvetica').fontSize(7.5).fillColor(C.muted)
-    .text('Signatur kunde', signX, y + CLOSING_H - 12);
+    .text('Signatur kunde', signX + 12, signBoxY + signBoxH - 11);
+}
+
+function innbytteCommentHeight(model) {
+  return model.innbytte?.kommentar ? 58 : 0;
 }
 
 function computeLayout(model, introEndY) {
   const summaryRows = model.summaryRows.length;
   const summaryPad = 28;
-  const minSummaryRowH = 24;
-  const maxSummaryRowH = 32;
-  const minPaymentH = 84;
-  const maxPaymentH = 98;
-  const minTwoColH = 168;
+  const minSummaryRowH = 22;
+  const maxSummaryRowH = 30;
+  const minPaymentH = 80;
+  const maxPaymentH = 92;
+  const minTwoColH = 130;
+  const commentExtra = innbytteCommentHeight(model);
   const sectionTitles = sectionTitleHeight() * 3;
-  const gaps = SECTION_GAP * 4;
-  const available = CONTENT_BOTTOM - introEndY;
+  const gaps = SECTION_GAP * 2;
+  const available = CONTENT_BOTTOM - introEndY - commentExtra - CLOSING_H - SECTION_GAP;
 
   function usedHeight(rowH, payH, colH) {
-    return sectionTitles + gaps + summaryPad + summaryRows * rowH + payH + colH + CLOSING_H;
+    return sectionTitles + gaps + summaryPad + summaryRows * rowH + payH + colH;
   }
 
   for (let rowH = maxSummaryRowH; rowH >= minSummaryRowH; rowH -= 1) {
     for (let payH = maxPaymentH; payH >= minPaymentH; payH -= 2) {
       const remaining = available - usedHeight(rowH, payH, 0);
-      const colH = Math.min(240, Math.max(minTwoColH, remaining));
+      const colH = Math.min(220, Math.max(minTwoColH, remaining));
       if (usedHeight(rowH, payH, colH) <= available) {
         return { summaryRowH: rowH, paymentH: payH, twoColH: colH };
       }
@@ -246,6 +275,10 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
 
     y = drawSectionTitle(doc, y, 'Avtalen i korthet');
     y = drawSummaryTable(doc, y, model.summaryRows, layout.summaryRowH);
+    if (model.innbytte?.kommentar) {
+      y += 8;
+      y = drawInnbytteComment(doc, y, model.innbytte.kommentar);
+    }
     y += SECTION_GAP;
 
     y = drawSectionTitle(doc, y, 'Depositum og betaling');
@@ -254,10 +287,10 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
 
     const twoColSectionY = y;
     y = drawSectionTitle(doc, y, 'Vilkår og neste steg');
-    const twoColH = Math.max(168, CONTENT_BOTTOM - y);
+    const closingTop = CONTENT_BOTTOM;
+    const twoColH = Math.max(110, closingTop - y - 4);
     drawTwoColumnSections(doc, twoColSectionY, model, twoColH, true);
-    drawClosing(doc, CONTENT_BOTTOM, model);
-    drawFooter(doc);
+    drawClosing(doc, closingTop, model);
 
     doc.end();
   });

@@ -63,6 +63,51 @@ function resolveKjopesum(reservasjon, bil) {
   return null;
 }
 
+function normalizeInnbytteFields(o) {
+  const src = o && typeof o === 'object' ? o : {};
+  const kmRaw = src.innbytteKm;
+  let innbytteKm = null;
+  if (kmRaw !== '' && kmRaw !== null && kmRaw !== undefined) {
+    const n = Number(kmRaw);
+    if (Number.isFinite(n) && n > 0) innbytteKm = n;
+  }
+
+  return {
+    harInnbytte: !!src.harInnbytte,
+    innbytteReg: String(src.innbytteReg || '').trim().toUpperCase(),
+    innbytteKm,
+    innbyttePris: belopForLagring(src.innbyttePris),
+    innbytteKommentar: String(src.innbytteKommentar || '').trim()
+  };
+}
+
+function formatKm(km) {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  return `${n.toLocaleString('nb-NO')} km`;
+}
+
+function buildInnbytteDocumentData(reservasjon) {
+  const innbytte = normalizeInnbytteFields(reservasjon);
+  if (!innbytte.harInnbytte) return null;
+
+  return {
+    reg: innbytte.innbytteReg || '—',
+    kmTekst: formatKm(innbytte.innbytteKm),
+    prisTekst: innbytte.innbyttePris != null ? formatNok(innbytte.innbyttePris) : '—',
+    kommentar: innbytte.innbytteKommentar || ''
+  };
+}
+
+function buildInnbytteSummaryRows(innbytte) {
+  if (!innbytte) return [];
+  return [
+    { label: 'Registreringsnr.', value: innbytte.reg },
+    { label: 'Kilometerstand', value: innbytte.kmTekst },
+    { label: 'Innbyttepris', value: innbytte.prisTekst, highlight: true }
+  ];
+}
+
 function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
@@ -71,7 +116,8 @@ function normalizeBilReservasjon(raw, defaults, bil) {
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
     reservasjonTil: isoDateOnly(o.reservasjonTil || base.reservasjonTil || addDaysIso(new Date(), RESERVASJON_FIRMA.reservasjonDager)),
-    betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate)
+    betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate),
+    ...normalizeInnbytteFields({ ...base, ...o })
   };
   if (bil && normalized.kjopesum == null) {
     normalized.kjopesum = resolveKjopesum(null, bil);
@@ -82,6 +128,12 @@ function normalizeBilReservasjon(raw, defaults, bil) {
 function buildBilVisningsnavn(bil) {
   if (!bil) return 'bilen';
   const parts = [bil.merke, bil.modell, bil.aar].filter(Boolean);
+  return parts.length ? parts.join(' ') : (bil.reg || 'bilen');
+}
+
+function buildBilAvtaleNavn(bil) {
+  if (!bil) return 'bilen';
+  const parts = [bil.merke, bil.modell].filter(Boolean);
   return parts.length ? parts.join(' ') : (bil.reg || 'bilen');
 }
 
@@ -110,7 +162,7 @@ function buildAnnetTekst(data) {
 
 function buildReservasjonDocumentData(bil, kunde, reservasjonRaw) {
   const reservasjon = normalizeBilReservasjon(reservasjonRaw, null, bil);
-  const bilNavn = buildBilVisningsnavn(bil);
+  const bilNavn = buildBilAvtaleNavn(bil);
   const finnUrl = buildFinnItemUrl(bil?.finnKode);
   const kundeNavn = String(kunde?.navn || '').trim();
   const kjopesum = resolveKjopesum(reservasjon, bil);
@@ -160,7 +212,8 @@ function buildNesteSteg(erTerminal, depositumForfallTekst) {
 }
 
 function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
-  const base = buildReservasjonDocumentData(bil, kunde, reservasjonRaw);
+  const reservasjon = normalizeBilReservasjon(reservasjonRaw, null, bil);
+  const base = buildReservasjonDocumentData(bil, kunde, reservasjon);
   const doc = enrichReservasjonDocumentData(base);
   const idag = formatNorskDato(isoDateOnly(new Date()));
   const erTerminal = doc.betalingsmate === BETALINGSMATE_BANKTERMINAL;
@@ -174,6 +227,15 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     { label: 'Reservert til', value: doc.reservasjonTilTekst },
     { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
   ].filter(Boolean);
+
+  const innbytte = buildInnbytteDocumentData(reservasjon);
+  if (innbytte) {
+    summaryRows.push(
+      { label: 'Innbytte reg.nr.', value: innbytte.reg },
+      { label: 'Innbytte km', value: innbytte.kmTekst },
+      { label: 'Innbyttepris', value: innbytte.prisTekst, highlight: true }
+    );
+  }
 
   const paymentLines = erTerminal
     ? [
@@ -213,6 +275,8 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       finnUrl: doc.finnUrl || ''
     },
     summaryRows,
+    innbytte,
+    innbytteRows: buildInnbytteSummaryRows(innbytte),
     payment: {
       title: erTerminal ? 'Betaling i butikk' : 'Betaling via bankoverføring',
       lines: paymentLines
@@ -268,8 +332,13 @@ module.exports = {
   formatNok,
   normalizeBetalingsmate,
   normalizeBilReservasjon,
+  normalizeInnbytteFields,
+  buildInnbytteDocumentData,
+  buildInnbytteSummaryRows,
+  formatKm,
   resolveKjopesum,
   buildBilVisningsnavn,
+  buildBilAvtaleNavn,
   buildFinnItemUrl,
   buildReservasjonDocumentData,
   enrichReservasjonDocumentData,

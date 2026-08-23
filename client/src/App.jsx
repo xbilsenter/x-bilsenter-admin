@@ -3660,6 +3660,9 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     .sort(function (a, b) { return a.dato.localeCompare(b.dato) || a.tid.localeCompare(b.tid); });
   const harInnboks = canAccess(currentUser, 'innboks');
   const henvendelser = buildBilHenvendelseItems(bil, henv, innbytte, epost, harInnboks);
+  const knyttetInnbytte = useMemo(function () {
+    return (innbytte || []).find(function (i) { return matchesInnbytteTilBil(i, bil); }) || null;
+  }, [innbytte, bil?.reg, bil?.finnKode]);
 
   const openHenvendelseItem = function (item) {
     if (item.type === 'kontaktskjema') setModal({ t: 'visHenv', d: item.data });
@@ -4106,7 +4109,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
         )}
 
         {activeTab === 'reservasjon' && (
-          <BilReservasjonTab bil={bil} kunder={kunder} oppdaterReservasjon={oppdaterReservasjon} visTost={visTost} />
+          <BilReservasjonTab bil={bil} kunder={kunder} knyttetInnbytte={knyttetInnbytte} oppdaterReservasjon={oppdaterReservasjon} visTost={visTost} />
         )}
 
         {activeTab === 'arsprove' && (

@@ -63,6 +63,51 @@ export function resolveKjopesum(reservasjon, bil) {
   return null;
 }
 
+function normalizeInnbytteFields(o) {
+  const src = o && typeof o === 'object' ? o : {};
+  const kmRaw = src.innbytteKm;
+  let innbytteKm = null;
+  if (kmRaw !== '' && kmRaw !== null && kmRaw !== undefined) {
+    const n = Number(kmRaw);
+    if (Number.isFinite(n) && n > 0) innbytteKm = n;
+  }
+
+  return {
+    harInnbytte: !!src.harInnbytte,
+    innbytteReg: String(src.innbytteReg || '').trim().toUpperCase(),
+    innbytteKm,
+    innbyttePris: belopForLagring(src.innbyttePris),
+    innbytteKommentar: String(src.innbytteKommentar || '').trim()
+  };
+}
+
+export function formatKm(km) {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  return `${n.toLocaleString('nb-NO')} km`;
+}
+
+export function buildInnbytteDocumentData(reservasjon) {
+  const innbytte = normalizeInnbytteFields(reservasjon);
+  if (!innbytte.harInnbytte) return null;
+
+  return {
+    reg: innbytte.innbytteReg || '—',
+    kmTekst: formatKm(innbytte.innbytteKm),
+    prisTekst: innbytte.innbyttePris != null ? formatNokBelop(innbytte.innbyttePris) : '—',
+    kommentar: innbytte.innbytteKommentar || ''
+  };
+}
+
+export function buildInnbytteSummaryRows(innbytte) {
+  if (!innbytte) return [];
+  return [
+    { label: 'Registreringsnr.', value: innbytte.reg },
+    { label: 'Kilometerstand', value: innbytte.kmTekst },
+    { label: 'Innbyttepris', value: innbytte.prisTekst, highlight: true }
+  ];
+}
+
 export function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
@@ -71,7 +116,8 @@ export function normalizeBilReservasjon(raw, defaults, bil) {
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
     reservasjonTil: isoDateOnly(o.reservasjonTil || base.reservasjonTil || addDaysIso(new Date(), RESERVASJON_FIRMA.reservasjonDager)),
-    betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate)
+    betalingsmate: normalizeBetalingsmate(o.betalingsmate ?? base.betalingsmate),
+    ...normalizeInnbytteFields({ ...base, ...o })
   };
   if (bil && normalized.kjopesum == null) {
     normalized.kjopesum = resolveKjopesum(null, bil);
@@ -92,6 +138,12 @@ export function getReservasjonFromOkonomi(okonomi, bil) {
 export function buildBilVisningsnavn(bil) {
   if (!bil) return 'bilen';
   const parts = [bil.merke, bil.modell, bil.aar].filter(Boolean);
+  return parts.length ? parts.join(' ') : (bil.reg || 'bilen');
+}
+
+export function buildBilAvtaleNavn(bil) {
+  if (!bil) return 'bilen';
+  const parts = [bil.merke, bil.modell].filter(Boolean);
   return parts.length ? parts.join(' ') : (bil.reg || 'bilen');
 }
 
@@ -135,7 +187,7 @@ export function buildNesteSteg(erTerminal, depositumForfallTekst) {
 }
 
 export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
-  const bilNavn = buildBilVisningsnavn(bil);
+  const bilNavn = buildBilAvtaleNavn(bil);
   const finnUrl = buildFinnItemUrl(bil?.finnKode);
   const kundeNavn = String(kunde?.navn || '').trim();
   const kjopesum = resolveKjopesum(reservasjon, bil);
@@ -169,6 +221,8 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
         ]
   };
 
+  const innbytte = buildInnbytteDocumentData(reservasjon);
+
   return {
     dokument: {
       tittel: 'Reservasjonsbekreftelse',
@@ -182,6 +236,8 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
       : `Hei, takk for avtalen om kjøp av ${bilNavn}.`,
     finnUrl,
     summaryRows,
+    innbytte,
+    innbytteRows: buildInnbytteSummaryRows(innbytte),
     payment,
     vilkar: [
       'Depositum trekkes fra kjøpesum ved gjennomført handel.',

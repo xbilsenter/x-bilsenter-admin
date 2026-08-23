@@ -12,6 +12,31 @@ import {
 } from '../lib/reservasjon.js';
 import { downloadReservasjonPdf } from '../api.js';
 
+function parseBelop(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(String(value).replace(/\s/g, '').replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function parseKm(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(String(value).replace(/\D/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function patchFromInnbytte(inn) {
+  if (!inn) return { harInnbytte: true };
+  return {
+    harInnbytte: true,
+    innbytteReg: String(inn.reg || '').trim().toUpperCase(),
+    innbytteKm: parseKm(inn.km),
+    innbyttePris: parseBelop(inn.tilbud),
+    innbytteKommentar: String(inn.beskrivelse || '').trim()
+  };
+}
+
 function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
   const model = buildReservasjonPreviewModel(bil, kunde, reservasjonVisning);
 
@@ -20,8 +45,11 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
       <div className="bil-reservasjon-preview__accent" />
       <div className="bil-reservasjon-preview__head">
         <div>
-          <div className="bil-reservasjon-preview__brand">X BILSENTER</div>
-          <div className="bil-reservasjon-preview__tagline">{RESERVASJON_FIRMA.tagline}</div>
+          <img
+            className="bil-reservasjon-preview__logo"
+            src="/assets/reservasjon-logo.png"
+            alt="X Bilsenter"
+          />
         </div>
         <div className="bil-reservasjon-preview__doc-type">
           <div>RESERVASJONSBEKREFTELSE</div>
@@ -51,6 +79,28 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
             })}
           </div>
         </div>
+
+        {model.innbytte ? (
+          <div className="bil-reservasjon-preview__section">
+            <h4>Innbyttebil</h4>
+            <div className="bil-reservasjon-preview__grid">
+              {model.innbytteRows.map(function (row) {
+                return (
+                  <div className={`bil-reservasjon-preview__cell${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
+                    <span>{row.label}</span>
+                    <strong>{row.value}</strong>
+                  </div>
+                );
+              })}
+            </div>
+            {model.innbytte.kommentar ? (
+              <div className="bil-reservasjon-preview__innbytte-kommentar">
+                <div className="bil-reservasjon-preview__innbytte-kommentar-label">Kommentar</div>
+                <p>{model.innbytte.kommentar}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="bil-reservasjon-preview__section">
           <h4>Depositum og betaling</h4>
@@ -83,22 +133,22 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
 
         <div className="bil-reservasjon-preview__closing-row">
           <p className="bil-reservasjon-preview__closing">{model.avslutning}</p>
-          <p className="bil-reservasjon-preview__signoff">
-            Med vennlig hilsen,<br />
-            <strong>{RESERVASJON_FIRMA.navn}</strong><br />
-            <em>{RESERVASJON_FIRMA.tagline}</em>
-          </p>
+          <div className="bil-reservasjon-preview__signoff-box">
+            <img className="bil-reservasjon-preview__signoff-logo" src="/assets/reservasjon-logo.png" alt="" />
+            <p className="bil-reservasjon-preview__signoff">
+              Med vennlig hilsen,<br />
+              <strong>{RESERVASJON_FIRMA.navn}</strong><br />
+              <em>{RESERVASJON_FIRMA.tagline}</em>
+            </p>
+            <div className="bil-reservasjon-preview__signoff-line">Signatur kunde</div>
+          </div>
         </div>
-      </div>
-
-      <div className="bil-reservasjon-preview__footer">
-        {RESERVASJON_FIRMA.adresse} · Mobil {RESERVASJON_FIRMA.mobil} · {RESERVASJON_FIRMA.epost} · {RESERVASJON_FIRMA.web}
       </div>
     </div>
   );
 }
 
-export default function BilReservasjonTab({ bil, kunder, oppdaterReservasjon, visTost }) {
+export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdaterReservasjon, visTost }) {
   const rawReservasjon = getRawReservasjonFromOkonomi(bil.okonomi);
   const reservasjonVisning = getReservasjonFromOkonomi(bil.okonomi, bil);
   const kundeIds = bil.kundeIds || (bil.kundeId ? [bil.kundeId] : []);
@@ -111,6 +161,7 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterReservasjon, vi
   const [lasterPdf, setLasterPdf] = useState(false);
   const bilNavn = buildBilVisningsnavn(bil);
   const erBankoverforing = rawReservasjon.betalingsmate === BETALINGSMATE_BANKOVERFORING;
+  const harInnbytte = !!rawReservasjon.harInnbytte;
 
   const oppdater = function (patch, msg) {
     oppdaterReservasjon(patch, msg);
@@ -120,6 +171,11 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterReservasjon, vi
     oppdater({
       reservasjonTil: addDaysIso(isoDateOnly(new Date()), RESERVASJON_FIRMA.reservasjonDager)
     }, `Reservasjon satt til ${RESERVASJON_FIRMA.reservasjonDager} dager ✓`);
+  };
+
+  const fyllFraInnbytte = function () {
+    if (!knyttetInnbytte) return;
+    oppdater(patchFromInnbytte(knyttetInnbytte), 'Innbyttebil hentet fra forespørsel ✓');
   };
 
   const lastNedPdf = async function () {
@@ -237,6 +293,95 @@ export default function BilReservasjonTab({ bil, kunder, oppdaterReservasjon, vi
                 onChange={function (e) { oppdater({ reservasjonTil: e.target.value }); }}
               />
             </div>
+          </div>
+
+          <div className="bil-reservasjon__innbytte">
+            <div className="bil-reservasjon__innbytte-head">
+              <div className="modal-sec" style={{ marginBottom: 0 }}>Innbyttebil</div>
+              <label className="bil-reservasjon__toggle">
+                <input
+                  type="checkbox"
+                  checked={harInnbytte}
+                  onChange={function (e) {
+                    if (e.target.checked && knyttetInnbytte && !rawReservasjon.innbytteReg && rawReservasjon.innbytteKm == null && rawReservasjon.innbyttePris == null) {
+                      oppdater(patchFromInnbytte(knyttetInnbytte), 'Innbyttebil lagt til avtalen ✓');
+                      return;
+                    }
+                    oppdater({ harInnbytte: e.target.checked }, e.target.checked ? 'Innbyttebil lagt til avtalen ✓' : 'Innbyttebil fjernet fra avtalen ✓');
+                  }}
+                />
+                <span>Kunde har innbyttebil</span>
+              </label>
+            </div>
+
+            {harInnbytte ? (
+              <>
+                {knyttetInnbytte ? (
+                  <div className="bil-reservasjon__innbytte-kilde">
+                    <span>
+                      Forespørsel: {[knyttetInnbytte.merke, knyttetInnbytte.modell, knyttetInnbytte.aar].filter(Boolean).join(' ')}
+                      {knyttetInnbytte.reg ? ` · ${knyttetInnbytte.reg}` : ''}
+                    </span>
+                    <button type="button" className="btn btn-g btn-sm" onClick={fyllFraInnbytte}>
+                      Hent fra forespørsel
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="form-row gap">
+                  <div>
+                    <div className="fl">Reg.nr.</div>
+                    <input
+                      type="text"
+                      placeholder="AB12345"
+                      value={rawReservasjon.innbytteReg || ''}
+                      onChange={function (e) { oppdater({ innbytteReg: e.target.value.toUpperCase() }); }}
+                    />
+                  </div>
+                  <div>
+                    <div className="fl">Kilometerstand</div>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="f.eks. 145000"
+                      value={rawReservasjon.innbytteKm ?? ''}
+                      onChange={function (e) {
+                        const val = e.target.value;
+                        oppdater({ innbytteKm: val === '' ? null : Number(val) });
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="gap">
+                  <div className="fl">Innbyttepris (kr)</div>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="f.eks. 80000"
+                    value={rawReservasjon.innbyttePris ?? ''}
+                    onChange={function (e) {
+                      const val = e.target.value;
+                      oppdater({ innbyttePris: val === '' ? null : Number(val) });
+                    }}
+                  />
+                </div>
+
+                <div className="gap">
+                  <div className="fl">Kommentar til innbyttebil</div>
+                  <textarea
+                    rows={3}
+                    placeholder="F.eks. tilstand, utstyr eller forbehold knyttet til innbyttebilen"
+                    value={rawReservasjon.innbytteKommentar || ''}
+                    onChange={function (e) { oppdater({ innbytteKommentar: e.target.value }); }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="bil-reservasjon__hint bil-reservasjon__hint--tight">
+                Aktiver hvis kunden bytter inn egen bil. Reg.nr., kilometerstand og pris vises i avtalen.
+              </p>
+            )}
           </div>
 
           <div className="bil-reservasjon__actions">
