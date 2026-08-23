@@ -952,8 +952,8 @@ select option{background:var(--s1);}
 .bil-reservasjon__hint--tight{margin-top:0;}
 .bil-reservasjon-preview{background:#fff;border:1px solid var(--b1);border-radius:14px;overflow:hidden;box-shadow:0 18px 48px rgba(13,31,14,.10);position:relative;font-family:'Plus Jakarta Sans',sans-serif;-webkit-font-smoothing:antialiased;}
 .bil-reservasjon-preview__accent{height:3px;background:var(--acc);}
-.bil-reservasjon-preview__head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:20px 22px 18px;border-bottom:1px solid var(--b1);background:#fff;}
-.bil-reservasjon-preview__logo{display:block;width:128px;height:auto;}
+.bil-reservasjon-preview__head{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:88px;padding:16px 22px 18px;border-bottom:1px solid var(--b1);background:#fff;}
+.bil-reservasjon-preview__logo{display:block;width:128px;height:auto;margin-top:2px;}
 .bil-reservasjon-preview__meta{min-width:190px;max-width:220px;text-align:right;}
 .bil-reservasjon-preview__meta-label{font-size:7px;font-weight:800;color:var(--acc3);letter-spacing:.14em;text-transform:uppercase;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--b1);}
 .bil-reservasjon-preview__meta-row{display:grid;grid-template-columns:58px 1fr;gap:8px;align-items:baseline;margin-bottom:4px;font-size:8px;line-height:1.35;}

@@ -71,6 +71,11 @@ function drawHairline(doc, y, weight) {
     .strokeColor(C.line).lineWidth(weight || 0.5).stroke();
 }
 
+function drawHairlineSegment(doc, x1, x2, y, weight) {
+  doc.moveTo(x1, y).lineTo(x2, y)
+    .strokeColor(C.line).lineWidth(weight || 0.5).stroke();
+}
+
 function drawFooter(doc) {
   drawHairline(doc, PAGE.footerY, 0.75);
   doc.font('PJ').fontSize(7).fillColor(C.faint)
@@ -83,21 +88,27 @@ function drawFooter(doc) {
 }
 
 function drawHeader(doc, model) {
-  doc.rect(0, 0, PAGE.w, 3).fill(C.accent);
+  const headerTop = 3;
+  const headerBottom = 94;
+  const logoW = 128;
+  const logoH = logoW * (543 / 2000);
+  const logoY = headerTop + ((headerBottom - headerTop) - logoH) / 2;
 
-  if (!drawLogo(doc, PAGE.left, 30, 128)) {
+  doc.rect(0, 0, PAGE.w, headerTop).fill(C.accent);
+
+  if (!drawLogo(doc, PAGE.left, logoY, logoW)) {
     doc.font('PJ-EB').fontSize(18).fillColor(C.ink)
-      .text('X BILSENTER', PAGE.left, 34, { lineBreak: false });
+      .text('X BILSENTER', PAGE.left, logoY + 4, { lineBreak: false });
   }
 
   const metaW = 196;
   const metaX = PAGE.right - metaW;
-  const metaY = 28;
+  const metaY = headerTop + 14;
 
   doc.font('PJ-EB').fontSize(6.5).fillColor(C.accentInk)
     .text('RESERVASJONSBEKREFTELSE', metaX, metaY, { width: metaW, align: 'right', characterSpacing: 1.1 });
 
-  drawHairline(doc, metaY + 14, 0.35);
+  drawHairlineSegment(doc, metaX, PAGE.right, metaY + 14, 0.35);
 
   doc.font('PJ-M').fontSize(7.5).fillColor(C.muted)
     .text('Dato', metaX, metaY + 20, { width: 44, align: 'left' });
@@ -114,8 +125,8 @@ function drawHeader(doc, model) {
   doc.font('PJ-B').fontSize(9.5).fillColor(C.ink)
     .text(model.kunde.navn, metaX + 36, metaY + 42, { width: metaW - 36, align: 'right' });
 
-  drawHairline(doc, 92, 0.75);
-  return 102;
+  drawHairline(doc, headerBottom, 0.75);
+  return headerBottom + 10;
 }
 
 function drawIntro(doc, y, model) {
