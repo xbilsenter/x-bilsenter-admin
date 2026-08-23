@@ -143,6 +143,22 @@ function enrichReservasjonDocumentData(data) {
   };
 }
 
+function buildNesteSteg(erTerminal, depositumForfallTekst) {
+  const steg3 = 'Vi markerer bilen som solgt, holder den av til deg og gjør den klar for overlevering.';
+  if (erTerminal) {
+    return [
+      'Bekreft ved signering at du aksepterer vilkårene i dette dokumentet.',
+      `Betal avtalt depositum med bankterminal i butikk senest ${depositumForfallTekst}.`,
+      steg3
+    ];
+  }
+  return [
+    'Bekreft ved signering at du aksepterer vilkårene i dette dokumentet.',
+    `Overfør avtalt depositum senest ${depositumForfallTekst} og send oss kvittering på ${RESERVASJON_FIRMA.epost}.`,
+    steg3
+  ];
+}
+
 function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const base = buildReservasjonDocumentData(bil, kunde, reservasjonRaw);
   const doc = enrichReservasjonDocumentData(base);
@@ -177,17 +193,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen og refundere depositum.'
   ];
 
-  const nesteSteg = erTerminal
-    ? [
-        'Bekreft at du aksepterer vilkårene i dette dokumentet.',
-        'Betale avtalt depositum med bankterminal i butikk innen fristen.',
-        'Vi markerer bilen som reservert og holder den av til deg.'
-      ]
-    : [
-        'Bekreft at du aksepterer vilkårene i dette dokumentet.',
-        'Overfør avtalt depositum innen fristen og send oss kvittering.',
-        'Vi markerer bilen som reservert og holder den av til deg.'
-      ];
+  const nesteSteg = buildNesteSteg(erTerminal, doc.depositumForfallTekst);
 
   return {
     firma: doc.firma,

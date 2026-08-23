@@ -118,6 +118,22 @@ export function buildAnnetTekst(betalingsmate) {
   return 'Så snart vi mottar en bekreftelse fra deg på ovenstående avtale, samt kvittering på utført betaling av depositum, settes bilen som solgt på FINN- og holdes av til deg.';
 }
 
+export function buildNesteSteg(erTerminal, depositumForfallTekst) {
+  const steg3 = 'Vi markerer bilen som solgt, holder den av til deg og gjør den klar for overlevering.';
+  if (erTerminal) {
+    return [
+      'Bekreft ved signering at du aksepterer vilkårene i dette dokumentet.',
+      `Betal avtalt depositum med bankterminal i butikk senest ${depositumForfallTekst}.`,
+      steg3
+    ];
+  }
+  return [
+    'Bekreft ved signering at du aksepterer vilkårene i dette dokumentet.',
+    `Overfør avtalt depositum senest ${depositumForfallTekst} og send oss kvittering på ${RESERVASJON_FIRMA.epost}.`,
+    steg3
+  ];
+}
+
 export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
   const bilNavn = buildBilVisningsnavn(bil);
   const finnUrl = buildFinnItemUrl(bil?.finnKode);
@@ -174,17 +190,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
       `Bilen holdes reservert til ${reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
       'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen og refundere depositum.'
     ],
-    nesteSteg: erTerminal
-      ? [
-          'Bekreft at du aksepterer vilkårene i dette dokumentet.',
-          'Betale avtalt depositum med bankterminal i butikk innen fristen.',
-          'Vi markerer bilen som reservert og holder den av til deg.'
-        ]
-      : [
-          'Bekreft at du aksepterer vilkårene i dette dokumentet.',
-          'Overfør avtalt depositum innen fristen og send oss kvittering.',
-          'Vi markerer bilen som reservert og holder den av til deg.'
-        ],
+    nesteSteg: buildNesteSteg(erTerminal, depositumForfallTekst),
     avslutning: 'Vi ser frem til å fullføre handelen sammen med deg.'
   };
 }
