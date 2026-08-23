@@ -24,20 +24,9 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
           <div className="bil-reservasjon-preview__tagline">{RESERVASJON_FIRMA.tagline}</div>
         </div>
         <div className="bil-reservasjon-preview__doc-type">
-          <div>RESERVASJON</div>
-          <span>Bekreftelse</span>
-        </div>
-      </div>
-
-      <div className="bil-reservasjon-preview__hero">
-        <div>
-          <h3>{model.dokument.tittel}</h3>
-          <p>{model.dokument.undertittel}</p>
-        </div>
-        <div className="bil-reservasjon-preview__meta">
-          <div><span>Dato</span><strong>{model.dokument.dato}</strong></div>
-          {model.dokument.referanse ? <div><span>Referanse</span><strong>{model.dokument.referanse}</strong></div> : null}
-          <div><span>Kunde</span><strong>{model.kundeNavn}</strong></div>
+          <div>RESERVASJONSBEKREFTELSE</div>
+          <span>{model.dokument.dato} · Ref. {model.dokument.referanse || '—'}</span>
+          <strong>{model.kundeNavn}</strong>
         </div>
       </div>
 
@@ -45,16 +34,16 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
         <p className="bil-reservasjon-preview__intro">{model.intro}</p>
         {model.finnUrl ? (
           <p className="bil-reservasjon-preview__finn">
-            Annonse: <a href={model.finnUrl} target="_blank" rel="noopener noreferrer">{model.finnUrl}</a>
+            FINN: <a href={model.finnUrl} target="_blank" rel="noopener noreferrer">{model.finnUrl}</a>
           </p>
         ) : null}
 
         <div className="bil-reservasjon-preview__section">
           <h4>Avtalen i korthet</h4>
-          <div className="bil-reservasjon-preview__table">
+          <div className="bil-reservasjon-preview__grid">
             {model.summaryRows.map(function (row) {
               return (
-                <div className={`bil-reservasjon-preview__row${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
+                <div className={`bil-reservasjon-preview__cell${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
                   <span>{row.label}</span>
                   <strong>{row.value}</strong>
                 </div>
@@ -67,36 +56,37 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
           <h4>Depositum og betaling</h4>
           <div className="bil-reservasjon-preview__payment">
             <div className="bil-reservasjon-preview__payment-title">{model.payment.title}</div>
-            {model.payment.lines.map(function (line) {
-              return <p key={line}>{line}</p>;
-            })}
+            <p>{model.payment.lines.join(' ')}</p>
           </div>
         </div>
 
-        <div className="bil-reservasjon-preview__section">
-          <h4>Vilkår</h4>
-          <ul className="bil-reservasjon-preview__list">
-            {model.vilkar.map(function (item) {
-              return <li key={item}>{item}</li>;
-            })}
-          </ul>
+        <div className="bil-reservasjon-preview__columns">
+          <div className="bil-reservasjon-preview__section">
+            <h4>Vilkår</h4>
+            <ul className="bil-reservasjon-preview__list">
+              {model.vilkar.map(function (item) {
+                return <li key={item}>{item}</li>;
+              })}
+            </ul>
+          </div>
+          <div className="bil-reservasjon-preview__section">
+            <h4>Neste steg</h4>
+            <ol className="bil-reservasjon-preview__steps">
+              {model.nesteSteg.map(function (item) {
+                return <li key={item}>{item}</li>;
+              })}
+            </ol>
+          </div>
         </div>
 
-        <div className="bil-reservasjon-preview__section">
-          <h4>Neste steg</h4>
-          <ol className="bil-reservasjon-preview__steps">
-            {model.nesteSteg.map(function (item) {
-              return <li key={item}>{item}</li>;
-            })}
-          </ol>
+        <div className="bil-reservasjon-preview__closing-row">
+          <p className="bil-reservasjon-preview__closing">{model.avslutning}</p>
+          <p className="bil-reservasjon-preview__signoff">
+            Med vennlig hilsen,<br />
+            <strong>{RESERVASJON_FIRMA.navn}</strong><br />
+            <em>{RESERVASJON_FIRMA.tagline}</em>
+          </p>
         </div>
-
-        <p className="bil-reservasjon-preview__closing">{model.avslutning}</p>
-        <p className="bil-reservasjon-preview__signoff">
-          Med vennlig hilsen,<br />
-          <strong>{RESERVASJON_FIRMA.navn}</strong><br />
-          <em>{RESERVASJON_FIRMA.tagline}</em>
-        </p>
       </div>
 
       <div className="bil-reservasjon-preview__footer">

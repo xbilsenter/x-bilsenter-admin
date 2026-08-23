@@ -4,220 +4,195 @@ const {
   buildReservasjonPdfModel
 } = require('../shared/reservasjon');
 
-const PAGE = { left: 45, right: 550, width: 505 };
-const COLORS = {
-  accent: '#19BA60',
-  accentSoft: '#E8F8EF',
-  accentDark: '#128C47',
-  text: '#111827',
-  muted: '#6B7280',
-  line: '#E5E7EB',
-  panel: '#F8FAF9',
-  white: '#FFFFFF'
+const M = { t: 36, b: 34, l: 40, r: 40 };
+const PAGE = {
+  w: 595.28,
+  h: 841.89,
+  left: M.l,
+  right: 595.28 - M.r,
+  width: 595.28 - M.l - M.r,
+  bottom: 841.89 - M.b
 };
 
-function ensureSpace(doc, y, needed, drawPageFooter) {
-  const limit = doc.page.height - 72;
-  if (y + needed <= limit) return y;
-  drawPageFooter(doc);
-  doc.addPage();
-  return 52;
-}
+const C = {
+  accent: '#19BA60',
+  accentSoft: '#EDF7F0',
+  accentDark: '#0F7A3D',
+  text: '#111827',
+  muted: '#64748B',
+  line: '#E2E8F0',
+  panel: '#F8FAFC'
+};
 
-function drawPageHeader(doc) {
-  doc.save();
-  doc.rect(0, 0, doc.page.width, 8).fill(COLORS.accent);
-  doc.restore();
-
-  doc.font('Helvetica-Bold').fontSize(20).fillColor(COLORS.text)
-    .text('X BILSENTER', PAGE.left, 28, { lineBreak: false });
-  doc.font('Helvetica').fontSize(8.5).fillColor(COLORS.muted)
-    .text(RESERVASJON_FIRMA.tagline.toUpperCase(), PAGE.left, 50, { characterSpacing: 0.6 });
-
-  doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.accentDark)
-    .text('RESERVASJON', PAGE.right - 130, 30, { width: 130, align: 'right', characterSpacing: 1.1 });
-  doc.font('Helvetica').fontSize(8).fillColor(COLORS.muted)
-    .text('Bekreftelse', PAGE.right - 130, 43, { width: 130, align: 'right' });
-
-  doc.moveTo(PAGE.left, 68).lineTo(PAGE.right, 68).strokeColor(COLORS.line).lineWidth(1).stroke();
-}
-
-function drawPageFooter(doc) {
-  const y = doc.page.height - 42;
-  doc.moveTo(PAGE.left, y).lineTo(PAGE.right, y).strokeColor(COLORS.line).lineWidth(0.5).stroke();
-  doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.muted)
+function drawFooter(doc) {
+  const y = PAGE.bottom - 10;
+  doc.moveTo(PAGE.left, y).lineTo(PAGE.right, y).strokeColor(C.line).lineWidth(0.5).stroke();
+  doc.font('Helvetica').fontSize(6.5).fillColor(C.muted)
     .text(
       `${RESERVASJON_FIRMA.navn} · ${RESERVASJON_FIRMA.adresse} · ${RESERVASJON_FIRMA.mobil} · ${RESERVASJON_FIRMA.epost} · ${RESERVASJON_FIRMA.web}`,
       PAGE.left,
-      y + 8,
+      y + 5,
       { width: PAGE.width, align: 'center' }
     );
 }
 
-function drawMetaRow(doc, y, model) {
-  const leftW = PAGE.width * 0.55;
-  const rightW = PAGE.width - leftW - 12;
+function drawHeader(doc, model) {
+  doc.rect(0, 0, PAGE.w, 3.5).fill(C.accent);
 
-  doc.font('Helvetica-Bold').fontSize(16).fillColor(COLORS.text)
-    .text(model.dokument.tittel, PAGE.left, y, { width: leftW });
-  doc.font('Helvetica').fontSize(10).fillColor(COLORS.muted)
-    .text(model.dokument.undertittel, PAGE.left, doc.y + 4, { width: leftW });
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(C.text)
+    .text('X BILSENTER', PAGE.left, M.t - 18, { lineBreak: false });
+  doc.font('Helvetica').fontSize(6.5).fillColor(C.muted)
+    .text(RESERVASJON_FIRMA.tagline.toUpperCase(), PAGE.left, M.t - 2, { characterSpacing: 0.4 });
 
-  const metaX = PAGE.left + leftW + 12;
-  let metaY = y + 2;
-  const metaItems = [
-    ['Dato', model.dokument.dato],
-    ['Referanse', model.dokument.referanse || '—'],
-    ['Kunde', model.kunde.navn]
-  ];
-  metaItems.forEach(function (item) {
-    doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.muted)
-      .text(item[0].toUpperCase(), metaX, metaY, { width: rightW, characterSpacing: 0.5 });
-    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.text)
-      .text(item[1], metaX, metaY + 10, { width: rightW });
-    metaY += 28;
-  });
+  const rx = PAGE.right - 168;
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(C.accentDark)
+    .text('RESERVASJONSBEKREFTELSE', rx, M.t - 16, { width: 168, align: 'right', characterSpacing: 0.6 });
+  doc.font('Helvetica').fontSize(7).fillColor(C.muted)
+    .text(`${model.dokument.dato} · Ref. ${model.dokument.referanse || '—'}`, rx, M.t - 4, { width: 168, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(C.text)
+    .text(model.kunde.navn, rx, M.t + 6, { width: 168, align: 'right' });
 
-  return Math.max(doc.y, metaY) + 16;
+  doc.moveTo(PAGE.left, M.t + 18).lineTo(PAGE.right, M.t + 18).strokeColor(C.line).lineWidth(0.75).stroke();
+  return M.t + 26;
 }
 
 function drawIntro(doc, y, model) {
-  doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.text)
-    .text(model.intro, PAGE.left, y, { width: PAGE.width, lineGap: 2 });
+  doc.font('Helvetica').fontSize(8.5).fillColor(C.text)
+    .text(model.intro, PAGE.left, y, { width: PAGE.width, lineGap: 0 });
   if (model.bil.finnUrl) {
-    doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted)
-      .text('Annonse: ', PAGE.left, doc.y + 6, { continued: true });
-    doc.fillColor(COLORS.accentDark).text(model.bil.finnUrl, { link: model.bil.finnUrl, underline: true });
+    doc.font('Helvetica').fontSize(7).fillColor(C.muted)
+      .text('FINN: ', PAGE.left, doc.y + 3, { continued: true, lineGap: 0 });
+    doc.fillColor(C.accentDark).text(model.bil.finnUrl, { link: model.bil.finnUrl, underline: false });
   }
-  return doc.y + 18;
+  return doc.y + 8;
 }
 
-function drawSectionTitle(doc, y, title) {
-  doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.accentDark)
-    .text(title.toUpperCase(), PAGE.left, y, { characterSpacing: 0.8 });
-  doc.moveTo(PAGE.left, y + 14).lineTo(PAGE.right, y + 14).strokeColor(COLORS.line).lineWidth(0.5).stroke();
-  return y + 22;
+function drawSectionLabel(doc, y, title) {
+  doc.font('Helvetica-Bold').fontSize(7).fillColor(C.accentDark)
+    .text(title.toUpperCase(), PAGE.left, y, { characterSpacing: 0.7 });
+  return y + 11;
 }
 
-function drawSummaryTable(doc, y, rows) {
-  const rowH = 24;
-  const labelW = 150;
-  const boxH = rows.length * rowH + 16;
-  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 8).fill(COLORS.panel);
-  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 8).strokeColor(COLORS.line).lineWidth(0.75).stroke();
+function drawSummaryGrid(doc, y, rows) {
+  const cols = 2;
+  const colW = (PAGE.width - 10) / cols;
+  const rowH = 15;
+  const pairs = [];
+  for (let i = 0; i < rows.length; i += cols) {
+    pairs.push(rows.slice(i, i + cols));
+  }
+  const boxH = pairs.length * rowH + 10;
 
-  let rowY = y + 8;
-  rows.forEach(function (row, index) {
-    if (index > 0) {
-      doc.moveTo(PAGE.left + 12, rowY).lineTo(PAGE.right - 12, rowY).strokeColor(COLORS.line).lineWidth(0.5).stroke();
+  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 4).fill(C.panel);
+  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 4).strokeColor(C.line).lineWidth(0.5).stroke();
+
+  let rowY = y + 5;
+  pairs.forEach(function (pair, rowIndex) {
+    if (rowIndex > 0) {
+      doc.moveTo(PAGE.left + 8, rowY).lineTo(PAGE.right - 8, rowY).strokeColor(C.line).lineWidth(0.35).stroke();
     }
-    doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted)
-      .text(row.label, PAGE.left + 14, rowY + 7, { width: labelW });
-    doc.font(row.highlight ? 'Helvetica-Bold' : 'Helvetica')
-      .fontSize(row.highlight ? 10.5 : 9.5)
-      .fillColor(row.highlight ? COLORS.text : COLORS.text)
-      .text(row.value, PAGE.left + 14 + labelW, rowY + 6, { width: PAGE.width - labelW - 28 });
+    pair.forEach(function (cell, colIndex) {
+      const x = PAGE.left + 8 + colIndex * colW;
+      doc.font('Helvetica').fontSize(7).fillColor(C.muted).text(cell.label, x, rowY + 3, { width: 78 });
+      doc.font(cell.highlight ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(cell.highlight ? 8.5 : 8)
+        .fillColor(C.text)
+        .text(cell.value, x + 82, rowY + 2, { width: colW - 90 });
+    });
     rowY += rowH;
   });
 
-  return y + boxH + 18;
+  return y + boxH + 8;
 }
 
-function drawPaymentBox(doc, y, payment) {
-  const padding = 14;
-  const innerW = PAGE.width - padding * 2 - 6;
-  doc.font('Helvetica').fontSize(9.5);
-  const textH = payment.lines.reduce(function (sum, line) {
-    return sum + doc.heightOfString(line, { width: innerW, lineGap: 2 }) + 4;
-  }, 0);
-  const boxH = textH + 38;
+function drawPaymentStrip(doc, y, payment) {
+  const text = payment.lines.join(' ');
+  const padX = 10;
+  const innerW = PAGE.width - padX * 2 - 4;
+  doc.font('Helvetica').fontSize(7.5);
+  const textH = doc.heightOfString(text, { width: innerW, lineGap: 1 });
+  const boxH = textH + 18;
 
-  doc.save();
-  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 8).fill(COLORS.accentSoft);
-  doc.roundedRect(PAGE.left, y, 5, boxH, 8).fill(COLORS.accent);
-  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 8).strokeColor('#CFE9D8').lineWidth(0.75).stroke();
-  doc.restore();
+  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 4).fill(C.accentSoft);
+  doc.rect(PAGE.left, y, 3, boxH).fill(C.accent);
+  doc.roundedRect(PAGE.left, y, PAGE.width, boxH, 4).strokeColor('#CFE9D8').lineWidth(0.5).stroke();
 
-  doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.accentDark)
-    .text(payment.title, PAGE.left + padding + 4, y + 12, { width: innerW });
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(C.accentDark)
+    .text(payment.title, PAGE.left + padX + 2, y + 5, { width: innerW });
+  doc.font('Helvetica').fontSize(7.5).fillColor(C.text)
+    .text(text, PAGE.left + padX + 2, y + 14, { width: innerW, lineGap: 1 });
 
-  let lineY = y + 30;
-  payment.lines.forEach(function (line) {
-    doc.font('Helvetica').fontSize(9.5).fillColor(COLORS.text)
-      .text(line, PAGE.left + padding + 4, lineY, { width: innerW, lineGap: 2 });
-    lineY = doc.y + 4;
-  });
-
-  return y + boxH + 18;
+  return y + boxH + 8;
 }
 
-function drawBulletList(doc, y, items, options) {
+function drawCompactList(doc, x, y, width, items, options) {
   const opts = options || {};
-  const bullet = opts.bullet || '•';
-  const fontSize = opts.fontSize || 9;
-  const color = opts.color || COLORS.text;
-  let currentY = y;
+  const fontSize = opts.fontSize || 7;
+  const gap = opts.gap || 3;
+  let cy = y;
 
   items.forEach(function (item, index) {
-    const prefix = opts.numbered ? `${index + 1}.` : bullet;
-    doc.font('Helvetica-Bold').fontSize(fontSize).fillColor(opts.numbered ? COLORS.accentDark : COLORS.muted)
-      .text(prefix, PAGE.left, currentY, { width: 16 });
-    doc.font('Helvetica').fontSize(fontSize).fillColor(color)
-      .text(item, PAGE.left + 18, currentY, { width: PAGE.width - 18, lineGap: 2 });
-    currentY = doc.y + 6;
+    const prefix = opts.numbered ? `${index + 1}.` : '•';
+    doc.font('Helvetica-Bold').fontSize(fontSize).fillColor(opts.numbered ? C.accentDark : C.muted)
+      .text(prefix, x, cy, { width: 12, lineGap: 0 });
+    doc.font('Helvetica').fontSize(fontSize).fillColor(C.text)
+      .text(item, x + 13, cy, { width: width - 13, lineGap: 0.5 });
+    cy = doc.y + gap;
   });
 
-  return currentY + 8;
+  return cy;
+}
+
+function drawTwoColumnSections(doc, y, model) {
+  const gap = 12;
+  const colW = (PAGE.width - gap) / 2;
+  const leftX = PAGE.left;
+  const rightX = PAGE.left + colW + gap;
+  const startY = y;
+
+  let leftY = drawSectionLabel(doc, startY, 'Vilkår');
+  leftY = drawCompactList(doc, leftX, leftY, colW, model.vilkar, { fontSize: 7, gap: 2.5 });
+
+  let rightY = drawSectionLabel(doc, startY, 'Neste steg');
+  rightY = drawCompactList(doc, rightX, rightY, colW, model.nesteSteg, { numbered: true, fontSize: 7, gap: 2.5 });
+
+  return Math.max(leftY, rightY) + 6;
 }
 
 function drawClosing(doc, y, model) {
-  doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.text)
-    .text(model.avslutning, PAGE.left, y, { width: PAGE.width, lineGap: 2 });
-  y = doc.y + 16;
-  doc.text('Med vennlig hilsen,', PAGE.left, y);
-  y = doc.y + 14;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.text)
-    .text(model.firma.navn, PAGE.left, y);
-  y = doc.y + 4;
-  doc.font('Helvetica-Oblique').fontSize(9.5).fillColor(COLORS.muted)
-    .text(model.firma.tagline, PAGE.left, y);
-  return doc.y + 10;
+  doc.font('Helvetica').fontSize(8).fillColor(C.text)
+    .text(model.avslutning, PAGE.left, y, { width: PAGE.width * 0.62, lineGap: 0 });
+
+  const signX = PAGE.left + PAGE.width * 0.62 + 8;
+  doc.font('Helvetica').fontSize(7).fillColor(C.muted).text('Med vennlig hilsen,', signX, y);
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(C.text).text(model.firma.navn, signX, doc.y + 2);
+  doc.font('Helvetica-Oblique').fontSize(7).fillColor(C.muted).text(model.firma.tagline, signX, doc.y + 1);
+
+  return doc.y + 6;
 }
 
 function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
   const model = buildReservasjonPdfModel(bil, kunde, reservasjonRaw);
 
   return new Promise(function (resolve, reject) {
-    const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true });
+    const doc = new PDFDocument({ size: 'A4', margin: 0 });
     const chunks = [];
     doc.on('data', function (chunk) { chunks.push(chunk); });
     doc.on('end', function () { resolve(Buffer.concat(chunks)); });
     doc.on('error', reject);
 
-    drawPageHeader(doc);
-    let y = 82;
-    y = drawMetaRow(doc, y, model);
+    let y = drawHeader(doc, model);
     y = drawIntro(doc, y, model);
 
-    y = ensureSpace(doc, y, 180, drawPageFooter);
-    y = drawSectionTitle(doc, y, 'Avtalen i korthet');
-    y = drawSummaryTable(doc, y, model.summaryRows);
+    y = drawSectionLabel(doc, y, 'Avtalen i korthet');
+    y = drawSummaryGrid(doc, y, model.summaryRows);
 
-    y = ensureSpace(doc, y, 120, drawPageFooter);
-    y = drawSectionTitle(doc, y, 'Depositum og betaling');
-    y = drawPaymentBox(doc, y, model.payment);
+    y = drawSectionLabel(doc, y, 'Depositum og betaling');
+    y = drawPaymentStrip(doc, y, model.payment);
 
-    y = ensureSpace(doc, y, 110, drawPageFooter);
-    y = drawSectionTitle(doc, y, 'Vilkår');
-    y = drawBulletList(doc, y, model.vilkar);
-
-    y = ensureSpace(doc, y, 90, drawPageFooter);
-    y = drawSectionTitle(doc, y, 'Neste steg');
-    y = drawBulletList(doc, y, model.nesteSteg, { numbered: true });
-
-    y = ensureSpace(doc, y, 70, drawPageFooter);
-    drawClosing(doc, y, model);
-    drawPageFooter(doc);
+    y = drawTwoColumnSections(doc, y, model);
+    y = drawClosing(doc, y, model);
+    drawFooter(doc);
 
     doc.end();
   });

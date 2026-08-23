@@ -159,15 +159,8 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
   const payment = {
     title: erTerminal ? 'Betaling i butikk' : 'Betaling via bankoverføring',
     lines: erTerminal
-      ? [
-          `Depositum på ${depositumTekst} betales med bankterminal i butikk hos ${RESERVASJON_FIRMA.navn}.`,
-          `Betaling må være registrert senest ${depositumForfallTekst}.`
-        ]
-      : [
-          `Depositum på ${depositumTekst} overføres til konto ${RESERVASJON_FIRMA.kontonummer}.`,
-          `Mottaker: ${RESERVASJON_FIRMA.navn}.`,
-          `Betalingsfrist: ${depositumForfallTekst}.`
-        ]
+      ? [`Depositum ${depositumTekst} betales med bankterminal i butikk senest ${depositumForfallTekst}.`]
+      : [`Depositum ${depositumTekst} overføres til ${RESERVASJON_FIRMA.kontonummer} (${RESERVASJON_FIRMA.navn}) senest ${depositumForfallTekst}.`]
   };
 
   return {
@@ -185,10 +178,9 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
     summaryRows,
     payment,
     vilkar: [
-      'Depositum trekkes fra kjøpesum ved gjennomført handel.',
-      'Ved kansellering fra kundens side refunderes ikke depositum.',
-      `Bilen holdes reservert til ${reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
-      'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen og refundere depositum.'
+      'Depositum trekkes fra kjøpesum; refunderes ikke ved kansellering fra kunde.',
+      `Reservasjon gjelder til ${reservasjonTilTekst}; manglende oppgjør innen frist = kansellering.`,
+      'X Bilsenter AS kan kansellere ved vesentlig forsinket depositum.'
     ],
     nesteSteg: buildNesteSteg(erTerminal, depositumForfallTekst),
     avslutning: 'Vi ser frem til å fullføre handelen sammen med deg.'

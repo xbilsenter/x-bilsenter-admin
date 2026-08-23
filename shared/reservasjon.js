@@ -176,21 +176,13 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   ].filter(Boolean);
 
   const paymentLines = erTerminal
-    ? [
-        `Depositum på ${doc.depositumTekst} betales med bankterminal i butikk hos ${doc.firma.navn}.`,
-        `Betaling må være registrert senest ${doc.depositumForfallTekst}.`
-      ]
-    : [
-        `Depositum på ${doc.depositumTekst} overføres til konto ${doc.firma.kontonummer}.`,
-        `Mottaker: ${doc.firma.navn}.`,
-        `Betalingsfrist: ${doc.depositumForfallTekst}.`
-      ];
+    ? [`Depositum ${doc.depositumTekst} betales med bankterminal i butikk senest ${doc.depositumForfallTekst}.`]
+    : [`Depositum ${doc.depositumTekst} overføres til ${doc.firma.kontonummer} (${doc.firma.navn}) senest ${doc.depositumForfallTekst}.`];
 
   const vilkar = [
-    'Depositum trekkes fra kjøpesum ved gjennomført handel.',
-    'Ved kansellering fra kundens side refunderes ikke depositum.',
-    `Bilen holdes reservert til ${doc.reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
-    'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen og refundere depositum.'
+    'Depositum trekkes fra kjøpesum; refunderes ikke ved kansellering fra kunde.',
+    `Reservasjon gjelder til ${doc.reservasjonTilTekst}; manglende oppgjør innen frist = kansellering.`,
+    'X Bilsenter AS kan kansellere ved vesentlig forsinket depositum.'
   ];
 
   const nesteSteg = buildNesteSteg(erTerminal, doc.depositumForfallTekst);
