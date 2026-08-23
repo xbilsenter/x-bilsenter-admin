@@ -151,9 +151,19 @@ function drawSectionTitle(doc, y, title) {
   return y + sectionTitleHeight();
 }
 
-function drawSummaryTable(doc, y, rows, rowH) {
+function drawSummaryTable(doc, y, rows, rowH, innbytteKommentar) {
   const labelW = 158;
-  const boxH = rows.length * rowH;
+  const pad = 12;
+  let commentBlockH = 0;
+
+  if (innbytteKommentar) {
+    doc.font('PJ').fontSize(8.5);
+    const textH = doc.heightOfString(innbytteKommentar, { width: PAGE.width - pad * 2, lineGap: 1.8 });
+    commentBlockH = 10 + 14 + textH + 10;
+  }
+
+  const rowsH = rows.length * rowH;
+  const boxH = rowsH + commentBlockH;
 
   doc.rect(PAGE.left, y, PAGE.width, boxH).strokeColor(C.line).lineWidth(0.75).stroke();
 
@@ -170,31 +180,28 @@ function drawSummaryTable(doc, y, rows, rowH) {
 
     const valueY = rowY + Math.max(6, Math.round((rowH - (row.highlight ? 12 : 10)) / 2));
     doc.font('PJ-M').fontSize(8).fillColor(C.muted)
-      .text(row.label, PAGE.left + 12, valueY, { width: labelW });
+      .text(row.label, PAGE.left + pad, valueY, { width: labelW });
     doc.font(row.highlight ? 'PJ-B' : 'PJ-SB')
       .fontSize(row.highlight ? 10.5 : 9)
       .fillColor(C.ink)
-      .text(row.value, PAGE.left + 12 + labelW, valueY - (row.highlight ? 1 : 0), {
-        width: PAGE.width - labelW - 24,
+      .text(row.value, PAGE.left + pad + labelW, valueY - (row.highlight ? 1 : 0), {
+        width: PAGE.width - labelW - pad * 2,
         align: 'right'
       });
     rowY += rowH;
   });
 
-  return y + boxH;
-}
+  if (innbytteKommentar) {
+    doc.moveTo(PAGE.left, rowY).lineTo(PAGE.right, rowY).strokeColor(C.line).lineWidth(0.5).stroke();
+    doc.font('PJ-EB').fontSize(6.5).fillColor(C.accentInk)
+      .text('KOMMENTAR TIL INNBYTTEBIL', PAGE.left + pad, rowY + 10, { characterSpacing: 0.7 });
+    doc.font('PJ').fontSize(8.5).fillColor(C.ink2)
+      .text(innbytteKommentar, PAGE.left + pad, rowY + 22, {
+        width: PAGE.width - pad * 2,
+        lineGap: 1.8
+      });
+  }
 
-function drawInnbytteComment(doc, y, kommentar) {
-  const pad = 12;
-  doc.font('PJ').fontSize(8.5);
-  const textH = doc.heightOfString(kommentar, { width: PAGE.width - pad * 2, lineGap: 1.8 });
-  const boxH = Math.max(38, textH + 30);
-
-  doc.rect(PAGE.left, y, PAGE.width, boxH).strokeColor(C.line).lineWidth(0.75).stroke();
-  doc.font('PJ-EB').fontSize(6.5).fillColor(C.accentInk)
-    .text('KOMMENTAR TIL INNBYTTEBIL', PAGE.left + pad, y + 10, { characterSpacing: 0.7 });
-  doc.font('PJ').fontSize(8.5).fillColor(C.ink2)
-    .text(kommentar, PAGE.left + pad, y + 22, { width: PAGE.width - pad * 2, lineGap: 1.8 });
   return y + boxH;
 }
 
@@ -309,14 +316,16 @@ function drawClosing(doc, y, model) {
     .strokeColor(C.line).lineWidth(0.5).stroke();
 }
 
-function innbytteCommentHeight(doc, model) {
-  if (!model.innbytte?.kommentar) return 0;
+function summaryCommentHeight(doc, kommentar) {
+  if (!kommentar) return 0;
   doc.font('PJ').fontSize(8.5);
-  return Math.max(38, doc.heightOfString(model.innbytte.kommentar, { width: PAGE.width - 24, lineGap: 1.8 }) + 30) + 8;
+  const textH = doc.heightOfString(kommentar, { width: PAGE.width - 24, lineGap: 1.8 });
+  return 10 + 14 + textH + 10;
 }
 
-function computeLayout(model, introEndY) {
+function computeLayout(model, introEndY, doc) {
   const summaryRows = model.summaryRows.length;
+  const commentH = summaryCommentHeight(doc, model.innbytte?.kommentar || '');
   const minSummaryRowH = 19;
   const maxSummaryRowH = 25;
   const minPaymentH = 68;
@@ -325,13 +334,14 @@ function computeLayout(model, introEndY) {
   const sectionTitles = sectionTitleHeight() * 3;
   const gaps = SECTION_GAP * 2;
 
-  return function pick(commentExtra) {
-    const available = CONTENT_BOTTOM - introEndY - commentExtra;
+  return function pick() {
+    const available = CONTENT_BOTTOM - introEndY;
 
     for (let rowH = maxSummaryRowH; rowH >= minSummaryRowH; rowH -= 1) {
       for (let payH = maxPaymentH; payH >= minPaymentH; payH -= 2) {
         for (let colH = 228; colH >= minTwoColH; colH -= 4) {
-          const used = sectionTitles + gaps + summaryRows * rowH + payH + colH;
+          const summaryH = summaryRows * rowH + commentH;
+          const used = sectionTitles + gaps + summaryH + payH + colH;
           if (used <= available) {
             return { summaryRowH: rowH, paymentH: payH, twoColH: colH };
           }
@@ -360,16 +370,17 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
     let y = drawHeader(doc, model);
     y = drawIntro(doc, y, model);
 
-    const pickLayout = computeLayout(model, y);
-    const commentExtra = innbytteCommentHeight(doc, model);
-    const layout = pickLayout(commentExtra);
+    const pickLayout = computeLayout(model, y, doc);
+    const layout = pickLayout();
 
     y = drawSectionTitle(doc, y, 'Avtalen i korthet');
-    y = drawSummaryTable(doc, y, model.summaryRows, layout.summaryRowH);
-    if (model.innbytte?.kommentar) {
-      y += 8;
-      y = drawInnbytteComment(doc, y, model.innbytte.kommentar);
-    }
+    y = drawSummaryTable(
+      doc,
+      y,
+      model.summaryRows,
+      layout.summaryRowH,
+      model.innbytte?.kommentar || ''
+    );
     y += SECTION_GAP;
 
     y = drawSectionTitle(doc, y, 'Depositum og betaling');

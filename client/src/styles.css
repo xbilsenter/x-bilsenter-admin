@@ -996,9 +996,10 @@ select option{background:var(--s1);}
 .bil-reservasjon-preview__signature-line{border-top:1px solid var(--b1);margin-bottom:5px;}
 .bil-reservasjon-preview__signature-label{font-size:7px;color:var(--t3);font-weight:500;}
 .bil-reservasjon-preview__footer{padding:11px 22px 14px;border-top:1px solid var(--b1);font-size:7px;color:var(--t4);text-align:center;background:#fff;font-weight:400;letter-spacing:.01em;}
-.bil-reservasjon-preview__innbytte-kommentar{margin-top:10px;padding:12px 14px;border:1px solid var(--b1);background:#fff;}
+.bil-reservasjon-preview__cell--comment{display:block;padding:10px 14px 12px;border-top:1px solid var(--b1);background:#fff;}
+.bil-reservasjon-preview__cell--comment .bil-reservasjon-preview__innbytte-kommentar-label{font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--acc3);margin-bottom:0;}
+.bil-reservasjon-preview__cell--comment p{margin:4px 0 0;font-size:8.5px;line-height:1.55;color:var(--t2);font-weight:400;}
 .bil-reservasjon-preview__innbytte-kommentar-label{font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--acc3);margin-bottom:6px;}
-.bil-reservasjon-preview__innbytte-kommentar p{margin:0;font-size:8.5px;line-height:1.55;color:var(--t2);font-weight:400;}
 
 @media(max-width:900px){
   .inb-modal__grid{grid-template-columns:1fr;}

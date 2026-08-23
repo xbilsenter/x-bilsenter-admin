@@ -97,22 +97,22 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
           <div className="bil-reservasjon-preview__section">
             <h4>Innbyttebil</h4>
             <div className="bil-reservasjon-preview__grid">
-              {model.innbytteRows.map(function (row) {
-                return (
-                  <div className={`bil-reservasjon-preview__cell${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
-                    <span>{row.label}</span>
-                    <strong>{row.value}</strong>
-                  </div>
-                );
-              })}
-            </div>
+            {model.innbytteRows.map(function (row) {
+              return (
+                <div className={`bil-reservasjon-preview__cell${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </div>
+              );
+            })}
             {model.innbytte.kommentar ? (
-              <div className="bil-reservasjon-preview__innbytte-kommentar">
-                <div className="bil-reservasjon-preview__innbytte-kommentar-label">Kommentar</div>
+              <div className="bil-reservasjon-preview__cell bil-reservasjon-preview__cell--comment">
+                <div className="bil-reservasjon-preview__innbytte-kommentar-label">Kommentar til innbyttebil</div>
                 <p>{model.innbytte.kommentar}</p>
               </div>
             ) : null}
           </div>
+        </div>
         ) : null}
 
         <div className="bil-reservasjon-preview__section">
