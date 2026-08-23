@@ -59,6 +59,8 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
       </div>
 
       <div className="bil-reservasjon-preview__body">
+        <div className="bil-reservasjon-preview__doc-title">{model.dokument.tittel}</div>
+        <div className="bil-reservasjon-preview__doc-subtitle">{model.dokument.undertittel}</div>
         <p className="bil-reservasjon-preview__intro-box">{model.intro}</p>
         {model.finnUrl ? (
           <p className="bil-reservasjon-preview__finn">
@@ -112,22 +114,25 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
           </div>
         </div>
 
-        <div className="bil-reservasjon-preview__columns">
-          <div className="bil-reservasjon-preview__section">
-            <h4>Vilkår</h4>
-            <ul className="bil-reservasjon-preview__list">
-              {model.vilkar.map(function (item) {
-                return <li key={item}>{item}</li>;
-              })}
-            </ul>
-          </div>
-          <div className="bil-reservasjon-preview__section">
-            <h4>Neste steg</h4>
-            <ol className="bil-reservasjon-preview__steps">
-              {model.nesteSteg.map(function (item) {
-                return <li key={item}>{item}</li>;
-              })}
-            </ol>
+        <div className="bil-reservasjon-preview__section">
+          <h4>Vilkår og neste steg</h4>
+          <div className="bil-reservasjon-preview__columns">
+            <div className="bil-reservasjon-preview__list-box">
+              <div className="bil-reservasjon-preview__list-head">Vilkår</div>
+              <ul className="bil-reservasjon-preview__list bil-reservasjon-preview__list-body">
+                {model.vilkar.map(function (item) {
+                  return <li key={item}>{item}</li>;
+                })}
+              </ul>
+            </div>
+            <div className="bil-reservasjon-preview__list-box">
+              <div className="bil-reservasjon-preview__list-head">Neste steg</div>
+              <ol className="bil-reservasjon-preview__steps bil-reservasjon-preview__list-body">
+                {model.nesteSteg.map(function (item) {
+                  return <li key={item}>{item}</li>;
+                })}
+              </ol>
+            </div>
           </div>
         </div>
 
