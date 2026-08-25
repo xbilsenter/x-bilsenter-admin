@@ -7559,8 +7559,9 @@ function InfoGrid({ items }) {
   return (
     <div className="info-grid">
       {visible.map(function (item) {
+        const mono = item[0] === 'Chassisnummer';
         return (
-          <div key={item[0]} className="info-grid__item">
+          <div key={item[0]} className={'info-grid__item' + (mono ? ' info-grid__item--mono' : '')}>
             <div className="fl">{item[0]}</div>
             <div className="fv">{item[1]}</div>
           </div>
@@ -7614,6 +7615,7 @@ function mergeIngestVehicleRow(row, vehicle) {
     effektKw: has(row.effektKw) ? row.effektKw : (vehicle.effektKw ?? ''),
     antallMotorer: has(row.antallMotorer) ? row.antallMotorer : (vehicle.antallMotorer ?? ''),
     rekkevidde: has(row.rekkevidde) ? row.rekkevidde : formatIngestRekkevidde(vehicle),
+    chassisnr: has(row.chassisnr) ? row.chassisnr : (vehicle.understell || row.understell || ''),
     motorer: (Array.isArray(row.motorer) && row.motorer.length)
       ? row.motorer
       : (Array.isArray(vehicle.motorer) ? vehicle.motorer : [])
@@ -7658,8 +7660,10 @@ function IngestKundensBilSeksjon({ row, active }) {
 function buildIngestKundensBilItems(row) {
   const effekt = formatIngestMotoreffekt(row);
   const antallMotorer = Number(row?.antallMotorer);
+  const chassisnr = String(row?.chassisnr || row?.understell || '').trim().toUpperCase();
   const items = [
     ['Registreringsnr.', row.reg],
+    ['Chassisnummer', chassisnr],
     ['Merke / modell', [row.merke, row.modell].filter(Boolean).join(' ')],
     ['Årsmodell', row.aar],
     ['Kilometerstand', row.km ? `${fmtKm(row.km)} km` : ''],

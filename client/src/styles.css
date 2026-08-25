@@ -951,6 +951,7 @@ select option{background:var(--s1);}
 .inb-modal__svar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;}
 .info-grid__item .fv{font-size:12px;}
+.info-grid__item--mono .fv{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;letter-spacing:.04em;word-break:break-all;}
 .tag-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
 .tag-list .tag{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#fff;border:1px solid var(--b1);font-size:11px;color:var(--t2);}
 
