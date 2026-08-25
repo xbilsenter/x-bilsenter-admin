@@ -834,6 +834,58 @@ export function formatProfittUkeLabel(value) {
   return `Uke ${parsed.week}, ${parsed.year}`;
 }
 
+const PROFITT_MAANED_NAVN = [
+  'Januar', 'Februar', 'Mars', 'April', 'Mai', 'Juni',
+  'Juli', 'August', 'September', 'Oktober', 'November', 'Desember'
+];
+
+/** Mandag i ISO-uke (year/week). */
+export function dateFromIsoWeek(year, week) {
+  const y = Number(year);
+  const w = Number(week);
+  if (!Number.isFinite(y) || !Number.isFinite(w)) return null;
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const day = jan4.getUTCDay() || 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - day + 1);
+  const monday = new Date(week1Monday);
+  monday.setUTCDate(week1Monday.getUTCDate() + (w - 1) * 7);
+  return monday;
+}
+
+export function profittUkeToMonthKey(profittUke) {
+  const parsed = parseProfittUke(profittUke);
+  if (!parsed) return null;
+  const d = dateFromIsoWeek(parsed.year, parsed.week);
+  if (!d || Number.isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth() + 1;
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+export function getCurrentProfittMaaned(date) {
+  const d = date instanceof Date ? date : new Date(date || Date.now());
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function formatProfittMaanedLabel(value) {
+  const m = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
+  if (!m) return '—';
+  const month = Number(m[2]);
+  const name = PROFITT_MAANED_NAVN[month - 1];
+  return name ? `${name} ${m[1]}` : value;
+}
+
+export function parseProfittMaaned(value) {
+  const m = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
 export function getIsoWeeksInYear(year) {
   const y = Number(year);
   if (!Number.isFinite(y)) return 52;
@@ -1389,6 +1441,57 @@ export function aggregateUkentligProfitt(biler, options) {
   });
 
   return { weeks, utenUke };
+}
+
+export function aggregateMaanedligProfitt(biler, options) {
+  const yearFilter = options?.year != null && options.year !== '' ? Number(options.year) : null;
+  const byMonth = {};
+  const utenUke = [];
+
+  (Array.isArray(biler) ? biler : []).forEach(function (bil) {
+    const okonomi = normalizeBilOkonomi(bil.okonomi);
+    const stats = calcBilOkonomi(bil.innkjop, bil.salg, okonomi);
+    const entry = { bil, stats, profittUke: okonomi.profittUke };
+    const harOkonomi = okonomiBelopValue(bil.innkjop) > 0
+      || okonomiBelopValue(bil.salg) > 0
+      || stats.totaltKostnader > 0;
+
+    if (!okonomi.profittUke) {
+      if (harOkonomi) utenUke.push(entry);
+      return;
+    }
+
+    const monthKey = profittUkeToMonthKey(okonomi.profittUke);
+    if (!monthKey) return;
+    const parsed = parseProfittMaaned(monthKey);
+    if (!parsed) return;
+    if (yearFilter != null && Number.isFinite(yearFilter) && parsed.year !== yearFilter) return;
+
+    if (!byMonth[monthKey]) {
+      byMonth[monthKey] = {
+        profittMaaned: monthKey,
+        year: parsed.year,
+        month: parsed.month,
+        biler: [],
+        bruttoMargin: 0,
+        nettoMargin: 0,
+        totaltKostnader: 0
+      };
+    }
+
+    const group = byMonth[monthKey];
+    group.biler.push(entry);
+    group.bruttoMargin += stats.bruttoMargin;
+    group.nettoMargin += stats.nettoMargin;
+    group.totaltKostnader += stats.totaltKostnader;
+  });
+
+  const months = Object.values(byMonth).sort(function (a, b) {
+    if (a.year !== b.year) return b.year - a.year;
+    return b.month - a.month;
+  });
+
+  return { months, utenUke };
 }
 
 export function canDeleteHenvKommentar(comment, user) {

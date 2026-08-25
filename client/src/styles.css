@@ -282,7 +282,10 @@ tr:hover td{background:var(--accl);}
 .okonomi-summary-card--highlight{border-color:rgba(25,186,96,.35);background:rgba(25,186,96,.04);}
 .okonomi-summary-card__value{font-size:18px;margin-top:6px;}
 .okonomi-summary-card__value--meta{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--t2);font-weight:600;}
-.okonomi-week-table-wrap{overflow:auto;border:1px solid var(--b1);border-radius:10px;background:var(--s2);}
+.okonomi-section-title{font-size:14px;font-weight:800;color:var(--t1);margin:0 0 10px;letter-spacing:-.02em;}
+.okonomi-month-table-wrap{margin-bottom:24px;}
+.okonomi-week-table-wrap{overflow:auto;border:1px solid var(--b1);border-radius:10px;background:var(--s2);padding:14px 14px 0;}
+.okonomi-month-table-wrap.okonomi-week-table-wrap{padding-bottom:14px;}
 .okonomi-week-table{margin:0;}
 .okonomi-week-row{cursor:pointer;transition:background .12s;}
 .okonomi-week-row:hover,.okonomi-week-row--open{background:rgba(25,186,96,.06);}
