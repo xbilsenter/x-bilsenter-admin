@@ -71,6 +71,10 @@ export function getBootstrap() {
   return request('/bootstrap');
 }
 
+export function getSyncRevision() {
+  return request('/sync/revision');
+}
+
 export function getDashboard() {
   return request('/dashboard');
 }

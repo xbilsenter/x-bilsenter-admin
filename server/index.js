@@ -141,6 +141,7 @@ const {
 } = require('./finn-bil-match');
 const { runMailSyncCron } = require('./cron-mail-sync');
 const { getDashboardCache, setDashboardCache } = require('./dashboard-cache');
+const { getSyncRevision } = require('./sync-revision');
 const {
   UPLOADS_DIR,
   isRemoteStorageEnabled,
@@ -1039,6 +1040,16 @@ async function buildDashboardSummaryStats(options) {
 async function buildDashboardPayload() {
   return buildDashboardSummaryStats({ includeEpostPreview: true });
 }
+
+app.get('/api/sync/revision', requireAuth, async function (_req, res) {
+  try {
+    const payload = await getSyncRevision();
+    res.json({ ok: true, ...payload });
+  } catch (err) {
+    console.error('GET /api/sync/revision feilet:', err.message);
+    res.status(503).json({ ok: false, error: 'Kunne ikke hente synk-status.' });
+  }
+});
 
 app.get('/api/bootstrap', requireAuth, async function (req, res) {
   try {

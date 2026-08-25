@@ -62,7 +62,7 @@ import {
 import {
   getToken, logout,
   changeMyPassword,
-  getDashboard, getBootstrap, getNettsideDrift, getSitePreviewUrl, getVedlikehold, getHenvendelser, patchHenvendelse, deleteHenvendelse,
+  getDashboard, getBootstrap, getSyncRevision, getNettsideDrift, getSitePreviewUrl, getVedlikehold, getHenvendelser, patchHenvendelse, deleteHenvendelse,
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
@@ -570,6 +570,19 @@ function normalizeBilItems(items) {
   });
 }
 
+/** Bevarer lokale tekstfelt på bil som er åpen i modal under bakgrunnssync. */
+function mergeBilerFromServer(prev, serverItems, openBilId) {
+  const openId = openBilId != null ? normalizeBilId(openBilId) : null;
+  return serverItems.map(function (serverBil) {
+    const id = normalizeBilId(serverBil.id);
+    if (!openId || openId !== id) return serverBil;
+    const local = prev.find(function (b) { return normalizeBilId(b.id) === id; });
+    return local ? mergeBilDebouncedTextFields(serverBil, local) : serverBil;
+  });
+}
+
+const LIVE_SYNC_MS = 5000;
+
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null);
@@ -819,6 +832,97 @@ export default function App() {
       visTost('Kunne ikke laste innboks ✗');
     }
   }, [refreshStats, visTost]);
+
+  const modalRef = useRef(modal);
+  modalRef.current = modal;
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  const syncRevisionRef = useRef(null);
+  const syncInFlightRef = useRef(false);
+
+  const syncLiveData = useCallback(async function () {
+    const openBilId = modalRef.current?.t === 'visBil' ? modalRef.current.d?.id : null;
+    const [bilerRes] = await Promise.all([
+      getBiler({ lite: true }),
+      refreshStats(),
+      loadDashboardLists()
+    ]);
+    const items = normalizeBilItems(bilerRes.items);
+    setBiler(function (prev) {
+      const next = mergeBilerFromServer(prev, items, openBilId);
+      writeBilerCache(next);
+      return next;
+    });
+    if (openBilId) {
+      setModal(function (prev) {
+        if (prev?.t !== 'visBil') return prev;
+        const serverBil = items.find(function (b) {
+          return normalizeBilId(b.id) === normalizeBilId(prev.d?.id);
+        });
+        if (!serverBil) return prev;
+        return { ...prev, d: mergeBilDebouncedTextFields(serverBil, prev.d) };
+      });
+    }
+    if (tabRef.current === 'innboks') {
+      reloadInnboks().catch(function () { /* stille */ });
+    }
+  }, [refreshStats, loadDashboardLists, reloadInnboks]);
+
+  useEffect(function () {
+    if (!user || coreLoading) return;
+
+    let cancelled = false;
+    let timer = null;
+
+    getSyncRevision().then(function (data) {
+      if (!cancelled && data?.revision) syncRevisionRef.current = data.revision;
+    }).catch(function () { /* stille */ });
+
+    async function poll() {
+      if (cancelled || document.hidden || syncInFlightRef.current) return;
+      try {
+        const data = await getSyncRevision();
+        if (cancelled) return;
+        const rev = data?.revision;
+        if (!rev) return;
+        if (syncRevisionRef.current === null) {
+          syncRevisionRef.current = rev;
+          return;
+        }
+        if (rev === syncRevisionRef.current) return;
+
+        syncInFlightRef.current = true;
+        syncRevisionRef.current = rev;
+        await syncLiveData();
+      } catch {
+        /* stille bakgrunnssync */
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    }
+
+    function schedule() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        poll().finally(schedule);
+      }, LIVE_SYNC_MS);
+    }
+
+    function onVisibility() {
+      if (document.hidden || cancelled) return;
+      syncRevisionRef.current = null;
+      poll();
+    }
+
+    document.addEventListener('visibilitychange', onVisibility);
+    schedule();
+
+    return function () {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [user, coreLoading, syncLiveData]);
 
   const syncMailStatus = useCallback((status) => {
     if (status) setMailStatus(status);
