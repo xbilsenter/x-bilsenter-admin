@@ -11,10 +11,17 @@ import {
   normalizeBilOkonomi
 } from '../constants.js';
 
-function nok(v) {
+function nok(v, large) {
   const n = Number(v || 0);
   const tone = n >= 0 ? 'var(--acc)' : 'var(--red)';
-  return <span style={{ color: tone, fontWeight: 700 }}>{`kr ${n.toLocaleString('nb-NO')}`}</span>;
+  return (
+    <span
+      className={large ? 'okonomi-profit-value okonomi-profit-value--lg' : 'okonomi-profit-value'}
+      style={{ color: tone }}
+    >
+      {`kr ${n.toLocaleString('nb-NO')}`}
+    </span>
+  );
 }
 
 function marginCell(v) {
@@ -58,15 +65,24 @@ export default function OkonomiView({ biler, setModal }) {
     });
   }, [biler, year]);
 
+  const currentMonth = useMemo(function () {
+    const { months: allMonths } = aggregateMaanedligProfitt(biler, { year: null });
+    const row = allMonths.find(function (m) { return m.profittMaaned === currentMonthKey; });
+    return {
+      profittMaaned: currentMonthKey,
+      label: formatProfittMaanedLabel(currentMonthKey),
+      nettoMargin: row?.nettoMargin ?? 0,
+      antall: row?.biler?.length ?? 0,
+      biler: row?.biler ?? []
+    };
+  }, [biler, currentMonthKey]);
+
   const currentWeek = useMemo(function () {
     const { weeks: allWeeks } = aggregateUkentligProfitt(biler, { year: null });
     const row = allWeeks.find(function (w) { return w.profittUke === currentWeekKey; });
     return {
-      profittUke: currentWeekKey,
       label: formatProfittUkeLabel(currentWeekKey),
       nettoMargin: row?.nettoMargin ?? 0,
-      bruttoMargin: row?.bruttoMargin ?? 0,
-      totaltKostnader: row?.totaltKostnader ?? 0,
       antall: row?.biler?.length ?? 0,
       biler: row?.biler ?? []
     };
@@ -75,10 +91,9 @@ export default function OkonomiView({ biler, setModal }) {
   const arTotal = useMemo(function () {
     return weeks.reduce(function (acc, row) {
       acc.nettoMargin += row.nettoMargin;
-      acc.totaltKostnader += row.totaltKostnader;
       acc.antall += row.biler.length;
       return acc;
-    }, { nettoMargin: 0, totaltKostnader: 0, antall: 0 });
+    }, { nettoMargin: 0, antall: 0 });
   }, [weeks]);
 
   const utenUkeNetto = useMemo(function () {
@@ -99,7 +114,34 @@ export default function OkonomiView({ biler, setModal }) {
     setExpandedMonth(function (prev) { return prev === maaned ? null : maaned; });
   };
 
-  const currentWeekExpanded = expandedWeek === currentWeekKey;
+  const currentMonthExpanded = expandedMonth === currentMonthKey;
+
+  function renderBilRows(entries, stopPropagation) {
+    return entries.map(function (entry) {
+      const bil = entry.bil;
+      const stats = entry.stats || calcBilOkonomi(bil.innkjop, bil.salg, bil.okonomi);
+      return (
+        <button
+          key={bil.id}
+          type="button"
+          className="okonomi-bil-row"
+          onClick={function (e) {
+            if (stopPropagation) e.stopPropagation();
+            openBil(bil);
+          }}
+        >
+          <div>
+            <strong>{bil.reg || '—'}</strong>
+            <span>{bil.merke} {bil.modell}</span>
+          </div>
+          <div className="okonomi-bil-row__stats">
+            {entry.profittUke ? <span>{formatProfittUkeLabel(entry.profittUke)}</span> : null}
+            <span>Netto {marginCell(stats.nettoMargin)}</span>
+          </div>
+        </button>
+      );
+    });
+  }
 
   return (
     <>
@@ -107,7 +149,7 @@ export default function OkonomiView({ biler, setModal }) {
         <div>
           <div className="ph-title">Økonomi</div>
           <div className="ph-sub">
-            Ukentlig og månedlig profitt · {formatProfittUkeLabel(currentWeekKey)} er inneværende uke
+            Netto profitt per måned og uke · {formatProfittMaanedLabel(currentMonthKey)} er inneværende måned
           </div>
         </div>
         <div className="okonomi-year-filter">
@@ -121,102 +163,60 @@ export default function OkonomiView({ biler, setModal }) {
         </div>
       </div>
 
-      <section className="okonomi-current-week" aria-label="Inneværende uke">
-        <div className="okonomi-current-week__head">
+      <section className="okonomi-current-month" aria-label="Inneværende måned">
+        <div className="okonomi-current-month__head">
           <div>
-            <div className="okonomi-current-week__eyebrow">Inneværende uke</div>
-            <div className="okonomi-current-week__title">{currentWeek.label}</div>
+            <div className="okonomi-current-month__eyebrow">Inneværende måned</div>
+            <div className="okonomi-current-month__title">{currentMonth.label}</div>
           </div>
-          {currentWeek.antall > 0 ? (
+          {currentMonth.antall > 0 ? (
             <button
               type="button"
-              className="okonomi-current-week__toggle"
-              onClick={function () { toggleWeek(currentWeekKey); }}
+              className="okonomi-current-month__toggle"
+              onClick={function () { toggleMonth(currentMonthKey); }}
             >
-              {currentWeekExpanded ? 'Skjul biler' : `Vis ${currentWeek.antall} bil${currentWeek.antall === 1 ? '' : 'er'}`}
+              {currentMonthExpanded ? 'Skjul biler' : `Vis ${currentMonth.antall} bil${currentMonth.antall === 1 ? '' : 'er'}`}
             </button>
           ) : (
-            <span className="okonomi-current-week__empty">Ingen biler registrert denne uken</span>
+            <span className="okonomi-current-month__empty">Ingen biler registrert denne måneden</span>
           )}
         </div>
-        <div className="okonomi-current-week__stats">
-          <div className="okonomi-current-week__stat okonomi-current-week__stat--highlight">
+        <div className="okonomi-current-month__hero">
+          <div className="okonomi-current-month__profit">
             <div className="fl">Netto profitt</div>
-            <div className="okonomi-current-week__value">{nok(currentWeek.nettoMargin)}</div>
+            {nok(currentMonth.nettoMargin, true)}
           </div>
-          <div className="okonomi-current-week__stat">
-            <div className="fl">Antall biler</div>
-            <div className="okonomi-current-week__value" style={{ color: 'var(--t1)' }}>{currentWeek.antall}</div>
-          </div>
-          <div className="okonomi-current-week__stat">
-            <div className="fl">Totale kostnader</div>
-            <div className="okonomi-current-week__value" style={{ color: 'var(--t1)' }}>
-              {`kr ${currentWeek.totaltKostnader.toLocaleString('nb-NO')}`}
+          <div className="okonomi-current-month__meta">
+            <div className="okonomi-current-month__meta-item">
+              <span className="fl">Biler denne måneden</span>
+              <strong>{currentMonth.antall}</strong>
+            </div>
+            <div className="okonomi-current-month__meta-item okonomi-current-month__meta-item--week">
+              <span className="fl">Inneværende uke</span>
+              <strong>{marginCell(currentWeek.nettoMargin)}</strong>
+              <span className="okonomi-current-month__week-detail">
+                {currentWeek.label}{currentWeek.antall > 0 ? ` · ${currentWeek.antall} bil${currentWeek.antall === 1 ? '' : 'er'}` : ''}
+              </span>
             </div>
           </div>
-          <div className="okonomi-current-week__stat">
-            <div className="fl">Brutto margin</div>
-            <div className="okonomi-current-week__value">{marginCell(currentWeek.bruttoMargin)}</div>
-          </div>
         </div>
-        {currentWeekExpanded && currentWeek.biler.length > 0 ? (
-          <div className="okonomi-week-detail okonomi-current-week__biler">
-            {currentWeek.biler.map(function (entry) {
-              const bil = entry.bil;
-              const stats = entry.stats || calcBilOkonomi(bil.innkjop, bil.salg, bil.okonomi);
-              return (
-                <button
-                  key={bil.id}
-                  type="button"
-                  className="okonomi-bil-row"
-                  onClick={function () { openBil(bil); }}
-                >
-                  <div>
-                    <strong>{bil.reg || '—'}</strong>
-                    <span>{bil.merke} {bil.modell}</span>
-                  </div>
-                  <div className="okonomi-bil-row__stats">
-                    <span>Salg {`kr ${Number(bil.salg || 0).toLocaleString('nb-NO')}`}</span>
-                    <span>Netto {marginCell(stats.nettoMargin)}</span>
-                  </div>
-                </button>
-              );
-            })}
+        {currentMonthExpanded && currentMonth.biler.length > 0 ? (
+          <div className="okonomi-week-detail okonomi-current-month__biler">
+            {renderBilRows(currentMonth.biler)}
           </div>
         ) : null}
       </section>
 
-      <div className="okonomi-summary-cards">
-        <div className="okonomi-summary-card okonomi-summary-card--highlight">
-          <div className="fl">Netto profitt {year !== 'alle' ? year : 'totalt'}</div>
-          <div className="okonomi-summary-card__value">{nok(arTotal.nettoMargin)}</div>
-        </div>
-        <div className="okonomi-summary-card">
-          <div className="fl">Totale kostnader {year !== 'alle' ? year : ''}</div>
-          <div className="okonomi-summary-card__value" style={{ color: 'var(--t1)' }}>
-            {`kr ${arTotal.totaltKostnader.toLocaleString('nb-NO')}`}
-          </div>
-        </div>
-        <div className="okonomi-summary-card">
-          <div className="fl">Biler med profittuke {year !== 'alle' ? year : ''}</div>
-          <div className="okonomi-summary-card__value okonomi-summary-card__value--meta">
-            <span>{arTotal.antall} biler</span>
-            <span>{weeks.length} uker</span>
-          </div>
-        </div>
-      </div>
-
       {months.length > 0 ? (
         <>
-          <h3 className="okonomi-section-title">Netto profitt per måned</h3>
+          <h3 className="okonomi-section-title">Alle måneder</h3>
           <div className="okonomi-week-table-wrap okonomi-month-table-wrap">
             <table className="tbl okonomi-week-table okonomi-month-table">
               <thead>
                 <tr>
                   <th>Måned</th>
                   <th>Biler</th>
-                  <th>Kostnader</th>
-                  <th>Netto profitt</th>
+                  <th className="okonomi-col-profit">Netto profitt</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,38 +237,13 @@ export default function OkonomiView({ biler, setModal }) {
                           ) : null}
                         </td>
                         <td>{row.biler.length}</td>
-                        <td>{`kr ${row.totaltKostnader.toLocaleString('nb-NO')}`}</td>
-                        <td>{marginCell(row.nettoMargin)}</td>
+                        <td className="okonomi-col-profit">{marginCell(row.nettoMargin)}</td>
                       </tr>
                       {open ? (
                         <tr className="okonomi-week-detail-row">
-                          <td colSpan={4}>
+                          <td colSpan={3}>
                             <div className="okonomi-week-detail">
-                              {row.biler.map(function (entry) {
-                                const bil = entry.bil;
-                                const stats = entry.stats || calcBilOkonomi(bil.innkjop, bil.salg, bil.okonomi);
-                                return (
-                                  <button
-                                    key={bil.id}
-                                    type="button"
-                                    className="okonomi-bil-row"
-                                    onClick={function (e) {
-                                      e.stopPropagation();
-                                      openBil(bil);
-                                    }}
-                                  >
-                                    <div>
-                                      <strong>{bil.reg || '—'}</strong>
-                                      <span>{bil.merke} {bil.modell}</span>
-                                    </div>
-                                    <div className="okonomi-bil-row__stats">
-                                      <span>{formatProfittUkeLabel(entry.profittUke)}</span>
-                                      <span>Salg {`kr ${Number(bil.salg || 0).toLocaleString('nb-NO')}`}</span>
-                                      <span>Netto {marginCell(stats.nettoMargin)}</span>
-                                    </div>
-                                  </button>
-                                );
-                              })}
+                              {renderBilRows(row.biler, true)}
                             </div>
                           </td>
                         </tr>
@@ -290,15 +265,14 @@ export default function OkonomiView({ biler, setModal }) {
           </div>
         </div>
       ) : (
-        <div className="okonomi-week-table-wrap">
-          <h3 className="okonomi-section-title">Netto profitt per uke</h3>
+        <div className="okonomi-week-table-wrap okonomi-week-table-wrap--secondary">
+          <h3 className="okonomi-section-title okonomi-section-title--muted">Per uke</h3>
           <table className="tbl okonomi-week-table">
             <thead>
               <tr>
                 <th>Uke</th>
                 <th>Biler</th>
-                <th>Kostnader</th>
-                <th>Netto profitt</th>
+                <th className="okonomi-col-profit">Netto profitt</th>
               </tr>
             </thead>
             <tbody>
@@ -319,37 +293,13 @@ export default function OkonomiView({ biler, setModal }) {
                         ) : null}
                       </td>
                       <td>{row.biler.length}</td>
-                      <td>{`kr ${row.totaltKostnader.toLocaleString('nb-NO')}`}</td>
-                      <td>{marginCell(row.nettoMargin)}</td>
+                      <td className="okonomi-col-profit">{marginCell(row.nettoMargin)}</td>
                     </tr>
                     {open ? (
                       <tr className="okonomi-week-detail-row">
-                        <td colSpan={4}>
+                        <td colSpan={3}>
                           <div className="okonomi-week-detail">
-                            {row.biler.map(function (entry) {
-                              const bil = entry.bil;
-                              const stats = entry.stats || calcBilOkonomi(bil.innkjop, bil.salg, bil.okonomi);
-                              return (
-                                <button
-                                  key={bil.id}
-                                  type="button"
-                                  className="okonomi-bil-row"
-                                  onClick={function (e) {
-                                    e.stopPropagation();
-                                    openBil(bil);
-                                  }}
-                                >
-                                  <div>
-                                    <strong>{bil.reg || '—'}</strong>
-                                    <span>{bil.merke} {bil.modell}</span>
-                                  </div>
-                                  <div className="okonomi-bil-row__stats">
-                                    <span>Salg {`kr ${Number(bil.salg || 0).toLocaleString('nb-NO')}`}</span>
-                                    <span>Netto {marginCell(stats.nettoMargin)}</span>
-                                  </div>
-                                </button>
-                              );
-                            })}
+                            {renderBilRows(row.biler, true)}
                           </div>
                         </td>
                       </tr>
@@ -361,6 +311,17 @@ export default function OkonomiView({ biler, setModal }) {
           </table>
         </div>
       )}
+
+      {weeks.length > 0 ? (
+        <p className="okonomi-year-total" aria-label="Årsoppsummering">
+          {year !== 'alle' ? `${year}: ` : 'Totalt: '}
+          netto profitt {marginCell(arTotal.nettoMargin)}
+          {' · '}
+          {arTotal.antall} bil{arTotal.antall === 1 ? '' : 'er'}
+          {' · '}
+          {weeks.length} uke{weeks.length === 1 ? '' : 'r'}
+        </p>
+      ) : null}
 
       {utenUke.length > 0 ? (
         <div className="okonomi-uten-uke">
@@ -378,26 +339,7 @@ export default function OkonomiView({ biler, setModal }) {
           </button>
           {utenUkeOpen ? (
             <div className="okonomi-week-detail okonomi-uten-uke__panel">
-              {utenUke.map(function (entry) {
-                const bil = entry.bil;
-                const stats = entry.stats;
-                return (
-                  <button
-                    key={bil.id}
-                    type="button"
-                    className="okonomi-bil-row okonomi-bil-row--muted"
-                    onClick={function () { openBil(bil); }}
-                  >
-                    <div>
-                      <strong>{bil.reg || '—'}</strong>
-                      <span>{bil.merke} {bil.modell}</span>
-                    </div>
-                    <div className="okonomi-bil-row__stats">
-                      <span>Netto {marginCell(stats.nettoMargin)}</span>
-                    </div>
-                  </button>
-                );
-              })}
+              {renderBilRows(utenUke)}
             </div>
           ) : null}
         </div>
