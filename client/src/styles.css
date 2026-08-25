@@ -264,6 +264,18 @@ tr:hover td{background:var(--accl);}
 .bil-okonomi-uke__label{grid-column:1/-1;font-size:12px;color:var(--acc);font-weight:600;}
 .bil-okonomi-uke__label--empty{color:var(--t4);font-weight:500;}
 .okonomi-year-filter{display:flex;flex-direction:column;gap:4px;min-width:120px;}
+.okonomi-current-week{margin-bottom:20px;padding:16px 18px;background:var(--s1);border:1px solid rgba(25,186,96,.28);border-radius:12px;box-shadow:var(--shadow);}
+.okonomi-current-week__head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap;}
+.okonomi-current-week__eyebrow{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--acc3);margin-bottom:4px;}
+.okonomi-current-week__title{font-size:20px;font-weight:800;color:var(--t1);letter-spacing:-.02em;}
+.okonomi-current-week__empty{font-size:11px;color:var(--t4);font-weight:500;}
+.okonomi-current-week__toggle{font-size:11px;font-weight:700;color:var(--acc2);background:var(--accl);border:1px solid rgba(25,186,96,.25);border-radius:8px;padding:7px 12px;cursor:pointer;font-family:inherit;transition:.12s;}
+.okonomi-current-week__toggle:hover{background:#dff5e8;border-color:var(--acc);}
+.okonomi-current-week__stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+.okonomi-current-week__stat{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:12px 14px;}
+.okonomi-current-week__stat--highlight{border-color:rgba(25,186,96,.35);background:rgba(25,186,96,.05);}
+.okonomi-current-week__value{font-size:20px;font-weight:800;margin-top:6px;line-height:1.2;}
+.okonomi-current-week__biler{margin-top:14px;padding-top:14px;border-top:1px solid var(--b1);}
 .okonomi-summary-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px;}
 .okonomi-summary-card{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:14px;}
 .okonomi-summary-card--highlight{border-color:rgba(25,186,96,.35);background:rgba(25,186,96,.04);}
@@ -273,6 +285,8 @@ tr:hover td{background:var(--accl);}
 .okonomi-week-table{margin:0;}
 .okonomi-week-row{cursor:pointer;transition:background .12s;}
 .okonomi-week-row:hover,.okonomi-week-row--open{background:rgba(25,186,96,.06);}
+.okonomi-week-row--current{background:rgba(25,186,96,.04);}
+.okonomi-week-row__badge{display:inline-block;margin-left:8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--acc3);background:var(--accl);border:1px solid rgba(25,186,96,.2);border-radius:999px;padding:2px 7px;vertical-align:middle;}
 .okonomi-week-detail-row td{padding:0!important;border-top:none;}
 .okonomi-week-detail{padding:8px 12px 12px;background:var(--s1);border-top:1px solid var(--b1);}
 .okonomi-bil-row{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:10px 12px;margin-bottom:6px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;text-align:left;cursor:pointer;transition:.12s;}
@@ -302,6 +316,7 @@ tr:hover td{background:var(--accl);}
   .bil-okonomi-summary{order:-1;}
   .bil-okonomi-uke{grid-template-columns:1fr 1fr;}
   .okonomi-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .okonomi-current-week__stats{grid-template-columns:repeat(2,minmax(0,1fr));}
 }
 .modal.sm{width:480px;}
 .modal-title{font-size:18px;font-weight:800;color:var(--t1);margin-bottom:18px;}
