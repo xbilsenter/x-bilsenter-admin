@@ -570,6 +570,25 @@ function normalizeBilItems(items) {
   });
 }
 
+/** Bevarer manuelle endringer og debounced felt når serverdata merges inn. */
+function mergeLocalBilFromServer(local, server) {
+  if (!server) return local;
+  if (!local) return server;
+  const overstyrt = getBilAutosysOverstyrt(local);
+  const next = mergeBilDebouncedTextFields(server, local);
+  BIL_AUTOSYS_FELTER.forEach(function (key) {
+    if (overstyrt[key]) next[key] = local[key];
+  });
+  if (Object.keys(overstyrt).length) {
+    next.svvData = mergeAutosysOverstyrtIntoSvvData(server.svvData, overstyrt);
+  }
+  return next;
+}
+
+function mergeAutosysOverstyrtFlags(fromAutosys, current) {
+  return { ...(fromAutosys || {}), ...(current || {}) };
+}
+
 /** Bevarer lokale tekstfelt på bil som er åpen i modal under bakgrunnssync. */
 function mergeBilerFromServer(prev, serverItems, openBilId) {
   const openId = openBilId != null ? normalizeBilId(openBilId) : null;
@@ -577,7 +596,7 @@ function mergeBilerFromServer(prev, serverItems, openBilId) {
     const id = normalizeBilId(serverBil.id);
     if (!openId || openId !== id) return serverBil;
     const local = prev.find(function (b) { return normalizeBilId(b.id) === id; });
-    return local ? mergeBilDebouncedTextFields(serverBil, local) : serverBil;
+    return local ? mergeLocalBilFromServer(local, serverBil) : serverBil;
   });
 }
 
@@ -642,12 +661,13 @@ export default function App() {
     delete next.lite;
     setBiler(function (prev) {
       return prev.map(function (b) {
-        return b.id === next.id ? next : b;
+        if (b.id !== next.id) return b;
+        return mergeLocalBilFromServer(b, next);
       });
     });
     setModal(function (prev) {
       if (prev?.t !== 'visBil' || normalizeBilId(prev.d?.id) !== normalizeBilId(next.id)) return prev;
-      return { ...prev, d: next };
+      return { ...prev, d: mergeLocalBilFromServer(prev.d, next) };
     });
   }, []);
 
@@ -860,7 +880,7 @@ export default function App() {
           return normalizeBilId(b.id) === normalizeBilId(prev.d?.id);
         });
         if (!serverBil) return prev;
-        return { ...prev, d: mergeBilDebouncedTextFields(serverBil, prev.d) };
+        return { ...prev, d: mergeLocalBilFromServer(prev.d, serverBil) };
       });
     }
     if (tabRef.current === 'innboks') {
@@ -1025,14 +1045,14 @@ export default function App() {
         setBiler(function (prev) {
           return prev.map(function (b) {
             if (b.id !== id) return b;
-            mergedItem = mergeBilDebouncedTextFields(res.item, b);
+            mergedItem = mergeLocalBilFromServer(b, res.item);
             return mergedItem;
           });
         });
         setModal(function (prev) {
           if (textOnly) return prev;
           if (prev?.t !== 'visBil' || normalizeBilId(prev.d?.id) !== normalizeBilId(id)) return prev;
-          return { ...prev, d: mergeBilDebouncedTextFields(res.item, prev.d) };
+          return { ...prev, d: mergeLocalBilFromServer(prev.d, res.item) };
         });
       }
       if (localMsg) visTost(localMsg);
@@ -3448,7 +3468,10 @@ function applyAutosysLocalUpdate(prevBil, localUpdate, overstyrt) {
 
 function mergeBilAfterAutosysSave(prevBil, saved) {
   if (!saved) return prevBil;
-  const o = getBilAutosysOverstyrt(prevBil);
+  const o = {
+    ...getBilAutosysOverstyrt(saved),
+    ...getBilAutosysOverstyrt(prevBil)
+  };
   const next = { ...saved };
   BIL_AUTOSYS_FELTER.forEach(function (key) {
     if (o[key]) next[key] = prevBil[key];
@@ -3615,6 +3638,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   listsRef.current = lists;
 
   const autosysInitKeyRef = useRef('');
+  const userEditedRef = useRef(false);
 
   const queueTextSave = useCallback(function (patch, msg) {
     pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
@@ -3658,6 +3682,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     bilRef.current = next;
     autosysOverstyrtRef.current = o;
     autosysInitKeyRef.current = '';
+    userEditedRef.current = false;
   }, [data.id]);
 
   useEffect(function () {
@@ -3685,12 +3710,12 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     const currentOverstyrt = autosysOverstyrtRef.current;
     const reg = normalizeBilReg(currentBil.reg);
     const result = await hentAutosysPayload(reg, lists, currentBil, currentOverstyrt);
-    const filtered = filterAutosysPatchByOverstyrt(result.patch, result.localUpdate, autosysOverstyrtRef.current);
-    const nextOverstyrt = result.overstyrt || {};
-    autosysOverstyrtRef.current = nextOverstyrt;
-    setAutosysOverstyrt(nextOverstyrt);
+    const mergedOverstyrt = mergeAutosysOverstyrtFlags(result.overstyrt, autosysOverstyrtRef.current);
+    const filtered = filterAutosysPatchByOverstyrt(result.patch, result.localUpdate, mergedOverstyrt);
+    autosysOverstyrtRef.current = mergedOverstyrt;
+    setAutosysOverstyrt(mergedOverstyrt);
     setBil(function (prev) {
-      const next = applyAutosysLocalUpdate(prev, filtered.localUpdate, nextOverstyrt);
+      const next = applyAutosysLocalUpdate(prev, filtered.localUpdate, mergedOverstyrt);
       bilRef.current = next;
       return next;
     });
@@ -3723,17 +3748,18 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
     hentAutosysPayload(reg, listsRef.current, bilRef.current, autosysOverstyrtRef.current).then(async function (result) {
       if (cancelled) return;
-      const filtered = filterAutosysPatchByOverstyrt(result.patch, result.localUpdate, autosysOverstyrtRef.current);
-      const nextOverstyrt = result.overstyrt || {};
-      autosysOverstyrtRef.current = nextOverstyrt;
-      setAutosysOverstyrt(nextOverstyrt);
+      if (userEditedRef.current) return;
+      const mergedOverstyrt = mergeAutosysOverstyrtFlags(result.overstyrt, autosysOverstyrtRef.current);
+      const filtered = filterAutosysPatchByOverstyrt(result.patch, result.localUpdate, mergedOverstyrt);
+      autosysOverstyrtRef.current = mergedOverstyrt;
+      setAutosysOverstyrt(mergedOverstyrt);
       setBil(function (prev) {
-        const next = applyAutosysLocalUpdate(prev, filtered.localUpdate, nextOverstyrt);
+        const next = applyAutosysLocalUpdate(prev, filtered.localUpdate, mergedOverstyrt);
         bilRef.current = next;
         return next;
       });
       const saved = await saveImmediateRef.current(filtered.patch);
-      if (!cancelled && saved) {
+      if (!cancelled && !userEditedRef.current && saved) {
         setBil(function (prev) {
           const next = mergeBilAfterAutosysSave(prev, saved);
           bilRef.current = next;
@@ -3783,6 +3809,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   };
 
   const oppdater = (k, v, msg) => {
+    userEditedRef.current = true;
     if (k === 'status') {
       setBil(function (prev) {
         if (v === prev.status) return prev;
@@ -3826,7 +3853,10 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
       if (BIL_DEBOUNCED_TEXT_FIELDS.has(k)) {
         applyBilPatchLocal(prev.id, patch);
-        queueTextSave(patch, msg);
+        if (BIL_AUTOSYS_FELTER.includes(k) && patch.svvData) {
+          saveImmediate({ svvData: patch.svvData });
+        }
+        queueTextSave({ [k]: payload }, msg);
       } else {
         saveImmediate(patch, msg);
       }
