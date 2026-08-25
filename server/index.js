@@ -504,20 +504,15 @@ async function resolveSelgBilStatus(key) {
 }
 
 async function saveIngestBilder(bilderMeta) {
-  const savedFiles = [];
   const items = Array.isArray(bilderMeta) ? bilderMeta : [];
-
-  for (let i = 0; i < items.length; i += 1) {
-    const file = items[i];
-    if (!file || !file.data) continue;
-    const saved = await saveBase64DataUrl(file.data, {
+  const saved = await Promise.all(items.map(async function (file, index) {
+    if (!file || !file.data) return null;
+    return saveBase64DataUrl(file.data, {
       name: file.name,
-      index: i
+      index: index
     });
-    if (saved) savedFiles.push(saved);
-  }
-
-  return savedFiles;
+  }));
+  return saved.filter(Boolean);
 }
 
 async function insertInnbytteRow(b, savedFiles) {

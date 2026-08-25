@@ -7,12 +7,18 @@ function hasValue(value) {
   return value != null && String(value).trim() !== '';
 }
 
+function hasIngestVehicleData(body) {
+  return hasValue(body.merke)
+    && hasValue(body.modell)
+    && (hasValue(body.nesteEuKontroll) || hasValue(body.effektHk) || hasValue(body.hjuldrift));
+}
+
 async function enrichIngestVehicleBody(body) {
   const next = { ...(body || {}) };
   next.farge = formatSvvFargeNavn(next.farge) || next.farge || '';
 
   const apiKey = process.env.VEGVESEN_API_KEY || '';
-  if (!next.regnr || !apiKey) return next;
+  if (!next.regnr || !apiKey || hasIngestVehicleData(next)) return next;
 
   try {
     const result = await lookupVehicleFull(next.regnr, apiKey);
