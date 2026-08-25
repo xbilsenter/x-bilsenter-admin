@@ -2812,32 +2812,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
               : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · klikk «Nr.» på kortet for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
-        {section !== 'arkiv' && klarTilAnnonseringCount > 0 && onSyncFinnStatus && (
-          <div className="ph-actions">
-            <button
-              type="button"
-              className="btn btn-g btn-sm"
-              disabled={finnSyncing}
-              onClick={async function () {
-                setFinnSyncing(true);
-                try {
-                  const res = await onSyncFinnStatus();
-                  if (!res) return;
-                  const msg = res.updated
-                    ? `Flyttet ${res.updated} bil${res.updated === 1 ? '' : 'er'} til Annonsert ✓`
-                    : `Ingen nye treff mot FINN (${res.unmatchedCount || 0} står fortsatt i «Klar til annonsering»)`;
-                  if (visTost) visTost(msg);
-                } catch (err) {
-                  if (visTost) visTost(err?.message || 'FINN-synk feilet ✗');
-                } finally {
-                  setFinnSyncing(false);
-                }
-              }}
-            >
-              {finnSyncing ? 'Sjekker FINN…' : `Synk FINN → Annonsert (${klarTilAnnonseringCount})`}
-            </button>
-          </div>
-        )}
       </div>
       <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
         <div className="fl">Søk i alle biler</div>
@@ -2878,6 +2852,30 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <button type="button" className="btn btn-p bil-add-btn" onClick={() => setModal({ t: 'nyBil' })}>+ Legg til bil</button>
         )}
         <div className="bil-toolbar">
+          {section !== 'arkiv' && klarTilAnnonseringCount > 0 && onSyncFinnStatus && (
+            <button
+              type="button"
+              className="btn btn-g btn-sm bil-finn-sync-btn"
+              disabled={finnSyncing}
+              onClick={async function () {
+                setFinnSyncing(true);
+                try {
+                  const res = await onSyncFinnStatus();
+                  if (!res) return;
+                  const msg = res.updated
+                    ? `Flyttet ${res.updated} bil${res.updated === 1 ? '' : 'er'} til Annonsert ✓`
+                    : `Ingen nye treff mot FINN (${res.unmatchedCount || 0} står fortsatt i «Klar til annonsering»)`;
+                  if (visTost) visTost(msg);
+                } catch (err) {
+                  if (visTost) visTost(err?.message || 'FINN-synk feilet ✗');
+                } finally {
+                  setFinnSyncing(false);
+                }
+              }}
+            >
+              {finnSyncing ? 'Sjekker FINN…' : `Synk FINN → Annonsert (${klarTilAnnonseringCount})`}
+            </button>
+          )}
           {currentUser?.isAdmin && (
             <button
               type="button"
