@@ -2427,12 +2427,44 @@ app.post('/api/biler', requireAuth, async function (req, res) {
   }
 });
 
+const BIL_AUTOSYS_PATCH_FIELDS = ['reg', 'merke', 'modell', 'aar', 'farge', 'euKontroll'];
+
+function mergeSvvDataPatch(existing, incoming) {
+  if (incoming == null) return null;
+  const base = existing && typeof existing === 'object' ? existing : {};
+  const next = { ...base, ...incoming };
+  const overstyrt = { ...(base.overstyrt || {}), ...(incoming.overstyrt || {}) };
+  if (Object.keys(overstyrt).length) next.overstyrt = overstyrt;
+  else delete next.overstyrt;
+  return next;
+}
+
+function resolveBilAutosysPatchFields(body, existingSvv) {
+  const existingOverstyrt = existingSvv?.overstyrt || {};
+  const incomingOverstyrt = body.svvData?.overstyrt || {};
+  const mergedOverstyrt = { ...existingOverstyrt, ...incomingOverstyrt };
+  const next = { ...body };
+
+  BIL_AUTOSYS_PATCH_FIELDS.forEach(function (field) {
+    if (next[field] == null) return;
+    if (!existingOverstyrt[field]) return;
+    if (incomingOverstyrt[field]) return;
+    next[field] = null;
+  });
+
+  if (body.svvData != null) {
+    next.svvData = mergeSvvDataPatch(existingSvv, body.svvData);
+  }
+
+  return next;
+}
+
 app.patch('/api/biler/:id', requireAuth, async function (req, res) {
   const id = Number(req.params.id);
   const row = await prepare('SELECT * FROM biler WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Ikke funnet.' });
 
-  const b = req.body || {};
+  const b = resolveBilAutosysPatchFields(req.body || {}, parseJson(row.svv_data, null));
   try {
     if (b.kundeIds !== undefined) {
       await setBilKunder(id, b.kundeIds);
