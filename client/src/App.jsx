@@ -50,8 +50,9 @@ import {
   buildFullBilModellFromVehicle,
   BIL_AUTOSYS_FELTER, getBilAutosysOverstyrt, markBilAutosysOverstyrt,
   mergeAutosysOverstyrtIntoSvvData, buildAutosysBilFelt,
-  parseNumberInput, numberInputDisplay, numberInputForSave, kmInputDisplay, kmInputForSave, normalizeKmValue, BIL_NUMERIC_FIELDS, BIL_DEBOUNCED_TEXT_FIELDS,
-  mergeBilDebouncedTextFields, patchIsDebouncedTextOnly,
+  parseNumberInput, numberInputDisplay, numberInputForSave, kmInputDisplay, kmInputForSave, normalizeKmValue, BIL_NUMERIC_FIELDS,
+  BIL_AUTOSYS_TEXT_FIELDS, BIL_DEBOUNCED_TEXT_FIELDS, BIL_LOCAL_TEXT_PRESERVE_FIELDS,
+  mergeBilDebouncedTextFields, patchIsDebouncedTextOnly, patchRequiresAtomicAutosysSave,
   DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilTilstandsrapport, bilManglerTilstandsrapport,
   tilstandsrapportDelerChips, bilTilstandsrapportNodvendigRader, bilTilstandsrapportNodvendigFilterOptions,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
@@ -602,7 +603,10 @@ async function applyAutosysFetchResult(result, ctx) {
   if (ctx.cancelled()) return { saved: false };
   if (blockIfEdited()) return { saved: false };
 
-  const mergedOverstyrt = mergeAutosysOverstyrtFlags(result.overstyrt, ctx.autosysOverstyrtRef.current);
+  const mergedOverstyrt = {
+    ...(result.overstyrt || {}),
+    ...(ctx.autosysOverstyrtRef.current || {})
+  };
   ctx.autosysOverstyrtRef.current = mergedOverstyrt;
   ctx.setAutosysOverstyrt(mergedOverstyrt);
 
@@ -3542,7 +3546,7 @@ function mergeBilAfterAutosysSave(prevBil, saved) {
   BIL_AUTOSYS_FELTER.forEach(function (key) {
     if (o[key]) next[key] = prevBil[key];
   });
-  BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
+  BIL_LOCAL_TEXT_PRESERVE_FIELDS.forEach(function (key) {
     next[key] = prevBil[key];
   });
   next.innkjop = prevBil.innkjop;
@@ -3567,7 +3571,7 @@ function filterAutosysPatchByOverstyrt(patch, localUpdate, overstyrt) {
 function mergeBilServerItem(prevBil, saved) {
   if (!saved) return prevBil;
   const next = { ...saved };
-  BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
+  BIL_LOCAL_TEXT_PRESERVE_FIELDS.forEach(function (key) {
     next[key] = prevBil[key];
   });
   return mergeBilAfterAutosysSave(prevBil, next);
@@ -3586,7 +3590,7 @@ function bilFieldChangedSinceSnapshot(prev, snapshot, key) {
 }
 
 function mergeBilAfterHydrate(prev, server, snapshot) {
-  const next = mergeBilServerItem(prev, server);
+  let next = mergeLocalBilFromServer(prev, server);
   BIL_HYDRATE_PRESERVE_FIELDS.forEach(function (key) {
     if (bilFieldChangedSinceSnapshot(prev, snapshot, key)) {
       next[key] = prev[key];
@@ -3619,6 +3623,9 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const saveChainRef = useRef(Promise.resolve());
   const textSaveChainRef = useRef(Promise.resolve());
   const debounceTimerRef = useRef(null);
+  const autosysTextDebounceRef = useRef(null);
+  const pendingAutosysTextPatchRef = useRef(null);
+  const composingRef = useRef(false);
   const pendingPatchRef = useRef({});
   const bilSnapshotRef = useRef(data);
   const [closing, setClosing] = useState(false);
@@ -3659,6 +3666,10 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     const textPatch = {};
     const otherPatch = {};
     Object.keys(patch || {}).forEach(function (key) {
+      if (BIL_AUTOSYS_TEXT_FIELDS.has(key) || key === 'svvData') {
+        otherPatch[key] = patch[key];
+        return;
+      }
       if (BIL_DEBOUNCED_TEXT_FIELDS.has(key)) textPatch[key] = patch[key];
       else otherPatch[key] = patch[key];
     });
@@ -3680,6 +3691,16 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     const merged = { ...(pending || {}), ...patch };
     if (!Object.keys(merged).length) return saveChainRef.current;
 
+    if (patchRequiresAtomicAutosysSave(merged)) {
+      saveChainRef.current = textSaveChainRef.current
+        .catch(function () {})
+        .then(function () {
+          const id = bilRef.current?.id;
+          return updateBil(id, merged, msg);
+        });
+      return saveChainRef.current;
+    }
+
     const split = splitPatchBySaveKind(merged);
     let chain = textSaveChainRef.current;
     if (Object.keys(split.textPatch).length) {
@@ -3699,6 +3720,41 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
   const saveImmediateRef = useRef(saveImmediate);
   saveImmediateRef.current = saveImmediate;
+
+  const flushAutosysTextSave = useCallback(function (msg) {
+    clearTimeout(autosysTextDebounceRef.current);
+    autosysTextDebounceRef.current = null;
+    const toSend = pendingAutosysTextPatchRef.current;
+    pendingAutosysTextPatchRef.current = null;
+    if (!toSend || !Object.keys(toSend).length) return saveChainRef.current;
+    return saveImmediate(toSend, msg);
+  }, [saveImmediate]);
+
+  const scheduleAutosysTextSave = useCallback(function (patch, msg) {
+    pendingAutosysTextPatchRef.current = {
+      ...(pendingAutosysTextPatchRef.current || {}),
+      ...patch
+    };
+    clearTimeout(autosysTextDebounceRef.current);
+    autosysTextDebounceRef.current = setTimeout(function () {
+      autosysTextDebounceRef.current = null;
+      const toSend = pendingAutosysTextPatchRef.current;
+      pendingAutosysTextPatchRef.current = null;
+      if (toSend && Object.keys(toSend).length) {
+        saveImmediate(toSend, msg);
+      }
+    }, 350);
+  }, [saveImmediate]);
+
+  const bilTextCompositionHandlers = useMemo(function () {
+    return {
+      onCompositionStart: function () { composingRef.current = true; },
+      onCompositionEnd: function () {
+        composingRef.current = false;
+        flushAutosysTextSave();
+      }
+    };
+  }, [flushAutosysTextSave]);
 
   const listsRef = useRef(lists);
   listsRef.current = lists;
@@ -3721,20 +3777,27 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     setClosing(true);
     Promise.all([
       flushTextSave(),
+      flushAutosysTextSave(),
       saveChainRef.current.catch(function () {})
     ]).finally(function () {
       setClosing(false);
       onClose();
     });
-  }, [closing, flushTextSave, onClose]);
+  }, [closing, flushTextSave, flushAutosysTextSave, onClose]);
 
   useEffect(function () {
     return function () {
       clearTimeout(debounceTimerRef.current);
+      clearTimeout(autosysTextDebounceRef.current);
       const toSend = collectPendingTextPatch();
       const id = bilRef.current?.id;
       if (id && toSend && Object.keys(toSend).length) {
         enqueueTextSave(toSend);
+      }
+      const autosysPatch = pendingAutosysTextPatchRef.current;
+      pendingAutosysTextPatchRef.current = null;
+      if (id && autosysPatch && Object.keys(autosysPatch).length) {
+        saveImmediateRef.current(autosysPatch);
       }
     };
   }, [enqueueTextSave, collectPendingTextPatch]);
@@ -3750,6 +3813,17 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     autosysInitKeyRef.current = '';
     userEditedRef.current = false;
   }, [data.id]);
+
+  useEffect(function () {
+    if (userEditedRef.current) return;
+    setBil(function (prev) {
+      const merged = mergeLocalBilFromServer(prev, data);
+      bilRef.current = merged;
+      autosysOverstyrtRef.current = getBilAutosysOverstyrt(merged);
+      setAutosysOverstyrt(getBilAutosysOverstyrt(merged));
+      return merged;
+    });
+  }, [data]);
 
   useEffect(function () {
     if (!data?.id || !data.lite) return;
@@ -3795,6 +3869,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   useEffect(function () {
     const reg = normalizeBilReg(data.reg);
     if (!isValidBilReg(reg)) return;
+    if (data.lite) return;
 
     const initKey = String(data.id) + ':' + reg;
     if (autosysInitKeyRef.current === initKey) return;
@@ -3819,7 +3894,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     }).catch(function () { /* stille bakgrunnshenting */ });
 
     return function () { cancelled = true; };
-  }, [data.id, data.reg]);
+  }, [data.id, data.reg, data.lite]);
 
   const docCount = (bil.dokumenter || []).length;
   const bilTabs = [
@@ -3858,6 +3933,29 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
   const oppdater = (k, v, msg) => {
     userEditedRef.current = true;
+    if (composingRef.current && (BIL_AUTOSYS_TEXT_FIELDS.has(k) || BIL_DEBOUNCED_TEXT_FIELDS.has(k))) {
+      setBil(function (prev) {
+        let nextOverstyrt = getBilAutosysOverstyrt(prev);
+        if (BIL_AUTOSYS_FELTER.includes(k)) {
+          nextOverstyrt = markBilAutosysOverstyrt(nextOverstyrt, k);
+          autosysOverstyrtRef.current = nextOverstyrt;
+          setAutosysOverstyrt(nextOverstyrt);
+        }
+        const patch = { [k]: v };
+        if (BIL_AUTOSYS_FELTER.includes(k)) {
+          patch.svvData = mergeAutosysOverstyrtIntoSvvData(prev.svvData, nextOverstyrt);
+          pendingAutosysTextPatchRef.current = {
+            ...(pendingAutosysTextPatchRef.current || {}),
+            ...patch
+          };
+        }
+        const next = { ...prev, ...patch };
+        bilRef.current = next;
+        applyBilPatchLocal(prev.id, patch);
+        return next;
+      });
+      return;
+    }
     if (k === 'status') {
       setBil(function (prev) {
         if (v === prev.status) return prev;
@@ -3878,6 +3976,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     setBil(function (prev) {
       const stored = v;
       const payload = BIL_NUMERIC_FIELDS.has(k) ? numberInputForSave(v) : v;
+      const wasOverstyrt = !!getBilAutosysOverstyrt(prev)[k];
       let nextOverstyrt = getBilAutosysOverstyrt(prev);
 
       if (k === 'reg') {
@@ -3899,16 +3998,20 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
         patch.svvData = mergeAutosysOverstyrtIntoSvvData(prev.svvData, nextOverstyrt);
       }
 
-      if (BIL_DEBOUNCED_TEXT_FIELDS.has(k)) {
+      if (BIL_AUTOSYS_TEXT_FIELDS.has(k)) {
         applyBilPatchLocal(prev.id, patch);
-        if (BIL_AUTOSYS_FELTER.includes(k)) {
-          saveImmediate({
-            [k]: payload,
-            ...(patch.svvData != null ? { svvData: patch.svvData } : {})
-          }, msg);
+        const atomicPatch = {
+          [k]: payload,
+          ...(patch.svvData != null ? { svvData: patch.svvData } : {})
+        };
+        if (!wasOverstyrt) {
+          saveImmediate(atomicPatch, msg);
         } else {
-          queueTextSave({ [k]: payload }, msg);
+          scheduleAutosysTextSave(atomicPatch, msg);
         }
+      } else if (BIL_DEBOUNCED_TEXT_FIELDS.has(k)) {
+        applyBilPatchLocal(prev.id, patch);
+        queueTextSave({ [k]: payload }, msg);
       } else {
         saveImmediate(patch, msg);
       }
@@ -4139,11 +4242,25 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
               <div className="form-row gap">
                 <div>
                   <div className="fl">Modell</div>
-                  <input value={bil.modell || ''} onChange={e => oppdater('modell', e.target.value)} />
+                  <input
+                    value={bil.modell || ''}
+                    onChange={e => oppdater('modell', e.target.value)}
+                    {...bilTextCompositionHandlers}
+                  />
                 </div>
                 <div>
                   <div className="fl">Farge</div>
-                  <input value={formatBilFarge(bil.farge)} onChange={e => oppdater('farge', formatSvvFargeNavn(e.target.value))} />
+                  <input
+                    value={bil.farge || ''}
+                    onChange={e => oppdater('farge', e.target.value)}
+                    onBlur={function (e) {
+                      const formatted = formatSvvFargeNavn(e.target.value);
+                      if (formatted !== (bilRef.current?.farge || '')) {
+                        oppdater('farge', formatted);
+                      }
+                    }}
+                    {...bilTextCompositionHandlers}
+                  />
                 </div>
               </div>
               <div className="form-row gap">
@@ -4185,7 +4302,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
               </div>
               <div className="gap">
                 <div className="fl">Utstyr / ekstra info</div>
-                <textarea rows={3} value={bil.utstyr || ''} onChange={e => oppdater('utstyr', e.target.value)} placeholder="Utstyrspakke, hengerfeste, vinterdekk medfølger…" />
+                <textarea rows={3} value={bil.utstyr || ''} onChange={e => oppdater('utstyr', e.target.value)} placeholder="Utstyrspakke, hengerfeste, vinterdekk medfølger…" {...bilTextCompositionHandlers} />
               </div>
 
               <InternKommentarerSeksjon
@@ -9640,9 +9757,10 @@ function BilAutosysTab({ bil, lagreAutosys, visTost }) {
   useEffect(function () {
     if (autoHentRef.current || vehicle || laster) return;
     if (!isValidBilReg(bil.reg)) return;
+    if (Object.keys(getBilAutosysOverstyrt(bil)).length) return;
     autoHentRef.current = true;
     hentOgLagre();
-  }, [bil.id, bil.reg, vehicle, laster, hentOgLagre]);
+  }, [bil.id, bil.reg, vehicle, laster, hentOgLagre, bil.svvData]);
 
   const displayVehicle = vehicle || getVehicleFromSvvData(bil.svvData?.vehicle);
   const fargeNavn = displayVehicle ? formatSvvFargeNavn(displayVehicle.farge) : '';

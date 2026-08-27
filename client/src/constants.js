@@ -1346,14 +1346,23 @@ export function numberInputForSave(value) {
 
 export const BIL_NUMERIC_FIELDS = new Set(['aar', 'km', 'innkjop', 'salg']);
 
-/** Tekstfelt på bilkort som lagres med debounce for å unngå tapte tegn ved raske PATCH-kall. */
-export const BIL_DEBOUNCED_TEXT_FIELDS = new Set(['modell', 'notater', 'utstyr', 'farge', 'finnKode']);
+/** Autosys-tekstfelt som alltid lagres atomisk med svvData.overstyrt (aldri splitt/debounce alene). */
+export const BIL_AUTOSYS_TEXT_FIELDS = new Set(['modell', 'farge']);
+
+/** Tekstfelt som debounces — modell/farge håndteres via BIL_AUTOSYS_TEXT_FIELDS. */
+export const BIL_DEBOUNCED_TEXT_FIELDS = new Set(['notater', 'utstyr', 'finnKode']);
+
+/** Bevar lokale tekstverdier ved server-merge (debounced + autosys-tekst). */
+export const BIL_LOCAL_TEXT_PRESERVE_FIELDS = new Set([
+  ...BIL_DEBOUNCED_TEXT_FIELDS,
+  ...BIL_AUTOSYS_TEXT_FIELDS
+]);
 
 export function mergeBilDebouncedTextFields(saved, local) {
   if (!saved) return local;
   if (!local) return saved;
   const next = { ...saved };
-  BIL_DEBOUNCED_TEXT_FIELDS.forEach(function (key) {
+  BIL_LOCAL_TEXT_PRESERVE_FIELDS.forEach(function (key) {
     if (local[key] !== undefined) next[key] = local[key];
   });
   if (local.innkjop !== undefined && local.innkjop !== '') next.innkjop = local.innkjop;
@@ -1364,9 +1373,26 @@ export function mergeBilDebouncedTextFields(saved, local) {
   return next;
 }
 
+export function hasActiveBilAutosysOverstyrt(overstyrt) {
+  const o = overstyrt || {};
+  return BIL_AUTOSYS_FELTER.some(function (key) { return !!o[key]; });
+}
+
 export function patchIsDebouncedTextOnly(patch) {
   const keys = Object.keys(patch || {});
-  return keys.length > 0 && keys.every(function (key) { return BIL_DEBOUNCED_TEXT_FIELDS.has(key); });
+  if (!keys.length) return false;
+  if (patch.svvData != null) return false;
+  if (keys.some(function (key) { return BIL_AUTOSYS_FELTER.includes(key); })) return false;
+  return keys.every(function (key) { return BIL_DEBOUNCED_TEXT_FIELDS.has(key); });
+}
+
+/** Autosys-felt må lagres i samme PATCH som svvData.overstyrt — aldri splittes. */
+export function patchRequiresAtomicAutosysSave(patch) {
+  if (!patch || typeof patch !== 'object') return false;
+  if (patch.svvData != null) return true;
+  return Object.keys(patch).some(function (key) {
+    return BIL_AUTOSYS_FELTER.includes(key);
+  });
 }
 
 export function calcBilOkonomi(innkjop, salg, okonomi) {

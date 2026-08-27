@@ -2442,18 +2442,21 @@ function mergeSvvDataPatch(existing, incoming) {
 function resolveBilAutosysPatchFields(body, existingSvv) {
   const existingOverstyrt = existingSvv?.overstyrt || {};
   const incomingOverstyrt = body.svvData?.overstyrt || {};
-  const mergedOverstyrt = { ...existingOverstyrt, ...incomingOverstyrt };
+  const effectiveOverstyrt = { ...existingOverstyrt, ...incomingOverstyrt };
   const next = { ...body };
 
   BIL_AUTOSYS_PATCH_FIELDS.forEach(function (field) {
     if (next[field] == null) return;
-    if (!existingOverstyrt[field]) return;
+    if (!effectiveOverstyrt[field]) return;
     if (incomingOverstyrt[field]) return;
     next[field] = null;
   });
 
   if (body.svvData != null) {
     next.svvData = mergeSvvDataPatch(existingSvv, body.svvData);
+    if (Object.keys(effectiveOverstyrt).length) {
+      next.svvData.overstyrt = { ...(next.svvData.overstyrt || {}), ...effectiveOverstyrt };
+    }
   }
 
   return next;
