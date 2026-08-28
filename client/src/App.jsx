@@ -213,10 +213,11 @@ function matchesBilRef(ref, reg) {
 }
 
 function matchesInnbytteTilBil(inn, bil) {
-  if (!inn || !bil?.reg) return false;
-  if (matchesBilRef(inn.onsketBil, bil.reg)) return true;
-  if (bil.finnKode && matchesBilRef(inn.onsketBil, bil.finnKode)) return true;
-  return false;
+  if (!inn?.onsketBil || !bil?.finnKode) return false;
+  const onsketFinnId = parseFinnItemId(inn.onsketBil);
+  const bilFinnId = parseFinnItemId(bil.finnKode) || String(bil.finnKode).trim();
+  if (!onsketFinnId || !bilFinnId) return false;
+  return String(onsketFinnId) === String(bilFinnId);
 }
 
 function matchesEpostTilBil(e, bil, henv) {
