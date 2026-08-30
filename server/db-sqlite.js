@@ -324,7 +324,8 @@ function migrateIngestVehicleFields() {
     "ALTER TABLE selg_bil ADD COLUMN rekkevidde TEXT DEFAULT ''",
     "ALTER TABLE selg_bil ADD COLUMN motorer TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE innbytte ADD COLUMN bruktimport TEXT DEFAULT ''",
-    "ALTER TABLE selg_bil ADD COLUMN bruktimport TEXT DEFAULT ''"
+    "ALTER TABLE selg_bil ADD COLUMN bruktimport TEXT DEFAULT ''",
+    "ALTER TABLE innbytte ADD COLUMN onsket_bil_chassis TEXT DEFAULT ''"
   ];
   columns.forEach(function (sql) {
     try {
@@ -1261,6 +1262,7 @@ function mapInnbytte(row) {
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
     onsketBil: row.finn_kode,
+    onsketBilChassis: row.onsket_bil_chassis || '',
     status: row.status,
     ansvarlig: row.ansvarlig,
     tilbud: row.tilbud,

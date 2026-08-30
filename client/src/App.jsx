@@ -23,6 +23,7 @@ import {
   finnMarkedsSokLabel,
   openFinnMarkedsSok
 } from './finnMarkedssok.js';
+import { matchesInnbytteTilBil } from './lib/innbytteBilMatch.js';
 import {
   DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, canDeleteBil, canAddBil, displayRole,
   canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch,
@@ -210,14 +211,6 @@ function fmtKmLabel(km) {
 function matchesBilRef(ref, reg) {
   if (!ref || !reg) return false;
   return String(ref).trim().toUpperCase() === String(reg).trim().toUpperCase();
-}
-
-function matchesInnbytteTilBil(inn, bil) {
-  if (!inn?.onsketBil || !bil?.finnKode) return false;
-  const onsketFinnId = parseFinnItemId(inn.onsketBil);
-  const bilFinnId = parseFinnItemId(bil.finnKode) || String(bil.finnKode).trim();
-  if (!onsketFinnId || !bilFinnId) return false;
-  return String(onsketFinnId) === String(bilFinnId);
 }
 
 function matchesEpostTilBil(e, bil, henv) {
@@ -3914,7 +3907,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const henvendelser = buildBilHenvendelseItems(bil, henv, innbytte, epost, harInnboks);
   const knyttetInnbytte = useMemo(function () {
     return (innbytte || []).find(function (i) { return matchesInnbytteTilBil(i, bil); }) || null;
-  }, [innbytte, bil?.reg, bil?.finnKode]);
+  }, [innbytte, bil?.reg, bil?.finnKode, bil?.chassisnr, bil?.svvData]);
 
   const openHenvendelseItem = function (item) {
     if (item.type === 'kontaktskjema') setModal({ t: 'visHenv', d: item.data });

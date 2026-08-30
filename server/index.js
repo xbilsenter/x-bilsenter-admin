@@ -525,13 +525,13 @@ async function insertInnbytteRow(b, savedFiles) {
       hjuldrift, effekt_hk, effekt_kw, siste_eu_kontroll, neste_eu_kontroll,
       forstegangsregistrert, antall_motorer, rekkevidde, bruktimport, motorer, kilometerstand,
       servicehistorikk, siste_service, utstyr, sommerdekk, vinterdekk, forventning,
-      kommentar, finn_kode, bilder, kunde_id
+      kommentar, finn_kode, onsket_bil_chassis, bilder, kunde_id
     ) VALUES (
       @navn, @epost, @tlf, @regnr, @merke, @modell, @arsmodell, @drivstoff, @farge, @kjoretoy_type,
       @hjuldrift, @effekt_hk, @effekt_kw, @siste_eu_kontroll, @neste_eu_kontroll,
       @forstegangsregistrert, @antall_motorer, @rekkevidde, @bruktimport, @motorer, @kilometerstand,
       @servicehistorikk, @siste_service, @utstyr, @sommerdekk, @vinterdekk, @forventning,
-      @kommentar, @finn_kode, @bilder, @kunde_id
+      @kommentar, @finn_kode, @onsket_bil_chassis, @bilder, @kunde_id
     )
   `).run({
     navn: enriched.navn,
@@ -552,6 +552,7 @@ async function insertInnbytteRow(b, savedFiles) {
     forventning: enriched.forventning || '',
     kommentar: enriched.kommentar || '',
     finn_kode: enriched.finnKode || '',
+    onsket_bil_chassis: String(enriched.onsketBilChassis || enriched.onsket_bil_chassis || '').trim().toUpperCase(),
     bilder: JSON.stringify(savedFiles),
     kunde_id: null,
     ...vehicle

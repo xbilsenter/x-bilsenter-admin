@@ -182,6 +182,7 @@ async function ensureSelgBilSchema() {
     ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS motorer JSONB NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS bruktimport TEXT DEFAULT '';
     ALTER TABLE public.selg_bil ADD COLUMN IF NOT EXISTS bruktimport TEXT DEFAULT '';
+    ALTER TABLE public.innbytte ADD COLUMN IF NOT EXISTS onsket_bil_chassis TEXT DEFAULT '';
     CREATE INDEX IF NOT EXISTS idx_selg_bil_status ON public.selg_bil (status);
     CREATE INDEX IF NOT EXISTS idx_selg_bil_kunde ON public.selg_bil (kunde_id);
   `);
@@ -1069,6 +1070,7 @@ function mapInnbytte(row) {
     forventning: row.forventning || '',
     beskrivelse: row.kommentar,
     onsketBil: row.finn_kode,
+    onsketBilChassis: row.onsket_bil_chassis || '',
     status: row.status,
     ansvarlig: row.ansvarlig,
     tilbud: row.tilbud,
