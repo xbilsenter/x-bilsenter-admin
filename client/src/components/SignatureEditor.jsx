@@ -28,7 +28,7 @@ const TEMPLATES = {
 <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:Arial,sans-serif">
   <tr>
     <td style="padding-right:14px;vertical-align:top">
-      <img src="" alt="Logo" data-placeholder="logo" style="width:84px;height:84px;object-fit:contain;border-radius:8px;background:#f2f5f2" />
+      <img src="/assets/logo.svg" alt="Logo" data-placeholder="logo" style="width:84px;height:84px;object-fit:contain;border-radius:8px;background:#f2f5f2" />
     </td>
     <td style="vertical-align:top">
       <p style="margin:0 0 4px;font-size:14px;line-height:1.4"><strong>Navn Etternavn</strong></p>
@@ -44,7 +44,7 @@ const TEMPLATES = {
 </table>`.trim(),
   banner: `
 <div style="font-family:Arial,sans-serif;max-width:520px">
-  <img src="" alt="Banner" data-placeholder="banner" style="display:block;width:100%;max-width:420px;height:auto;border-radius:10px;margin-bottom:10px" />
+  <img src="/assets/logo.svg" alt="Banner" data-placeholder="banner" style="display:block;width:100%;max-width:420px;height:auto;border-radius:10px;margin-bottom:10px" />
   <p style="margin:0 0 4px;font-size:14px;color:#000000"><strong>Navn Etternavn</strong> · X Bilsenter AS</p>
   <p style="margin:0;font-size:12px;color:#000000">Vi hjelper deg finne riktig bil · Prøvekjøring etter avtale</p>
 </div>`.trim()

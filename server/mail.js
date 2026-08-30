@@ -33,6 +33,7 @@ function parseEmailList(value) {
 const ADMIN_PUBLIC_URL = process.env.ADMIN_PUBLIC_URL || process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8090';
 
 const { prepareMailContent } = require('../shared/mail-content');
+const { embedInlineImagesInHtml } = require('./mail-inline-images');
 
 async function getMailStatus() {
   const kontoer = await getMailKontoer(false);
@@ -221,8 +222,9 @@ async function sendMail(options) {
   const transporter = createTransporter(konto);
   const from = getFromAddress(konto);
   const merged = prepareMailContent(bodyText, bodyHtml, konto.signatur, ADMIN_PUBLIC_URL, replyQuoteHtml);
+  const embedded = await embedInlineImagesInHtml(merged.html, ADMIN_PUBLIC_URL);
   const fullText = merged.text;
-  const fullHtml = merged.html || undefined;
+  const fullHtml = embedded.html || undefined;
   const headers = {};
   const replyId = normalizeMessageId(inReplyTo);
   if (replyId) {
@@ -255,8 +257,12 @@ async function sendMail(options) {
       };
       if (file.content) item.content = file.content;
       else if (file.path) item.path = file.path;
+      if (file.cid) item.cid = file.cid;
       return item;
     });
+  }
+  if (embedded.attachments?.length) {
+    mailOptions.attachments = (mailOptions.attachments || []).concat(embedded.attachments);
   }
 
   const info = await transporter.sendMail(mailOptions).catch(function (err) {

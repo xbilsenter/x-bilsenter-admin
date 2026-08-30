@@ -54,9 +54,35 @@ function textToHtml(text) {
 
 function absolutizeUploadUrls(html, baseUrl) {
   const base = String(baseUrl || window.location.origin).replace(/\/$/, '');
-  return String(html || '').replace(/src=["'](\/uploads\/[^"']+)["']/gi, function (_m, path) {
-    return `src="${base}${path}"`;
+  let out = String(html || '');
+  out = out.replace(/src=["'](\/uploads\/[^"']+)["']/gi, function (_m, uploadPath) {
+    return `src="${base}${uploadPath}"`;
   });
+  out = out.replace(/src=["']https?:\/\/[^"']*(\/uploads\/[^"']+)["']/gi, function (_m, uploadPath) {
+    return `src="${base}${uploadPath}"`;
+  });
+  out = out.replace(/src=["'](\/assets\/[^"']+)["']/gi, function (_m, assetPath) {
+    return `src="${base}${assetPath}"`;
+  });
+  out = out.replace(/src=["']https?:\/\/[^"']*(\/assets\/[^"']+)["']/gi, function (_m, assetPath) {
+    return `src="${base}${assetPath}"`;
+  });
+  return out;
+}
+
+function fixSignatureImageSources(html, baseUrl) {
+  const base = String(baseUrl || window.location.origin).replace(/\/$/, '');
+  const defaultLogo = `${base}/assets/logo.svg`;
+  let out = String(html || '');
+
+  out = out.replace(/<img\b([^>]*?)src=["']\s*["']([^>]*)>/gi, function (full, before, after) {
+    if (/data-placeholder=["']logo["']/i.test(full) || /alt=["']logo["']/i.test(full)) {
+      return `<img${before}src="${defaultLogo}"${after}>`;
+    }
+    return '';
+  });
+
+  return out;
 }
 
 function findReplyQuoteStart(html) {
@@ -82,7 +108,8 @@ function prepareSignatureHtml(signatur, baseUrl) {
   const sig = String(signatur || '').trim();
   if (!sig) return { html: '', plain: '' };
   if (isHtmlContent(sig)) {
-    const html = prepareSignatureHtmlForSend(absolutizeUploadUrls(sig, baseUrl));
+    const normalized = fixSignatureImageSources(sig, baseUrl);
+    const html = prepareSignatureHtmlForSend(absolutizeUploadUrls(normalized, baseUrl));
     return { html: html, plain: htmlToText(html) };
   }
   return { html: textToHtml(sig), plain: sig };
