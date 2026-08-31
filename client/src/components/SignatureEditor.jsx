@@ -28,7 +28,7 @@ const TEMPLATES = {
 <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:Arial,sans-serif">
   <tr>
     <td style="padding-right:14px;vertical-align:top">
-      <img src="/assets/logo-mark.svg" alt="Logo" data-placeholder="logo" style="width:84px;height:84px;object-fit:contain;border-radius:8px;background:#f2f5f2" />
+      <img src="/assets/logo-mark.png" alt="Logo" data-placeholder="logo" style="width:84px;height:84px;object-fit:contain;border-radius:8px;background:#f2f5f2" />
     </td>
     <td style="vertical-align:top">
       <p style="margin:0 0 4px;font-size:14px;line-height:1.4"><strong>Navn Etternavn</strong></p>

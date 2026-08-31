@@ -17,16 +17,30 @@ function guessContentTypeFromName(filename) {
   return map[ext] || 'application/octet-stream';
 }
 
+function parseDataImageSrc(src) {
+  const match = String(src || '').trim().match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!match) return null;
+  try {
+    return {
+      buffer: Buffer.from(match[2], 'base64'),
+      contentType: match[1],
+      filename: 'inline-image.png'
+    };
+  } catch (_err) {
+    return null;
+  }
+}
+
 function resolveInlineImageRef(src, baseUrl) {
   const raw = String(src || '').trim();
-  if (!raw || /^cid:/i.test(raw) || /^data:/i.test(raw)) return null;
+  if (!raw || /^cid:/i.test(raw)) return null;
 
-  if (raw.startsWith('/uploads/')) {
-    return { kind: 'upload', path: raw };
+  if (/^data:image\//i.test(raw)) {
+    return { kind: 'data', src: raw };
   }
 
-  if (raw.startsWith('/assets/')) {
-    return { kind: 'asset', path: raw };
+  if (raw.startsWith('/uploads/') || raw.startsWith('/assets/')) {
+    return { kind: raw.startsWith('/uploads/') ? 'upload' : 'asset', path: raw };
   }
 
   try {
@@ -54,24 +68,34 @@ function resolveInlineImageRef(src, baseUrl) {
   return null;
 }
 
-async function readInlineAsset(assetPath) {
-  const rel = String(assetPath || '').replace(/^\/assets\//, '');
-  if (!rel || rel.includes('..')) return null;
-
-  const candidates = [
+function assetCandidates(rel) {
+  return [
     path.join(__dirname, '..', 'client', 'public', 'assets', rel),
     path.join(__dirname, '..', 'client', 'dist', 'assets', rel),
     path.join(__dirname, 'assets', rel)
   ];
+}
 
-  for (const abs of candidates) {
-    if (!fs.existsSync(abs)) continue;
-    const buffer = fs.readFileSync(abs);
-    return {
-      buffer,
-      contentType: guessContentTypeFromName(abs),
-      filename: path.basename(abs)
-    };
+function readInlineAssetFile(assetPath) {
+  const rel = String(assetPath || '').replace(/^\/assets\//, '');
+  if (!rel || rel.includes('..')) return null;
+
+  const ext = path.extname(rel).toLowerCase();
+  const relBase = ext ? rel.slice(0, -ext.length) : rel;
+  const tryNames = ext === '.svg'
+    ? [`${relBase}.png`, rel]
+    : [rel];
+
+  for (const name of tryNames) {
+    for (const abs of assetCandidates(name)) {
+      if (!fs.existsSync(abs)) continue;
+      const buffer = fs.readFileSync(abs);
+      return {
+        buffer,
+        contentType: guessContentTypeFromName(abs),
+        filename: path.basename(abs)
+      };
+    }
   }
 
   return null;
@@ -79,6 +103,10 @@ async function readInlineAsset(assetPath) {
 
 async function readInlineImage(ref) {
   if (!ref) return null;
+
+  if (ref.kind === 'data') {
+    return parseDataImageSrc(ref.src);
+  }
 
   if (ref.kind === 'upload') {
     const file = await openUpload(ref.path);
@@ -91,10 +119,16 @@ async function readInlineImage(ref) {
   }
 
   if (ref.kind === 'asset') {
-    return readInlineAsset(ref.path);
+    return readInlineAssetFile(ref.path);
   }
 
   return null;
+}
+
+function refKey(ref) {
+  if (!ref) return '';
+  if (ref.kind === 'data') return `data:${ref.src.slice(0, 64)}`;
+  return `${ref.kind}:${ref.path}`;
 }
 
 async function embedInlineImagesInHtml(html, baseUrl) {
@@ -110,7 +144,7 @@ async function embedInlineImagesInHtml(html, baseUrl) {
   while ((match = srcRe.exec(htmlStr)) !== null) {
     const resolved = resolveInlineImageRef(match[1], baseUrl);
     if (!resolved) continue;
-    const key = `${resolved.kind}:${resolved.path}`;
+    const key = refKey(resolved);
     if (!refs.has(key)) refs.set(key, resolved);
   }
 
@@ -121,12 +155,15 @@ async function embedInlineImagesInHtml(html, baseUrl) {
   for (const [key, ref] of refs.entries()) {
     const file = await readInlineImage(ref);
     if (!file?.buffer) continue;
+    if (!/^image\//i.test(file.contentType || '')) continue;
+
     const cid = `xb-sig-${++cidIndex}@xbilsenter.no`;
     replacement.set(key, cid);
     attachments.push({
       filename: file.filename || `inline-${cidIndex}.png`,
       content: file.buffer,
       contentType: file.contentType,
+      contentDisposition: 'inline',
       cid
     });
   }
@@ -138,8 +175,7 @@ async function embedInlineImagesInHtml(html, baseUrl) {
   let out = htmlStr.replace(/<img\b([^>]*?\bsrc=["'])([^"']+)(["'][^>]*)>/gi, function (full, prefix, src, suffix) {
     const resolved = resolveInlineImageRef(src, baseUrl);
     if (!resolved) return full;
-    const key = `${resolved.kind}:${resolved.path}`;
-    const cid = replacement.get(key);
+    const cid = replacement.get(refKey(resolved));
     if (!cid) return full;
     return `<img${prefix}cid:${cid}${suffix}>`;
   });

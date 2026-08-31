@@ -10,7 +10,7 @@ const {
 
 const MAIL_BODY_WRAP_STYLE = `font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:${MAIL_BODY_TEXT_COLOR}`;
 const REPLY_QUOTE_MARKER = 'data-xbilsenter-quote="1"';
-const SIGNATURE_DEFAULT_LOGO_PATH = '/assets/logo-mark.svg';
+const SIGNATURE_DEFAULT_LOGO_PATH = '/assets/logo-mark.png';
 const SIGNATURE_DEFAULT_LOGO_STYLE = 'width:84px;height:84px;object-fit:contain;border-radius:8px;background:#f2f5f2';
 
 function wrapMailBody(html) {
