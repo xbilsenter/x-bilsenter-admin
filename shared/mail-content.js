@@ -10,6 +10,8 @@ const {
 
 const MAIL_BODY_WRAP_STYLE = `font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:${MAIL_BODY_TEXT_COLOR}`;
 const REPLY_QUOTE_MARKER = 'data-xbilsenter-quote="1"';
+const SIGNATURE_DEFAULT_LOGO_PATH = '/assets/logo-mark.svg';
+const SIGNATURE_DEFAULT_LOGO_STYLE = 'width:84px;height:84px;object-fit:contain;border-radius:8px;background:#f2f5f2';
 
 function wrapMailBody(html) {
   return html ? `<div style="${MAIL_BODY_WRAP_STYLE}">${html}</div>` : '';
@@ -76,13 +78,12 @@ function absolutizeUploadUrls(html, baseUrl) {
 
 function fixSignatureImageSources(html, baseUrl) {
   const base = String(baseUrl || '').replace(/\/$/, '');
-  const defaultLogo = base ? `${base}/assets/logo.svg` : '/assets/logo.svg';
+  const defaultLogo = base ? `${base}${SIGNATURE_DEFAULT_LOGO_PATH}` : SIGNATURE_DEFAULT_LOGO_PATH;
   let out = String(html || '');
 
-  out = out.replace(/<img\b([^>]*?)src=["']\s*["']([^>]*)>/gi, function (full, before, after) {
-    const attrs = `${before}${after}`;
+  out = out.replace(/<img\b([^>]*?)src=["']\s*["']([^>]*)>/gi, function (full) {
     if (/data-placeholder=["']logo["']/i.test(full) || /alt=["']logo["']/i.test(full)) {
-      return `<img${before}src="${defaultLogo}"${after}>`;
+      return `<img src="${defaultLogo}" alt="Logo" data-placeholder="logo" style="${SIGNATURE_DEFAULT_LOGO_STYLE}">`;
     }
     return '';
   });
