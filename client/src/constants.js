@@ -727,6 +727,8 @@ export function calcInnkjopspris(input) {
 
 export const DEFAULT_BIL_OKONOMI = {
   pakost: null,
+  tilstandsrapportKost: null,
+  euKontrollKost: null,
   aukGebyr: null,
   garantikost: null,
   omregAvgift: null,
@@ -908,6 +910,8 @@ export function normalizeBilOkonomi(raw) {
   }
   return {
     pakost: okonomiBelopForSave(o.pakost),
+    tilstandsrapportKost: okonomiBelopForSave(o.tilstandsrapportKost),
+    euKontrollKost: okonomiBelopForSave(o.euKontrollKost),
     aukGebyr: okonomiBelopForSave(o.aukGebyr),
     garantikost: okonomiBelopForSave(o.garantikost),
     omregAvgift: okonomiBelopForSave(o.omregAvgift),
@@ -1400,6 +1404,8 @@ export function calcBilOkonomi(innkjop, salg, okonomi) {
   const inn = okonomiBelopValue(innkjop);
   const ut = okonomiBelopValue(salg);
   const fasteKostnader = okonomiBelopValue(o.pakost)
+    + okonomiBelopValue(o.tilstandsrapportKost)
+    + okonomiBelopValue(o.euKontrollKost)
     + okonomiBelopValue(o.aukGebyr)
     + okonomiBelopValue(o.garantikost)
     + okonomiBelopValue(o.omregAvgift);

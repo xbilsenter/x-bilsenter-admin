@@ -579,6 +579,9 @@ function mergeLocalBilFromServer(local, server) {
   } else if (local.svvData && !server.svvData) {
     next.svvData = local.svvData;
   }
+  if (local.okonomi || server.okonomi) {
+    next.okonomi = normalizeBilOkonomi(mergeBilOkonomi(server.okonomi, local.okonomi));
+  }
   return next;
 }
 
@@ -1080,6 +1083,9 @@ export default function App() {
       return prev.map(function (b) {
         if (b.id !== id) return b;
         let next = { ...b, ...patch };
+        if (patch.okonomi != null) {
+          next.okonomi = normalizeBilOkonomi(mergeBilOkonomi(b.okonomi, patch.okonomi));
+        }
         if (patch.status && patch.status !== b.status && patch.sjekklister == null) {
           next = { ...next, ...withStatusChange(b, patch.status, innstillinger.bilSjekklister) };
         }
@@ -3619,6 +3625,8 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const debounceTimerRef = useRef(null);
   const autosysTextDebounceRef = useRef(null);
   const pendingAutosysTextPatchRef = useRef(null);
+  const okonomiSaveTimerRef = useRef(null);
+  const okonomiSaveMsgRef = useRef(null);
   const composingRef = useRef(false);
   const pendingPatchRef = useRef({});
   const bilSnapshotRef = useRef(data);
@@ -3740,6 +3748,26 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     }, 350);
   }, [saveImmediate]);
 
+  const flushOkonomiSave = useCallback(function (msg) {
+    clearTimeout(okonomiSaveTimerRef.current);
+    okonomiSaveTimerRef.current = null;
+    const current = bilRef.current;
+    if (!current?.id) return saveChainRef.current;
+    const normalized = normalizeBilOkonomi(current.okonomi);
+    const finalMsg = msg || okonomiSaveMsgRef.current || 'Økonomi oppdatert ✓';
+    okonomiSaveMsgRef.current = null;
+    return saveImmediate({ okonomi: normalized }, finalMsg);
+  }, [saveImmediate]);
+
+  const scheduleOkonomiSave = useCallback(function (msg) {
+    if (msg) okonomiSaveMsgRef.current = msg;
+    clearTimeout(okonomiSaveTimerRef.current);
+    okonomiSaveTimerRef.current = setTimeout(function () {
+      okonomiSaveTimerRef.current = null;
+      flushOkonomiSave();
+    }, 450);
+  }, [flushOkonomiSave]);
+
   const bilTextCompositionHandlers = useMemo(function () {
     return {
       onCompositionStart: function () { composingRef.current = true; },
@@ -3772,17 +3800,19 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     Promise.all([
       flushTextSave(),
       flushAutosysTextSave(),
+      flushOkonomiSave(),
       saveChainRef.current.catch(function () {})
     ]).finally(function () {
       setClosing(false);
       onClose();
     });
-  }, [closing, flushTextSave, flushAutosysTextSave, onClose]);
+  }, [closing, flushTextSave, flushAutosysTextSave, flushOkonomiSave, onClose]);
 
   useEffect(function () {
     return function () {
       clearTimeout(debounceTimerRef.current);
       clearTimeout(autosysTextDebounceRef.current);
+      clearTimeout(okonomiSaveTimerRef.current);
       const toSend = collectPendingTextPatch();
       const id = bilRef.current?.id;
       if (id && toSend && Object.keys(toSend).length) {
@@ -3792,6 +3822,11 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
       pendingAutosysTextPatchRef.current = null;
       if (id && autosysPatch && Object.keys(autosysPatch).length) {
         saveImmediateRef.current(autosysPatch);
+      }
+      if (id && okonomiSaveTimerRef.current) {
+        okonomiSaveTimerRef.current = null;
+        const normalized = normalizeBilOkonomi(bilRef.current?.okonomi);
+        saveImmediateRef.current({ okonomi: normalized });
       }
     };
   }, [enqueueTextSave, collectPendingTextPatch]);
@@ -4022,26 +4057,18 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     });
   };
 
-  const oppdaterOkonomi = (patch, msg) => {
+  const oppdaterOkonomi = useCallback(function (patch, msg) {
+    userEditedRef.current = true;
     const prev = bilRef.current || bil;
-    const local = mergeBilOkonomi(prev.okonomi, patch);
+    const resolvedPatch = typeof patch === 'function' ? patch(prev.okonomi) : patch;
+    const local = mergeBilOkonomi(prev.okonomi, resolvedPatch);
     const normalized = normalizeBilOkonomi(local);
     const next = { ...prev, okonomi: normalized };
     bilRef.current = next;
     bilSnapshotRef.current = { ...bilSnapshotRef.current, okonomi: normalized };
     setBil(next);
-    saveImmediate({ okonomi: normalized }, msg || 'Økonomi oppdatert ✓').then(function (saved) {
-      if (!saved) return;
-      setBil(function (current) {
-        const merged = {
-          ...current,
-          okonomi: normalizeBilOkonomi(mergeBilOkonomi(saved.okonomi, (bilRef.current || current).okonomi))
-        };
-        bilRef.current = merged;
-        return merged;
-      });
-    });
-  };
+    scheduleOkonomiSave(msg);
+  }, [bil, scheduleOkonomiSave]);
 
   const oppdaterReservasjon = useCallback(function (patch, msg) {
     const prev = bilRef.current || bil;
@@ -4111,6 +4138,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const arkiver = async function () {
     if (!window.confirm(`Arkivere ${bil.reg}? Bilen fjernes fra lageroversikten, men kan gjenopprettes fra arkiv.`)) return;
     await flushTextSave();
+    await flushOkonomiSave();
     await updateBil(bil.id, {
       archived: true,
       logg: [...(bil.logg || []), bilLoggEntry('Arkivert fra lager')]
@@ -4120,6 +4148,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
 
   const gjenopprett = async function () {
     await flushTextSave();
+    await flushOkonomiSave();
     await updateBil(bil.id, {
       archived: false,
       logg: [...(bil.logg || []), bilLoggEntry('Gjenopprettet fra arkiv')]
@@ -4130,6 +4159,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const slettBilPermanent = async function () {
     if (!deleteBil) return;
     await flushTextSave();
+    await flushOkonomiSave();
     const ok = await deleteBil(bil);
     if (ok) onClose();
   };
@@ -4500,29 +4530,37 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
     if (!nyKostLabel.trim() && !nyKostBelop) return;
     const belop = parseNumberInput(nyKostBelop);
     if (belop === '' && !nyKostLabel.trim()) return;
-    const kostnader = [
-      ...okonomi.kostnader,
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        label: nyKostLabel.trim() || 'Kostnad',
-        belop: belop === '' ? null : belop
-      }
-    ];
-    oppdaterOkonomi({ kostnader }, 'Kostnad lagt til ✓');
+    oppdaterOkonomi(function (current) {
+      return {
+        kostnader: [
+          ...(current.kostnader || []),
+          {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            label: nyKostLabel.trim() || 'Kostnad',
+            belop: belop === '' ? null : belop
+          }
+        ]
+      };
+    }, 'Kostnad lagt til ✓');
     setNyKostLabel('');
     setNyKostBelop('');
   };
 
   const oppdaterKostnad = (id, patch) => {
-    const kostnader = okonomi.kostnader.map(function (item) {
-      return item.id === id ? { ...item, ...patch } : item;
+    oppdaterOkonomi(function (current) {
+      return {
+        kostnader: (current.kostnader || []).map(function (item) {
+          return item.id === id ? { ...item, ...patch } : item;
+        })
+      };
     });
-    oppdaterOkonomi({ kostnader });
   };
 
   const slettKostnad = (id) => {
-    oppdaterOkonomi({
-      kostnader: okonomi.kostnader.filter(function (item) { return item.id !== id; })
+    oppdaterOkonomi(function (current) {
+      return {
+        kostnader: (current.kostnader || []).filter(function (item) { return item.id !== id; })
+      };
     }, 'Kostnad slettet ✓');
   };
 
@@ -4618,7 +4656,9 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
       <div className="modal-sec">Faste kostnader</div>
       <div className="bil-okonomi-kostnader">
         {[
-          ['pakost', 'Påkost / klargjøring'],
+          ['pakost', 'Klargjøring'],
+          ['tilstandsrapportKost', 'Tilstandsrapport'],
+          ['euKontrollKost', 'EU-kontroll'],
           ['aukGebyr', 'Auksjonsgebyr'],
           ['garantikost', 'Garantikost'],
           ['omregAvgift', 'Omregistreringsavgift']
