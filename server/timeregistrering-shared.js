@@ -126,6 +126,135 @@ function addDaysIso(dateIso, days) {
   return d.toISOString().slice(0, 10);
 }
 
+function monthRangeIso(year, month) {
+  const y = Number(year);
+  const m = Number(month);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+  const fra = `${y}-${String(m).padStart(2, '0')}-01`;
+  const lastDay = new Date(y, m, 0).getDate();
+  const til = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { ar: y, maaned: m, fra, til };
+}
+
+function currentOsloYearMonth() {
+  const parts = nowOsloDate().split('-');
+  return { ar: Number(parts[0]), maaned: Number(parts[1]) };
+}
+
+function aggregateTimeregByUser(rows, mapItem) {
+  const byUser = {};
+  (Array.isArray(rows) ? rows : []).forEach(function (row) {
+    const item = mapItem(row);
+    if (!item || item.status === 'aktiv' || item.status === 'pause') return;
+    const uid = Number(item.userId);
+    if (!Number.isFinite(uid)) return;
+    if (!byUser[uid]) {
+      byUser[uid] = {
+        userId: uid,
+        brukerNavn: item.brukerNavn || '',
+        nettoMin: 0,
+        pauseMin: 0,
+        lonnKr: 0,
+        registreringer: 0,
+        dagerSet: {}
+      };
+    }
+    const u = byUser[uid];
+    u.nettoMin += item.stats.nettoMin;
+    u.pauseMin += item.stats.pauseMin;
+    u.lonnKr += item.stats.lonnKr;
+    u.registreringer += 1;
+    u.dagerSet[item.dato] = true;
+    if (!u.brukerNavn && item.brukerNavn) u.brukerNavn = item.brukerNavn;
+  });
+
+  const statsByUserId = {};
+  Object.keys(byUser).forEach(function (key) {
+    const u = byUser[key];
+    statsByUserId[Number(key)] = {
+      userId: u.userId,
+      brukerNavn: u.brukerNavn,
+      dager: Object.keys(u.dagerSet).length,
+      registreringer: u.registreringer,
+      nettoMin: u.nettoMin,
+      pauseMin: u.pauseMin,
+      lonnKr: u.lonnKr,
+      timer: minutesToDecimalHours(u.nettoMin),
+      pauseTimer: minutesToDecimalHours(u.pauseMin)
+    };
+  });
+  return statsByUserId;
+}
+
+function buildMaanedAnsatteList(users, statsByUserId, canIncludeUser) {
+  const emptyStats = {
+    dager: 0,
+    registreringer: 0,
+    nettoMin: 0,
+    pauseMin: 0,
+    lonnKr: 0,
+    timer: 0,
+    pauseTimer: 0
+  };
+  const seen = new Set();
+  const ansatte = [];
+
+  (Array.isArray(users) ? users : []).forEach(function (user) {
+    if (!user || !user.aktiv) return;
+    if (typeof canIncludeUser === 'function' && !canIncludeUser(user)) return;
+    const uid = Number(user.id);
+    if (!Number.isFinite(uid) || seen.has(uid)) return;
+    seen.add(uid);
+    const stats = statsByUserId[uid] || emptyStats;
+    ansatte.push({
+      userId: uid,
+      brukerNavn: user.name || user.username || stats.brukerNavn || 'Ukjent',
+      ...stats
+    });
+  });
+
+  Object.keys(statsByUserId || {}).forEach(function (key) {
+    const uid = Number(key);
+    if (seen.has(uid)) return;
+    const stats = statsByUserId[uid];
+    if (!stats) return;
+    seen.add(uid);
+    ansatte.push({
+      userId: uid,
+      brukerNavn: stats.brukerNavn || 'Ukjent',
+      ...stats
+    });
+  });
+
+  ansatte.sort(function (a, b) {
+    return String(a.brukerNavn || '').localeCompare(String(b.brukerNavn || ''), 'nb');
+  });
+  return ansatte;
+}
+
+function summarizeMaanedAnsatte(ansatte) {
+  const sum = (Array.isArray(ansatte) ? ansatte : []).reduce(function (acc, row) {
+    return {
+      dager: acc.dager + Number(row.dager || 0),
+      registreringer: acc.registreringer + Number(row.registreringer || 0),
+      nettoMin: acc.nettoMin + Number(row.nettoMin || 0),
+      pauseMin: acc.pauseMin + Number(row.pauseMin || 0),
+      lonnKr: acc.lonnKr + Number(row.lonnKr || 0)
+    };
+  }, {
+    dager: 0,
+    registreringer: 0,
+    nettoMin: 0,
+    pauseMin: 0,
+    lonnKr: 0
+  });
+  return {
+    ...sum,
+    timer: minutesToDecimalHours(sum.nettoMin),
+    pauseTimer: minutesToDecimalHours(sum.pauseMin)
+  };
+}
+
 function canViewAllTimereg(user) {
   if (!user) return false;
   if (user.isAdmin) return true;
@@ -156,6 +285,11 @@ module.exports = {
   mapTimeregistreringRow,
   weekStartIso,
   addDaysIso,
+  monthRangeIso,
+  currentOsloYearMonth,
+  aggregateTimeregByUser,
+  buildMaanedAnsatteList,
+  summarizeMaanedAnsatte,
   canViewAllTimereg,
   canApproveTimereg,
   maskTimeregStatusForViewer

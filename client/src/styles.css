@@ -1189,6 +1189,12 @@ select option{background:var(--s1);}
 .timereg-pause-type-chip{margin-right:auto;font-size:10px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.35px;}
 .timereg-pause-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
 .timereg-pause-remove{min-height:32px;}
+.timereg-month-card{margin-top:0;}
+.timereg-month-meta{font-size:11px;color:var(--t4);margin-top:2px;}
+.timereg-month-table tfoot td{font-weight:700;background:var(--s2);border-top:2px solid var(--b2);}
+.timereg-month-total-row td{color:var(--t1);}
+.timereg-month-row--active td{background:rgba(25,186,96,.06);}
+.timereg-month-card-item--total{border-color:rgba(25,186,96,.25);background:rgba(25,186,96,.04);}
 @media (max-width:720px){
   .timereg-ph{flex-direction:column;gap:12px;margin-bottom:14px;}
   .timereg-ph-actions{width:100%;flex-direction:column;}

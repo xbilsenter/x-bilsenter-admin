@@ -4,6 +4,7 @@ import {
   deleteTimeregistrering,
   getBrukere,
   getTimeregistrering,
+  getTimeregistreringMaanedOppsummering,
   getTimeregistreringOppsummering,
   patchTimeregistrering,
   postTimeregistrering
@@ -42,6 +43,30 @@ function fmtUke(fra, til) {
     return d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
   };
   return `${fmt(f)} – ${fmt(t)}`;
+}
+
+function currentYearMonth() {
+  const parts = idag().split('-');
+  return { ar: Number(parts[0]), maaned: Number(parts[1]) };
+}
+
+function shiftMonth(ar, maaned, delta) {
+  let y = Number(ar);
+  let m = Number(maaned) + delta;
+  while (m < 1) {
+    m += 12;
+    y -= 1;
+  }
+  while (m > 12) {
+    m -= 12;
+    y += 1;
+  }
+  return { ar: y, maaned: m };
+}
+
+function fmtMaaned(ar, maaned) {
+  const d = new Date(Number(ar), Number(maaned) - 1, 1);
+  return d.toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' });
 }
 
 function nok(v) {
@@ -269,6 +294,10 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const [editItem, setEditItem] = useState(null);
   const [brukere, setBrukere] = useState([]);
   const [valgtUserId, setValgtUserId] = useState(null);
+  const [maanedAr, setMaanedAr] = useState(function () { return currentYearMonth().ar; });
+  const [maanedNum, setMaanedNum] = useState(function () { return currentYearMonth().maaned; });
+  const [maanedData, setMaanedData] = useState(null);
+  const [maanedLoading, setMaanedLoading] = useState(false);
 
   const kanSeAlle = !!(currentUser?.isAdmin || (currentUser?.permissions || []).includes('brukere'));
   const kanGodkjenne = !!currentUser?.isAdmin;
@@ -310,6 +339,36 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
   useEffect(function () { reload(); }, [reload]);
 
+  const reloadMaaned = useCallback(async function () {
+    if (!kanSeAlle) return;
+    setMaanedLoading(true);
+    try {
+      const res = await getTimeregistreringMaanedOppsummering({ ar: maanedAr, maaned: maanedNum });
+      setMaanedData(res);
+    } catch (err) {
+      visTost(err.message || 'Kunne ikke laste månedsoversikt ✗');
+      setMaanedData(null);
+    } finally {
+      setMaanedLoading(false);
+    }
+  }, [kanSeAlle, maanedAr, maanedNum, visTost]);
+
+  useEffect(function () {
+    reloadMaaned();
+  }, [reloadMaaned]);
+
+  const velgAnsattFraMaaned = function (userId) {
+    if (!userId) return;
+    setValgtUserId(userId);
+    visTost('Viser valgt ansatt i ukeoversikten ✓');
+  };
+
+  const byttMaaned = function (delta) {
+    const next = shiftMonth(maanedAr, maanedNum, delta);
+    setMaanedAr(next.ar);
+    setMaanedNum(next.maaned);
+  };
+
   const idagPoster = useMemo(function () {
     const today = idag();
     return items.filter(function (item) { return item.dato === today; });
@@ -330,6 +389,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       visTost('Timeregistrering lagt til ✓');
       setManual(null);
       await reload();
+      if (kanSeAlle) await reloadMaaned();
     } catch (err) {
       visTost(err.message || 'Kunne ikke lagre ✗');
     } finally {
@@ -352,6 +412,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       visTost('Registrering oppdatert ✓');
       setEditItem(null);
       await reload();
+      if (kanSeAlle) await reloadMaaned();
     } catch (err) {
       visTost(err.message || 'Kunne ikke oppdatere ✗');
     } finally {
@@ -366,6 +427,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       await deleteTimeregistrering(id);
       visTost('Registrering slettet ✓');
       await reload();
+      if (kanSeAlle) await reloadMaaned();
     } catch (err) {
       visTost(err.message || 'Kunne ikke slette ✗');
     } finally {
@@ -379,6 +441,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       await patchTimeregistrering(id, { status });
       visTost(status === 'godkjent' ? 'Timer godkjent ✓' : 'Godkjenning angret ✓');
       await reload();
+      if (kanSeAlle) await reloadMaaned();
     } catch (err) {
       visTost(err.message || 'Kunne ikke oppdatere godkjenning ✗');
     } finally {
@@ -394,6 +457,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   };
 
   const visLonn = (currentUser?.timelonn > 0 || kanSeAlle) && oppsummering?.lonnKr > 0;
+  const visLonnMaaned = kanSeAlle && (maanedData?.totalt?.lonnKr > 0 || maanedData?.ansatte?.some(function (row) { return row.lonnKr > 0; }));
+  const maanedAnsatte = maanedData?.ansatte || [];
+  const maanedTotalt = maanedData?.totalt || null;
 
   const kanRedigere = function (item) {
     if (item.status === 'fullfort' || (item.status === 'godkjent' && kanGodkjenne) || kanSeAlle) return true;
@@ -578,6 +644,134 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           </div>
         )}
       </div>
+
+      {kanSeAlle && (
+        <div className="card timereg-list-card timereg-month-card">
+          <div className="card-h timereg-list-hd">
+            <div>
+              <span className="card-ht">Månedsoversikt – alle ansatte</span>
+              <div className="timereg-week-label">{fmtMaaned(maanedAr, maanedNum)}</div>
+            </div>
+            <div className="timereg-week-nav">
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { byttMaaned(-1); }}>
+                ←
+              </button>
+              <button
+                type="button"
+                className="btn btn-g btn-sm timereg-week-current"
+                onClick={function () {
+                  const now = currentYearMonth();
+                  setMaanedAr(now.ar);
+                  setMaanedNum(now.maaned);
+                }}
+              >
+                Denne måneden
+              </button>
+              <button type="button" className="btn btn-g btn-sm" onClick={function () { byttMaaned(1); }}>
+                →
+              </button>
+            </div>
+          </div>
+
+          {maanedLoading ? (
+            <div className="inbox-empty">Laster månedsoversikt…</div>
+          ) : maanedAnsatte.length === 0 ? (
+            <div className="inbox-empty">Ingen ansatte med timeregistrering.</div>
+          ) : isMobile ? (
+            <div className="timereg-entry-list">
+              {maanedAnsatte.map(function (row) {
+                return (
+                  <article key={row.userId} className="timereg-entry-card timereg-month-card-item">
+                    <div className="timereg-entry-card-top">
+                      <div>
+                        <div className="timereg-entry-date">{row.brukerNavn}</div>
+                        <div className="timereg-month-meta">{row.dager} dag{row.dager === 1 ? '' : 'er'} · {row.registreringer} post{row.registreringer === 1 ? '' : 'er'}</div>
+                      </div>
+                      <div className="timereg-entry-hours">{row.timer} t</div>
+                    </div>
+                    <div className="timereg-entry-meta">
+                      <div><span>Pause</span><strong>{row.pauseTimer} t</strong></div>
+                      {visLonnMaaned && (
+                        <div><span>Lønn</span><strong>{row.lonnKr ? nok(row.lonnKr) : '—'}</strong></div>
+                      )}
+                    </div>
+                    <div className="timereg-entry-actions">
+                      <button type="button" className="btn btn-g btn-sm" onClick={function () { velgAnsattFraMaaned(row.userId); }}>
+                        Vis uke
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {maanedTotalt ? (
+                <article className="timereg-entry-card timereg-month-card-item timereg-month-card-item--total">
+                  <div className="timereg-entry-card-top">
+                    <div>
+                      <div className="timereg-entry-date">Totalt</div>
+                      <div className="timereg-month-meta">{maanedTotalt.registreringer} poster</div>
+                    </div>
+                    <div className="timereg-entry-hours">{maanedTotalt.timer} t</div>
+                  </div>
+                  {visLonnMaaned && maanedTotalt.lonnKr > 0 ? (
+                    <div className="timereg-entry-meta">
+                      <div><span>Estimert lønn</span><strong>{nok(maanedTotalt.lonnKr)}</strong></div>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
+            </div>
+          ) : (
+            <div className="timereg-table-wrap">
+              <table className="timereg-table timereg-month-table">
+                <thead>
+                  <tr>
+                    <th>Ansatt</th>
+                    <th>Dager</th>
+                    <th>Poster</th>
+                    <th>Timer</th>
+                    <th>Pause</th>
+                    {visLonnMaaned && <th>Lønn</th>}
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {maanedAnsatte.map(function (row) {
+                    const aktiv = Number(valgtUserId) === Number(row.userId);
+                    return (
+                      <tr key={row.userId} className={aktiv ? 'timereg-month-row--active' : ''}>
+                        <td><strong>{row.brukerNavn}</strong></td>
+                        <td>{row.dager}</td>
+                        <td>{row.registreringer}</td>
+                        <td><strong>{row.timer} t</strong></td>
+                        <td>{row.pauseTimer} t</td>
+                        {visLonnMaaned && <td>{row.lonnKr ? nok(row.lonnKr) : '—'}</td>}
+                        <td className="timereg-row-actions">
+                          <button type="button" className="btn btn-g btn-xs" onClick={function () { velgAnsattFraMaaned(row.userId); }}>
+                            Vis uke
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {maanedTotalt ? (
+                  <tfoot>
+                    <tr className="timereg-month-total-row">
+                      <td><strong>Totalt</strong></td>
+                      <td>{maanedTotalt.dager}</td>
+                      <td>{maanedTotalt.registreringer}</td>
+                      <td><strong>{maanedTotalt.timer} t</strong></td>
+                      <td>{maanedTotalt.pauseTimer} t</td>
+                      {visLonnMaaned && <td>{maanedTotalt.lonnKr ? nok(maanedTotalt.lonnKr) : '—'}</td>}
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                ) : null}
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {manual && (
         <TimeregSheet

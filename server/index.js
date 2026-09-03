@@ -86,7 +86,7 @@ const {
   normalizeBilArsprovekjennemerke,
   DEFAULT_BIL_ARSPROVEKJENNEMERKE
 } = require('./db');
-const { canDeleteBil, canAddBil, resolveRoleKey, permissionDefsWithModulLabels, summarizeBilTilstandsrapportDashboard } = require('./db-shared');
+const { canDeleteBil, canAddBil, resolveRoleKey, resolveRoleTemplate, permissionDefsWithModulLabels, summarizeBilTilstandsrapportDashboard } = require('./db-shared');
 const {
   nowOsloDate,
   nowOsloTime,
@@ -95,6 +95,11 @@ const {
   mapTimeregistreringRow,
   weekStartIso,
   addDaysIso,
+  monthRangeIso,
+  currentOsloYearMonth,
+  aggregateTimeregByUser,
+  buildMaanedAnsatteList,
+  summarizeMaanedAnsatte,
   canViewAllTimereg,
   canApproveTimereg,
   maskTimeregStatusForViewer
@@ -460,6 +465,13 @@ function resolveTimeregUserId(req, queryUserId) {
   const requested = Number(queryUserId);
   if (requested && canViewAllTimereg(req.user)) return requested;
   return selfId;
+}
+
+function userHasTimeregistreringAccess(user) {
+  if (!user || user.aktiv === false) return false;
+  if (user.isAdmin) return true;
+  if (Array.isArray(user.permissions) && user.permissions.includes('timeregistrering')) return true;
+  return resolveRoleTemplate(user.role).includes('timeregistrering');
 }
 
 async function getTimeregRow(id) {
@@ -3131,6 +3143,43 @@ app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('ti
       lonnKr
     },
     perDag
+  });
+});
+
+app.get('/api/timeregistrering/oppsummering/maaned', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
+  if (!canViewAllTimereg(req.user)) {
+    return res.status(403).json({ ok: false, error: 'Kun admin/leder har tilgang til månedsoversikt for alle ansatte.' });
+  }
+
+  const fallback = currentOsloYearMonth();
+  const ar = Number(req.query.ar) || fallback.ar;
+  const maaned = Number(req.query.maaned) || fallback.maaned;
+  const range = monthRangeIso(ar, maaned);
+  if (!range) {
+    return res.status(400).json({ ok: false, error: 'Ugyldig år eller måned.' });
+  }
+
+  const rows = await prepare(`
+    SELECT * FROM timeregistrering
+    WHERE dato >= ? AND dato <= ?
+    ORDER BY bruker_navn ASC, dato ASC, start_tid ASC
+  `).all(range.fra, range.til);
+
+  const statsByUserId = aggregateTimeregByUser(rows, function (row) {
+    return mapTimeregLive(row, req.user);
+  });
+  const users = await getUsers();
+  const ansatte = buildMaanedAnsatteList(users, statsByUserId, userHasTimeregistreringAccess);
+  const totalt = summarizeMaanedAnsatte(ansatte);
+
+  res.json({
+    ok: true,
+    ar: range.ar,
+    maaned: range.maaned,
+    fra: range.fra,
+    til: range.til,
+    ansatte,
+    totalt
   });
 });
 

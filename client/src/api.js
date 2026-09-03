@@ -631,6 +631,14 @@ export function getTimeregistreringOppsummering(params = {}) {
   return request(`/timeregistrering/oppsummering${qs ? `?${qs}` : ''}`);
 }
 
+export function getTimeregistreringMaanedOppsummering(params = {}) {
+  const q = new URLSearchParams();
+  if (params.ar) q.set('ar', String(params.ar));
+  if (params.maaned) q.set('maaned', String(params.maaned));
+  const qs = q.toString();
+  return request(`/timeregistrering/oppsummering/maaned${qs ? `?${qs}` : ''}`);
+}
+
 export function stempleInnTimereg() {
   return request('/timeregistrering/stemple-in', { method: 'POST' });
 }
