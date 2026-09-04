@@ -102,7 +102,8 @@ const {
   summarizeMaanedAnsatte,
   canViewAllTimereg,
   canApproveTimereg,
-  maskTimeregStatusForViewer
+  maskTimeregForViewer,
+  normalizeTimeregNotat
 } = require('./timeregistrering-shared');
 const { buildReservasjonPdfBuffer } = require('./reservasjon-pdf');
 const { normalizeBilReservasjon } = require('../shared/reservasjon');
@@ -452,10 +453,13 @@ function formatUserResponse(user) {
 }
 
 function mapTimeregLive(row, viewer) {
-  const item = maskTimeregStatusForViewer(mapTimeregistreringRow(row), viewer);
+  const item = maskTimeregForViewer(mapTimeregistreringRow(row), viewer);
   if (!item) return null;
   if (item.status === 'aktiv' || item.status === 'pause') {
     item.stats = calcTimeregStats(item, nowOsloTime());
+    if (!canViewAllTimereg(viewer) && item.stats) {
+      item.stats = { ...item.stats, lonnKr: 0 };
+    }
   }
   return item;
 }
@@ -3140,7 +3144,7 @@ app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('ti
       nettoMin,
       pauseMin,
       timer: Math.round((nettoMin / 60) * 100) / 100,
-      lonnKr
+      ...(canViewAllTimereg(req.user) ? { lonnKr } : {})
     },
     perDag
   });
@@ -3212,6 +3216,11 @@ app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistreri
     return res.status(400).json({ ok: false, error: 'Dato, start og slutt er påkrevd.' });
   }
 
+  const notat = normalizeTimeregNotat(body.notat);
+  if (!notat) {
+    return res.status(400).json({ ok: false, error: 'Notat er påkrevd ved timeregistrering.' });
+  }
+
   const pauser = parsePauser(body.pauser);
   const timelonn = body.timelonn != null
     ? Math.max(0, Math.round(Number(body.timelonn) || 0))
@@ -3227,7 +3236,7 @@ app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistreri
     start_tid: startTid,
     slutt_tid: sluttTid,
     pauser: JSON.stringify(pauser),
-    notat: String(body.notat || ''),
+    notat,
     timelonn
   });
 
@@ -3257,7 +3266,18 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
   const startTid = body.startTid != null ? String(body.startTid).slice(0, 5) : (body.start_tid != null ? String(body.start_tid).slice(0, 5) : row.start_tid);
   let sluttTid = body.sluttTid != null ? String(body.sluttTid).slice(0, 5) : (body.slutt_tid != null ? String(body.slutt_tid).slice(0, 5) : row.slutt_tid);
   let pauser = body.pauser != null ? parsePauser(body.pauser) : parsePauser(row.pauser);
-  const notat = body.notat != null ? String(body.notat) : row.notat;
+  const isStatusOnlyPatch = body.status != null
+    && body.dato == null
+    && body.startTid == null
+    && body.start_tid == null
+    && body.sluttTid == null
+    && body.slutt_tid == null
+    && body.pauser == null
+    && body.notat == null;
+  let notat = body.notat != null ? normalizeTimeregNotat(body.notat) : normalizeTimeregNotat(row.notat);
+  if (!isStatusOnlyPatch && !notat) {
+    return res.status(400).json({ ok: false, error: 'Notat er påkrevd ved timeregistrering.' });
+  }
   let status = row.status;
   if (body.status != null) {
     const nextStatus = String(body.status);

@@ -273,6 +273,24 @@ function maskTimeregStatusForViewer(item, viewer) {
   return item;
 }
 
+function maskTimeregLonnForViewer(item, viewer) {
+  if (!item) return item;
+  if (canViewAllTimereg(viewer)) return item;
+  const next = { ...item, timelonn: 0 };
+  if (next.stats && typeof next.stats === 'object') {
+    next.stats = { ...next.stats, lonnKr: 0 };
+  }
+  return next;
+}
+
+function maskTimeregForViewer(item, viewer) {
+  return maskTimeregLonnForViewer(maskTimeregStatusForViewer(item, viewer), viewer);
+}
+
+function normalizeTimeregNotat(value) {
+  return String(value || '').trim();
+}
+
 module.exports = {
   NORSK_TIDSSONE,
   nowOsloDate,
@@ -292,5 +310,8 @@ module.exports = {
   summarizeMaanedAnsatte,
   canViewAllTimereg,
   canApproveTimereg,
-  maskTimeregStatusForViewer
+  maskTimeregStatusForViewer,
+  maskTimeregLonnForViewer,
+  maskTimeregForViewer,
+  normalizeTimeregNotat
 };

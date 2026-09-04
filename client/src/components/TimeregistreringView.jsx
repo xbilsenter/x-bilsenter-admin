@@ -73,6 +73,10 @@ function nok(v) {
   return `kr ${Number(v || 0).toLocaleString('nb-NO')}`;
 }
 
+function kreverTimeregNotat(notat) {
+  return !!String(notat || '').trim();
+}
+
 function statusLabel(status, kanGodkjenne) {
   if (status === 'aktiv') return 'Jobber';
   if (status === 'pause') return 'Pause';
@@ -376,6 +380,10 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
   const lagreManual = async function () {
     if (!manual) return;
+    if (!kreverTimeregNotat(manual.notat)) {
+      visTost('Notat er påkrevd ved timeregistrering ✗');
+      return;
+    }
     setBusy(true);
     try {
       await postTimeregistrering({
@@ -399,6 +407,10 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
   const lagreEdit = async function () {
     if (!editItem) return;
+    if (!kreverTimeregNotat(editItem.notat)) {
+      visTost('Notat er påkrevd ved timeregistrering ✗');
+      return;
+    }
     setBusy(true);
     try {
       const body = {
@@ -456,7 +468,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     });
   };
 
-  const visLonn = (currentUser?.timelonn > 0 || kanSeAlle) && oppsummering?.lonnKr > 0;
+  const visLonn = kanSeAlle && (oppsummering?.lonnKr > 0 || items.some(function (item) { return item.stats?.lonnKr > 0; }));
   const visLonnMaaned = kanSeAlle && (maanedData?.totalt?.lonnKr > 0 || maanedData?.ansatte?.some(function (row) { return row.lonnKr > 0; }));
   const maanedAnsatte = maanedData?.ansatte || [];
   const maanedTotalt = maanedData?.totalt || null;
@@ -806,13 +818,14 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
           <div className="timereg-form-section">
             <div className="modal-sec">Notat</div>
-            <TimeregField label="Kommentar" hint="Valgfritt">
+            <TimeregField label="Kommentar" hint="Påkrevd — beskriv hva som ble gjort">
               <textarea
                 rows={3}
                 className="timereg-textarea"
                 value={manual.notat}
                 onChange={function (e) { setManual({ ...manual, notat: e.target.value }); }}
-                placeholder="F.eks. ekstra vask, verksted, overtid…"
+                placeholder="F.eks. klargjøring av bil, verksted, vask…"
+                required
               />
             </TimeregField>
           </div>
@@ -852,13 +865,14 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
           <div className="timereg-form-section">
             <div className="modal-sec">Notat</div>
-            <TimeregField label="Kommentar" hint="Valgfritt">
+            <TimeregField label="Kommentar" hint="Påkrevd — beskriv hva som ble gjort">
               <textarea
                 rows={3}
                 className="timereg-textarea"
                 value={editItem.notat || ''}
                 onChange={function (e) { setEditItem({ ...editItem, notat: e.target.value }); }}
-                placeholder="Tilleggsinfo om arbeidsdagen"
+                placeholder="Beskriv arbeidet som ble utført"
+                required
               />
             </TimeregField>
           </div>
