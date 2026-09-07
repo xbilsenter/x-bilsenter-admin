@@ -733,6 +733,8 @@ export const DEFAULT_BIL_OKONOMI = {
   garantikost: null,
   omregAvgift: null,
   kostnader: [],
+  salgDato: null,
+  profittMaaned: null,
   profittUke: null,
   reservasjon: null
 };
@@ -871,6 +873,49 @@ export function getCurrentProfittMaaned(date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+export function normalizeSalgDato(value) {
+  const s = String(value || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return s;
+}
+
+export function normalizeProfittMaaned(value) {
+  const parsed = parseProfittMaaned(value);
+  if (!parsed) return null;
+  return `${parsed.year}-${String(parsed.month).padStart(2, '0')}`;
+}
+
+export function getTodayIsoDate(date) {
+  const d = date instanceof Date ? date : new Date(date || Date.now());
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Oslo' });
+}
+
+export function deriveProfittFieldsFromSalgDato(salgDato) {
+  const normalized = normalizeSalgDato(salgDato);
+  if (!normalized) {
+    return { profittMaaned: null, profittUke: null };
+  }
+  const d = new Date(`${normalized}T12:00:00`);
+  return {
+    profittMaaned: getCurrentProfittMaaned(d),
+    profittUke: getCurrentProfittUke(d)
+  };
+}
+
+export function resolveBilProfittMaaned(okonomi) {
+  const o = okonomi && typeof okonomi === 'object' ? okonomi : {};
+  if (o.profittMaaned) return normalizeProfittMaaned(o.profittMaaned);
+  if (o.salgDato) {
+    const derived = deriveProfittFieldsFromSalgDato(o.salgDato);
+    return derived.profittMaaned;
+  }
+  if (o.profittUke) return profittUkeToMonthKey(o.profittUke);
+  return null;
+}
+
 export function formatProfittMaanedLabel(value) {
   const m = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
   if (!m) return '—';
@@ -908,6 +953,14 @@ export function normalizeBilOkonomi(raw) {
       reservasjon.depositum = okonomiBelopForSave(reservasjon.depositum);
     }
   }
+  const salgDato = normalizeSalgDato(o.salgDato);
+  let profittMaaned = normalizeProfittMaaned(o.profittMaaned);
+  let profittUke = normalizeProfittUke(o.profittUke);
+  if (salgDato) {
+    const derived = deriveProfittFieldsFromSalgDato(salgDato);
+    profittMaaned = derived.profittMaaned;
+    profittUke = derived.profittUke;
+  }
   return {
     pakost: okonomiBelopForSave(o.pakost),
     tilstandsrapportKost: okonomiBelopForSave(o.tilstandsrapportKost),
@@ -916,7 +969,9 @@ export function normalizeBilOkonomi(raw) {
     garantikost: okonomiBelopForSave(o.garantikost),
     omregAvgift: okonomiBelopForSave(o.omregAvgift),
     kostnader: normalizeBilOkonomiKostnader(o.kostnader),
-    profittUke: normalizeProfittUke(o.profittUke),
+    salgDato,
+    profittMaaned,
+    profittUke,
     reservasjon
   };
 }
@@ -1483,18 +1538,17 @@ export function aggregateMaanedligProfitt(biler, options) {
   (Array.isArray(biler) ? biler : []).forEach(function (bil) {
     const okonomi = normalizeBilOkonomi(bil.okonomi);
     const stats = calcBilOkonomi(bil.innkjop, bil.salg, okonomi);
-    const entry = { bil, stats, profittUke: okonomi.profittUke };
+    const entry = { bil, stats, profittUke: okonomi.profittUke, profittMaaned: okonomi.profittMaaned };
     const harOkonomi = okonomiBelopValue(bil.innkjop) > 0
       || okonomiBelopValue(bil.salg) > 0
       || stats.totaltKostnader > 0;
 
-    if (!okonomi.profittUke) {
+    const monthKey = resolveBilProfittMaaned(okonomi);
+    if (!monthKey) {
       if (harOkonomi) utenUke.push(entry);
       return;
     }
 
-    const monthKey = profittUkeToMonthKey(okonomi.profittUke);
-    if (!monthKey) return;
     const parsed = parseProfittMaaned(monthKey);
     if (!parsed) return;
     if (yearFilter != null && Number.isFinite(yearFilter) && parsed.year !== yearFilter) return;

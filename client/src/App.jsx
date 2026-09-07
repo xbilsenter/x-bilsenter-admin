@@ -43,7 +43,8 @@ import {
   sortItemsNyestFirst,
   ansvarligSelectOptions,   normalizeBilOkonomi, mergeBilOkonomi, calcBilOkonomi,
   okonomiBelopDisplay, monetaryInputDisplay, okonomiBelopValue,
-  formatProfittUke, parseProfittUke, getCurrentProfittUke, getIsoWeeksInYear, formatProfittUkeLabel,
+  formatProfittUke, parseProfittUke, getCurrentProfittUke, formatProfittUkeLabel,
+  formatProfittMaanedLabel, getTodayIsoDate, deriveProfittFieldsFromSalgDato, normalizeSalgDato,
   normalizeEuKontrollDato, formatEuKontrollVisning, euKontrollChipClass,
   getVehicleFromSvvData, getRegistreringsstatusFromSvvData, registreringsstatusChip, formatSvvFargeNavn,
   normalizeBilReg, isValidBilReg, hasAutosysVehicleData,
@@ -4447,20 +4448,43 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
     bil.salg,
     okonomi
   );
-  const parsedUke = parseProfittUke(okonomi.profittUke);
-  const ukeYear = parsedUke?.year || getCurrentProfittUke()?.slice(0, 4) || String(new Date().getFullYear());
-  const ukeNum = parsedUke?.week || '';
-  const maxWeek = getIsoWeeksInYear(Number(ukeYear));
+  const harSalg = okonomiBelopValue(bil.salg) > 0;
   const [nyKostLabel, setNyKostLabel] = useState('');
   const [nyKostBelop, setNyKostBelop] = useState('');
 
-  const settProfittUke = (year, week) => {
-    if (!year || !week) {
-      oppdaterOkonomi({ profittUke: null }, 'Profittuke fjernet ✓');
+  const oppdaterSalg = function (value) {
+    const parsed = parseNumberInput(value);
+    oppdater('salg', parsed, 'Salgspris oppdatert ✓');
+    const salgNum = okonomiBelopValue(parsed);
+    if (salgNum > 0) {
+      const salgDato = okonomi.salgDato || getTodayIsoDate();
+      oppdaterOkonomi({
+        salgDato,
+        ...deriveProfittFieldsFromSalgDato(salgDato)
+      });
       return;
     }
-    const next = formatProfittUke(year, week);
-    oppdaterOkonomi({ profittUke: next }, 'Profittuke oppdatert ✓');
+    oppdaterOkonomi({
+      salgDato: null,
+      profittMaaned: null,
+      profittUke: null
+    });
+  };
+
+  const oppdaterSalgDato = function (value) {
+    const salgDato = normalizeSalgDato(value);
+    if (!salgDato) {
+      oppdaterOkonomi({
+        salgDato: null,
+        profittMaaned: null,
+        profittUke: null
+      }, 'Salgsdato fjernet ✓');
+      return;
+    }
+    oppdaterOkonomi({
+      salgDato,
+      ...deriveProfittFieldsFromSalgDato(salgDato)
+    }, 'Salgsdato oppdatert ✓');
   };
 
   const settOkonomiFelt = (key, value) => {
@@ -4517,7 +4541,7 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
             </div>
             <div>
               <div className="fl">Salgspris (kr)</div>
-              <input type="number" value={monetaryInputDisplay(bil.salg)} onChange={e => oppdater('salg', parseNumberInput(e.target.value), 'Salgspris oppdatert ✓')} />
+              <input type="number" value={monetaryInputDisplay(bil.salg)} onChange={e => oppdaterSalg(e.target.value)} />
             </div>
           </div>
         </div>
@@ -4542,57 +4566,40 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
         </div>
       </div>
 
-      <div className="modal-sec">Profittuke</div>
-      <div className="bil-okonomi-uke">
-        <div>
-          <div className="fl">År</div>
-          <select
-            value={String(ukeYear)}
-            onChange={e => settProfittUke(Number(e.target.value), ukeNum || 1)}
-          >
-            {Array.from({ length: 6 }, function (_, i) {
-              const y = new Date().getFullYear() + 1 - i;
-              return <option key={y} value={String(y)}>{y}</option>;
-            })}
-          </select>
-        </div>
-        <div>
-          <div className="fl">Uke</div>
-          <select
-            value={ukeNum ? String(ukeNum) : ''}
-            onChange={e => settProfittUke(ukeYear, Number(e.target.value))}
-          >
-            <option value="">Velg uke…</option>
-            {Array.from({ length: maxWeek }, function (_, i) {
-              const w = i + 1;
-              return <option key={w} value={String(w)}>Uke {w}</option>;
-            })}
-          </select>
-        </div>
-        <div className="bil-okonomi-uke__actions">
-          <button
-            type="button"
-            className="btn btn-g btn-sm"
-            onClick={function () {
-              const current = getCurrentProfittUke();
-              const parsed = parseProfittUke(current);
-              if (parsed) settProfittUke(parsed.year, parsed.week);
-            }}
-          >
-            Denne uken
-          </button>
-          {okonomi.profittUke ? (
-            <button type="button" className="btn btn-g btn-sm" onClick={function () { settProfittUke(null, null); }}>
-              Fjern
-            </button>
-          ) : null}
-        </div>
-        {okonomi.profittUke ? (
-          <div className="bil-okonomi-uke__label">{formatProfittUkeLabel(okonomi.profittUke)}</div>
-        ) : (
-          <div className="bil-okonomi-uke__label bil-okonomi-uke__label--empty">Ikke satt — telles ikke i ukentlig profitt</div>
-        )}
-      </div>
+      {harSalg ? (
+        <>
+          <div className="modal-sec">Salgsdato og profitt</div>
+          <div className="bil-okonomi-uke">
+            <div>
+              <div className="fl">Salgsdato</div>
+              <input
+                type="date"
+                value={okonomi.salgDato || ''}
+                onChange={function (e) { oppdaterSalgDato(e.target.value); }}
+              />
+            </div>
+            <div className="bil-okonomi-uke__actions">
+              <button
+                type="button"
+                className="btn btn-g btn-sm"
+                onClick={function () { oppdaterSalgDato(getTodayIsoDate()); }}
+              >
+                I dag
+              </button>
+            </div>
+            {okonomi.salgDato ? (
+              <div className="bil-okonomi-uke__label">
+                Profitt telles i {formatProfittMaanedLabel(okonomi.profittMaaned)}
+                {okonomi.profittUke ? ` · ${formatProfittUkeLabel(okonomi.profittUke)}` : ''}
+              </div>
+            ) : (
+              <div className="bil-okonomi-uke__label bil-okonomi-uke__label--empty">
+                Sett salgsdato for å knytte profitt til riktig måned
+              </div>
+            )}
+          </div>
+        </>
+      ) : null}
 
       <div className="modal-sec">Faste kostnader</div>
       <div className="bil-okonomi-kostnader">

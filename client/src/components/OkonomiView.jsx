@@ -43,9 +43,13 @@ export default function OkonomiView({ biler, setModal }) {
   const years = useMemo(function () {
     const set = new Set([currentYear]);
     (biler || []).forEach(function (bil) {
-      const uke = normalizeBilOkonomi(bil.okonomi).profittUke;
-      const m = String(uke || '').match(/^(\d{4})-/);
-      if (m) set.add(Number(m[1]));
+      const okonomi = normalizeBilOkonomi(bil.okonomi);
+      const uke = okonomi.profittUke;
+      const maaned = okonomi.profittMaaned;
+      const ukeMatch = String(uke || '').match(/^(\d{4})-/);
+      const maanedMatch = String(maaned || '').match(/^(\d{4})-/);
+      if (ukeMatch) set.add(Number(ukeMatch[1]));
+      if (maanedMatch) set.add(Number(maanedMatch[1]));
     });
     return Array.from(set).sort(function (a, b) { return b - a; });
   }, [biler, currentYear]);
