@@ -16,33 +16,20 @@ function idag() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: NORSK_TIDSSONE });
 }
 
-function weekStartIso(dateIso) {
-  const d = new Date(String(dateIso || idag()) + 'T12:00:00');
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
-
-function addDaysIso(dateIso, days) {
-  const d = new Date(String(dateIso) + 'T12:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+function monthRangeIso(ar, maaned) {
+  const y = Number(ar);
+  const m = Number(maaned);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+  const fra = `${y}-${String(m).padStart(2, '0')}-01`;
+  const lastDay = new Date(y, m, 0).getDate();
+  const til = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { ar: y, maaned: m, fra, til };
 }
 
 function fmtDato(iso) {
   if (!iso) return '—';
   const d = new Date(iso + 'T12:00:00');
   return d.toLocaleDateString('nb-NO', { weekday: 'short', day: '2-digit', month: 'short' });
-}
-
-function fmtUke(fra, til) {
-  const f = new Date(fra + 'T12:00:00');
-  const t = new Date(til + 'T12:00:00');
-  const fmt = function (d) {
-    return d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
-  };
-  return `${fmt(f)} – ${fmt(t)}`;
 }
 
 function currentYearMonth() {
@@ -289,7 +276,8 @@ function TimeregEntryActions({ item, busy, kanSeAlle, kanGodkjenne, kanRedigere,
 
 export default function TimeregistreringView({ currentUser, visTost }) {
   const isMobile = useIsMobile();
-  const [ukeFra, setUkeFra] = useState(function () { return weekStartIso(idag()); });
+  const [maanedAr, setMaanedAr] = useState(function () { return currentYearMonth().ar; });
+  const [maanedNum, setMaanedNum] = useState(function () { return currentYearMonth().maaned; });
   const [items, setItems] = useState([]);
   const [oppsummering, setOppsummering] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -298,14 +286,14 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const [editItem, setEditItem] = useState(null);
   const [brukere, setBrukere] = useState([]);
   const [valgtUserId, setValgtUserId] = useState(null);
-  const [maanedAr, setMaanedAr] = useState(function () { return currentYearMonth().ar; });
-  const [maanedNum, setMaanedNum] = useState(function () { return currentYearMonth().maaned; });
   const [maanedData, setMaanedData] = useState(null);
   const [maanedLoading, setMaanedLoading] = useState(false);
 
   const kanSeAlle = !!(currentUser?.isAdmin || (currentUser?.permissions || []).includes('brukere'));
   const kanGodkjenne = !!currentUser?.isAdmin;
-  const ukeTil = useMemo(function () { return addDaysIso(ukeFra, 6); }, [ukeFra]);
+  const maanedRange = useMemo(function () {
+    return monthRangeIso(maanedAr, maanedNum);
+  }, [maanedAr, maanedNum]);
   const targetUserId = kanSeAlle && valgtUserId ? valgtUserId : currentUser?.id;
   const sheetOpen = !!(manual || editItem);
 
@@ -324,9 +312,10 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   }, [kanSeAlle]);
 
   const reload = useCallback(async function () {
+    if (!maanedRange) return;
     setLoading(true);
     try {
-      const params = { fra: ukeFra, til: ukeTil };
+      const params = { fra: maanedRange.fra, til: maanedRange.til };
       if (targetUserId) params.userId = targetUserId;
       const [listRes, sumRes] = await Promise.all([
         getTimeregistrering(params),
@@ -339,7 +328,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     } finally {
       setLoading(false);
     }
-  }, [ukeFra, ukeTil, targetUserId, visTost]);
+  }, [maanedRange, targetUserId, visTost]);
 
   useEffect(function () { reload(); }, [reload]);
 
@@ -364,13 +353,19 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const velgAnsattFraMaaned = function (userId) {
     if (!userId) return;
     setValgtUserId(userId);
-    visTost('Viser valgt ansatt i ukeoversikten ✓');
+    visTost('Viser valgt ansatt i månedsoversikten ✓');
   };
 
   const byttMaaned = function (delta) {
     const next = shiftMonth(maanedAr, maanedNum, delta);
     setMaanedAr(next.ar);
     setMaanedNum(next.maaned);
+  };
+
+  const gaTilDenneMaaned = function () {
+    const now = currentYearMonth();
+    setMaanedAr(now.ar);
+    setMaanedNum(now.maaned);
   };
 
   const idagPoster = useMemo(function () {
@@ -487,7 +482,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         <div>
           <div className="ph-title">Timeregistrering</div>
           <div className="ph-sub">
-            Registrer arbeidstid manuelt og få ukeoversikt
+            Registrer arbeidstid manuelt og få månedsoversikt
             {currentUser?.name ? ` · ${currentUser.name}` : ''}
           </div>
         </div>
@@ -515,7 +510,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       <div className={`timereg-top ${isMobile ? 'timereg-top--mobile' : ''}`}>
         <div className="timereg-stats-grid">
           <div className="timereg-stat card">
-            <div className="timereg-stat-label">Denne uken</div>
+            <div className="timereg-stat-label">Denne måneden</div>
             <div className="timereg-stat-value">{oppsummering ? `${oppsummering.timer} t` : '—'}</div>
             <div className="timereg-stat-sub">{oppsummering ? `${oppsummering.dager} dag${oppsummering.dager === 1 ? '' : 'er'}` : ''}</div>
           </div>
@@ -547,17 +542,17 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       <div className="card timereg-list-card">
         <div className="card-h timereg-list-hd">
           <div>
-            <span className="card-ht">Ukeoversikt</span>
-            <div className="timereg-week-label">{fmtUke(ukeFra, ukeTil)}</div>
+            <span className="card-ht">{kanSeAlle && valgtUserId ? 'Månedsoversikt – ansatt' : 'Månedsoversikt'}</span>
+            <div className="timereg-week-label">{fmtMaaned(maanedAr, maanedNum)}</div>
           </div>
           <div className="timereg-week-nav">
-            <button type="button" className="btn btn-g btn-sm" onClick={function () { setUkeFra(addDaysIso(ukeFra, -7)); }}>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { byttMaaned(-1); }}>
               ←
             </button>
-            <button type="button" className="btn btn-g btn-sm timereg-week-current" onClick={function () { setUkeFra(weekStartIso(idag())); }}>
-              Denne uken
+            <button type="button" className="btn btn-g btn-sm timereg-week-current" onClick={gaTilDenneMaaned}>
+              Denne måneden
             </button>
-            <button type="button" className="btn btn-g btn-sm" onClick={function () { setUkeFra(addDaysIso(ukeFra, 7)); }}>
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { byttMaaned(1); }}>
               →
             </button>
           </div>
@@ -566,7 +561,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         {loading ? (
           <div className="inbox-empty">Laster timeregistrering…</div>
         ) : items.length === 0 ? (
-          <div className="inbox-empty">Ingen registreringer denne uken.</div>
+          <div className="inbox-empty">Ingen registreringer denne måneden.</div>
         ) : isMobile ? (
           <div className="timereg-entry-list">
             {items.map(function (item) {
@@ -671,11 +666,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
               <button
                 type="button"
                 className="btn btn-g btn-sm timereg-week-current"
-                onClick={function () {
-                  const now = currentYearMonth();
-                  setMaanedAr(now.ar);
-                  setMaanedNum(now.maaned);
-                }}
+                onClick={gaTilDenneMaaned}
               >
                 Denne måneden
               </button>
@@ -709,7 +700,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                     </div>
                     <div className="timereg-entry-actions">
                       <button type="button" className="btn btn-g btn-sm" onClick={function () { velgAnsattFraMaaned(row.userId); }}>
-                        Vis uke
+                        Vis poster
                       </button>
                     </div>
                   </article>
@@ -759,7 +750,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                         {visLonnMaaned && <td>{row.lonnKr ? nok(row.lonnKr) : '—'}</td>}
                         <td className="timereg-row-actions">
                           <button type="button" className="btn btn-g btn-xs" onClick={function () { velgAnsattFraMaaned(row.userId); }}>
-                            Vis uke
+                            Vis poster
                           </button>
                         </td>
                       </tr>
