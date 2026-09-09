@@ -1251,9 +1251,20 @@ app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), asyn
     savedFiles.push(...base64Files);
   }
 
-  const info = await insertInnbytteRow(b, savedFiles);
-
-  res.status(201).json({ ok: true, id: info.lastInsertRowid });
+  try {
+    const info = await insertInnbytteRow(b, savedFiles);
+    console.log('[innbytte/ingest]', {
+      id: info.lastInsertRowid,
+      regnr: String(b.regnr || '').toUpperCase(),
+      epost: String(b.epost || '').trim().toLowerCase()
+    });
+    res.status(201).json({ ok: true, id: info.lastInsertRowid });
+  } catch (err) {
+    console.error('[innbytte/ingest]', err.message, {
+      regnr: String(b.regnr || '').toUpperCase()
+    });
+    res.status(500).json({ ok: false, error: 'Kunne ikke lagre innbytteforespørsel.' });
+  }
 });
 
 // JSON innbytte (same as website uses today)
@@ -1268,9 +1279,20 @@ app.post('/api/ingest/innbytte/json', requireIngest, async function (req, res) {
     return res.status(400).json({ ok: false, error: 'Registreringsnummer, navn, e-post og mobil er påkrevd.' });
   }
 
-  const info = await insertInnbytteRow(b, savedFiles);
-
-  res.status(201).json({ ok: true, id: info.lastInsertRowid });
+  try {
+    const info = await insertInnbytteRow(b, savedFiles);
+    console.log('[innbytte/ingest]', {
+      id: info.lastInsertRowid,
+      regnr: String(b.regnr || '').toUpperCase(),
+      epost: String(b.epost || '').trim().toLowerCase()
+    });
+    res.status(201).json({ ok: true, id: info.lastInsertRowid });
+  } catch (err) {
+    console.error('[innbytte/ingest]', err.message, {
+      regnr: String(b.regnr || '').toUpperCase()
+    });
+    res.status(500).json({ ok: false, error: 'Kunne ikke lagre innbytteforespørsel.' });
+  }
 });
 
 app.post('/api/ingest/selg-bil/json', requireIngest, async function (req, res) {
