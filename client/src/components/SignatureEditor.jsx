@@ -140,7 +140,10 @@ export default function SignatureEditor({ value, onChange, accountName, accountE
     setUploading(true);
     try {
       const res = await uploadSignatureImage(file);
-      const src = res.absoluteUrl || `${window.location.origin}${res.url}`;
+      const src = res.url || '';
+      if (!src.startsWith('/uploads/')) {
+        throw new Error('Ugyldig bilde-URL fra server.');
+      }
       insertHtml(`<img src="${src}" alt="" style="max-width:220px;height:auto;border-radius:8px;display:inline-block;margin:6px 0" />`);
     } catch (err) {
       window.alert(err.message || 'Kunne ikke laste opp bilde.');

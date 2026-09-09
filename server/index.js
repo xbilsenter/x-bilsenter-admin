@@ -119,6 +119,8 @@ const { enrichIngestVehicleBody, ingestVehicleDbFields } = require('./ingest-veh
 const { isConfigured: isOmregConfigured, lookupOmregistreringsavgift } = require('./skatteetaten-omreg');
 const { lookupFinnAnnonse, resolveFinnMarkedsSok } = require('./finn');
 const { getMailStatus, syncInbox, sendMail, testMailKonto, startBackgroundMailSync } = require('./mail');
+const { normalizeRecipientEmail, isValidEmail } = require('./mail-utils');
+const { normalizeSignatureStorageUrls } = require('../shared/mail-content');
 const { accountImapReady } = require('./mail-utils');
 const {
   getMailMapperForKonto,
@@ -1887,6 +1889,9 @@ app.post('/api/mail/kontoer', requireAuth, async function (req, res) {
     if (!b.navn || !b.epost) {
       return res.status(400).json({ ok: false, error: 'Navn og e-post er påkrevd.' });
     }
+    if (b.signatur != null) {
+      b.signatur = normalizeSignatureStorageUrls(String(b.signatur));
+    }
     const item = await createMailKonto(b);
     res.status(201).json({ ok: true, item, status: await getMailStatus() });
   } catch (err) {
@@ -1904,6 +1909,9 @@ app.patch('/api/mail/kontoer/:id', requireAuth, async function (req, res) {
     const b = { ...(req.body || {}) };
     if (b.imapPass === PASS_MASK) delete b.imapPass;
     if (b.smtpPass === PASS_MASK) delete b.smtpPass;
+    if (b.signatur != null) {
+      b.signatur = normalizeSignatureStorageUrls(String(b.signatur));
+    }
 
     const item = await updateMailKonto(id, b);
     res.json({ ok: true, item, status: await getMailStatus() });
@@ -2091,7 +2099,11 @@ app.post('/api/innbytte/:id/send-tilbud', requireAuth, async function (req, res)
   if (type === 'tilbud' && !tilbud) {
     return res.status(400).json({ ok: false, error: 'Tilbudspris er påkrevd.' });
   }
-  if (!row.epost) return res.status(400).json({ ok: false, error: 'Innbytte mangler e-postadresse.' });
+  const toEmail = normalizeRecipientEmail(row.epost);
+  if (!toEmail) return res.status(400).json({ ok: false, error: 'Innbytte mangler e-postadresse.' });
+  if (!isValidEmail(toEmail)) {
+    return res.status(400).json({ ok: false, error: `Ugyldig e-postadresse på innbytte: ${row.epost}` });
+  }
   if (!melding) return res.status(400).json({ ok: false, error: 'Melding kan ikke være tom.' });
 
   const bilLabel = [row.merke, row.modell, row.arsmodell].filter(Boolean).join(' ');
@@ -2101,7 +2113,7 @@ app.post('/api/innbytte/:id/send-tilbud', requireAuth, async function (req, res)
 
   try {
     await sendMail({
-      to: row.epost,
+      to: toEmail,
       toName: row.navn,
       subject: subject,
       text: melding,
@@ -2247,7 +2259,11 @@ app.post('/api/selg-bil/:id/send-tilbud', requireAuth, async function (req, res)
   if (type === 'tilbud' && !tilbud) {
     return res.status(400).json({ ok: false, error: 'Tilbudspris er påkrevd.' });
   }
-  if (!row.epost) return res.status(400).json({ ok: false, error: 'Forespørselen mangler e-postadresse.' });
+  const toEmail = normalizeRecipientEmail(row.epost);
+  if (!toEmail) return res.status(400).json({ ok: false, error: 'Forespørselen mangler e-postadresse.' });
+  if (!isValidEmail(toEmail)) {
+    return res.status(400).json({ ok: false, error: `Ugyldig e-postadresse på forespørselen: ${row.epost}` });
+  }
   if (!melding) return res.status(400).json({ ok: false, error: 'Melding kan ikke være tom.' });
 
   const bilLabel = [row.merke, row.modell, row.arsmodell].filter(Boolean).join(' ');
@@ -2257,7 +2273,7 @@ app.post('/api/selg-bil/:id/send-tilbud', requireAuth, async function (req, res)
 
   try {
     await sendMail({
-      to: row.epost,
+      to: toEmail,
       toName: row.navn,
       subject: subject,
       text: melding,

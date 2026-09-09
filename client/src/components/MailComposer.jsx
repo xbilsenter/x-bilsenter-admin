@@ -307,7 +307,10 @@ export default function MailComposer({ value, onChange, placeholder }) {
     setUploading(true);
     try {
       const res = await uploadSignatureImage(file);
-      const src = res.absoluteUrl || `${window.location.origin}${res.url}`;
+      const src = res.url || '';
+      if (!src.startsWith('/uploads/')) {
+        throw new Error('Ugyldig bilde-URL fra server.');
+      }
       insertHtml(`<img src="${src}" alt="" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:10px 0" />`);
     } catch (err) {
       window.alert(err.message || 'Kunne ikke laste opp bilde.');

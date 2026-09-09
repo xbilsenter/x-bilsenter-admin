@@ -5,7 +5,9 @@ const nodemailer = require('nodemailer');
 const {
   accountImapReady,
   accountSmtpReady,
-  normalizeMessageId
+  normalizeMessageId,
+  normalizeRecipientEmail,
+  isValidEmail
 } = require('./mail-utils');
 const { syncAllAccounts, getSentMappeForKonto, startBackgroundMailSync } = require('./mail-sync');
 const { saveEpostVedlegg } = require('./mail-folders');
@@ -30,7 +32,18 @@ function parseEmailList(value) {
   return list.length ? list.join(', ') : null;
 }
 
-const ADMIN_PUBLIC_URL = process.env.ADMIN_PUBLIC_URL || process.env.PUBLIC_SITE_ORIGIN || 'http://localhost:8090';
+function resolveAdminPublicUrl() {
+  const candidates = [
+    process.env.ADMIN_PUBLIC_URL,
+    process.env.VERCEL ? 'https://drift.xbilsenter.no' : null,
+    process.env.PUBLIC_SITE_ORIGIN,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+    'http://localhost:8090'
+  ].filter(Boolean);
+  return String(candidates[0] || 'http://localhost:8090').replace(/\/$/, '');
+}
+
+const ADMIN_PUBLIC_URL = resolveAdminPublicUrl();
 
 const { prepareMailContent } = require('../shared/mail-content');
 const { embedInlineImagesInHtml } = require('./mail-inline-images');
@@ -214,8 +227,12 @@ async function sendMail(options) {
 
   const bodyText = String(text || '').trim();
   const bodyHtml = String(html || '').trim();
-  if (!to || !subject || (!bodyText && !bodyHtml && !replyQuoteHtml)) {
+  const toEmail = normalizeRecipientEmail(to);
+  if (!toEmail || !subject || (!bodyText && !bodyHtml && !replyQuoteHtml)) {
     throw new Error('Mottaker, emne og melding er påkrevd.');
+  }
+  if (!isValidEmail(toEmail)) {
+    throw new Error(`Ugyldig mottakeradresse: ${toEmail || '(tom)'}`);
   }
 
   const konto = await resolveSendAccount(kontoId);
@@ -223,8 +240,17 @@ async function sendMail(options) {
   const from = getFromAddress(konto);
   const merged = prepareMailContent(bodyText, bodyHtml, konto.signatur, ADMIN_PUBLIC_URL, replyQuoteHtml);
   const embedded = await embedInlineImagesInHtml(merged.html, ADMIN_PUBLIC_URL);
+  if (embedded.failed?.length) {
+    console.error('[mail/send] Signaturbilde kunne ikke legges ved:', embedded.failed.join(', '));
+    throw new Error(
+      'Signaturlogo/bilde kunne ikke legges ved i e-posten. Sjekk signatur i e-postinnstillinger og prøv igjen.'
+    );
+  }
   const fullText = merged.text;
-  const fullHtml = embedded.html || undefined;
+  const fullHtml = embedded.html || merged.html || undefined;
+  if (!fullHtml) {
+    throw new Error('Kunne ikke bygge HTML-innhold for e-posten.');
+  }
   const headers = {};
   const replyId = normalizeMessageId(inReplyTo);
   if (replyId) {
@@ -239,7 +265,7 @@ async function sendMail(options) {
 
   const mailOptions = {
     from,
-    to: toName ? `"${toName}" <${to}>` : to,
+    to: toName ? `"${toName}" <${toEmail}>` : toEmail,
     subject,
     text: fullText,
     html: fullHtml || undefined,
@@ -269,6 +295,18 @@ async function sendMail(options) {
     throw new Error(formatSmtpError(err, konto));
   });
 
+  if (!info?.messageId && !info?.accepted?.length) {
+    throw new Error('E-postserveren bekreftet ikke sending. Prøv igjen.');
+  }
+
+  console.log('[mail/send] OK', {
+    to: toEmail,
+    subject,
+    messageId: info.messageId || null,
+    kontoId: konto.id,
+    inlineImages: embedded.attachments?.length || 0
+  });
+
   const messageId = normalizeMessageId(info.messageId)
     || `sent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}@local`;
   const storedAttachments = [];
@@ -293,7 +331,7 @@ async function sendMail(options) {
     in_reply_to: replyId || '',
     fra_navn: konto.fromName || 'X Bilsenter AS',
     fra_epost: konto.epost || konto.smtpUser || '',
-    til_epost: to,
+    til_epost: toEmail,
     emne: subject,
     innhold: fullText,
     innhold_html: fullHtml || '',

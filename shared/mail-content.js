@@ -56,6 +56,13 @@ function textToHtml(text) {
   }).join('');
 }
 
+function normalizeSignatureStorageUrls(html) {
+  let out = String(html || '');
+  out = out.replace(/src=["']https?:\/\/[^"']+(\/uploads\/[^"']+)["']/gi, 'src="$1"');
+  out = out.replace(/src=["']https?:\/\/[^"']+(\/assets\/[^"']+)["']/gi, 'src="$1"');
+  return out;
+}
+
 function absolutizeUploadUrls(html, baseUrl) {
   const base = String(baseUrl || '').replace(/\/$/, '');
   if (!base) return String(html || '');
@@ -76,16 +83,16 @@ function absolutizeUploadUrls(html, baseUrl) {
   return out;
 }
 
-function fixSignatureImageSources(html, baseUrl) {
-  const base = String(baseUrl || '').replace(/\/$/, '');
-  const defaultLogo = base ? `${base}${SIGNATURE_DEFAULT_LOGO_PATH}` : SIGNATURE_DEFAULT_LOGO_PATH;
-  let out = String(html || '');
+function fixSignatureImageSources(html) {
+  let out = normalizeSignatureStorageUrls(html);
+
+  out = out.replace(/src=["']\/assets\/logo-mark\.svg["']/gi, `src="${SIGNATURE_DEFAULT_LOGO_PATH}"`);
 
   out = out.replace(/<img\b([^>]*?)src=["']\s*["']([^>]*)>/gi, function (full) {
     if (/data-placeholder=["']logo["']/i.test(full) || /alt=["']logo["']/i.test(full)) {
-      return `<img src="${defaultLogo}" alt="Logo" data-placeholder="logo" style="${SIGNATURE_DEFAULT_LOGO_STYLE}">`;
+      return `<img src="${SIGNATURE_DEFAULT_LOGO_PATH}" alt="Logo" data-placeholder="logo" style="${SIGNATURE_DEFAULT_LOGO_STYLE}">`;
     }
-    return '';
+    return full;
   });
 
   return out;
@@ -110,20 +117,19 @@ function splitReplyQuoteHtml(html) {
   };
 }
 
-function prepareSignatureHtml(signatur, baseUrl) {
+function prepareSignatureHtml(signatur) {
   const sig = String(signatur || '').trim();
   if (!sig) return { html: '', plain: '' };
   if (isHtmlContent(sig)) {
-    const normalized = fixSignatureImageSources(sig, baseUrl);
-    const html = prepareSignatureHtmlForSend(absolutizeUploadUrls(normalized, baseUrl));
+    const html = prepareSignatureHtmlForSend(fixSignatureImageSources(sig));
     return { html: html, plain: htmlToText(html) };
   }
   return { html: textToHtml(sig), plain: sig };
 }
 
-function appendSignature(text, signatur, baseUrl) {
+function appendSignature(text, signatur) {
   const body = String(text || '').trimEnd();
-  const preparedSig = prepareSignatureHtml(signatur, baseUrl);
+  const preparedSig = prepareSignatureHtml(signatur);
 
   if (!preparedSig.html) {
     return {
@@ -154,7 +160,7 @@ function prepareMailContent(text, html, signatur, baseUrl, quoteHtml) {
 
     const userText = htmlToText(userHtml);
     const quoteText = quotePart ? htmlToText(quotePart) : '';
-    const preparedSig = prepareSignatureHtml(signatur, baseUrl);
+    const preparedSig = prepareSignatureHtml(signatur);
 
     if (!preparedSig.html) {
       const merged = `${userHtml}${quotePart}`;
@@ -176,7 +182,7 @@ function prepareMailContent(text, html, signatur, baseUrl, quoteHtml) {
     };
   }
 
-  return appendSignature(text, signatur, baseUrl);
+  return appendSignature(text, signatur);
 }
 
 function buildOutgoingMailPreviewHtml(options) {
@@ -188,16 +194,19 @@ function buildOutgoingMailPreviewHtml(options) {
     opts.baseUrl || '',
     opts.quoteHtml || ''
   );
-  return merged.html || '';
+  return absolutizeUploadUrls(merged.html || '', opts.baseUrl || '');
 }
 
 module.exports = {
   MAIL_BODY_WRAP_STYLE,
+  SIGNATURE_DEFAULT_LOGO_PATH,
   prepareMailContent,
   buildOutgoingMailPreviewHtml,
   prepareSignatureHtml,
   appendSignature,
   textToHtml,
   htmlToText,
-  absolutizeUploadUrls
+  absolutizeUploadUrls,
+  normalizeSignatureStorageUrls,
+  fixSignatureImageSources
 };
