@@ -124,7 +124,7 @@ function isModelNoiseToken(token) {
 
 function significantModelTokens(modell) {
   return tokenizeFinnName(modell).filter(function (token) {
-    return !isModelNoiseToken(token);
+    return token.length > 1 && !isModelNoiseToken(token);
   });
 }
 
@@ -153,7 +153,11 @@ function pickBestFinnMatch(query, options, originalModell) {
   let best = null;
   for (const [id, label] of options.entries()) {
     const score = scoreFinnModelMatch(query, label, originalModell || query);
-    if (!best || score > best.score || (score === best.score && String(label).length > String(best.label).length)) {
+    if (
+      !best
+      || score > best.score
+      || (score === best.score && String(label).length < String(best.label).length)
+    ) {
       best = { id, label, score };
     }
   }
@@ -168,7 +172,47 @@ function cleanModelForMatch(modell) {
     .trim();
 }
 
-function modelMatchQueries(modell) {
+function inferBrandModelQueries(merke, modell) {
+  const queries = [];
+  const raw = String(modell || '').trim();
+  if (!raw) return queries;
+
+  const makeKey = normalizeFinnMatchKey(merke);
+
+  if (makeKey.includes('mercedes')) {
+    const eq = raw.match(/^(EQ[A-Z])(?:\s|-|[Kk]lasse|\d)/i);
+    if (eq) {
+      queries.push(eq[1].toUpperCase() + '-Klasse');
+    } else {
+      const klasse = raw.match(/^([A-Z])-?\s*[Kk]lasse/i);
+      if (klasse) {
+        queries.push(klasse[1].toUpperCase() + '-Klasse');
+      } else {
+        const spaced = raw.match(/^([A-Z])\s+\d{2,3}/);
+        if (spaced) {
+          queries.push(spaced[1].toUpperCase() + '-Klasse');
+        } else {
+          const compact = raw.match(/^([A-Z])\d{2,3}[a-z]*/i);
+          if (compact) {
+            queries.push(compact[1].toUpperCase() + '-Klasse');
+          }
+        }
+      }
+    }
+  }
+
+  if (makeKey === 'bmw' || makeKey.endsWith(' bmw')) {
+    if (/^X\d/i.test(raw)) queries.push('X-Serie');
+    const numSerie = raw.match(/^(\d)\d{2}[a-z]*/i);
+    if (numSerie) queries.push(numSerie[1] + '-Serie');
+    const iModel = raw.match(/^(i[34]|i[48]|ix\d*)/i);
+    if (iModel) queries.push(normalizeFinnSearchTerm(iModel[1]));
+  }
+
+  return queries;
+}
+
+function modelMatchQueries(merke, modell) {
   const raw = String(modell || '').trim();
   if (!raw) return [];
 
@@ -180,21 +224,46 @@ function modelMatchQueries(modell) {
   function add(query) {
     const q = String(query || '').trim();
     if (!q) return;
-    if (!queries.includes(q)) queries.push(q);
+    if (!queries.some(function (existing) {
+      return normalizeFinnMatchKey(existing) === normalizeFinnMatchKey(q);
+    })) {
+      queries.push(q);
+    }
   }
 
+  inferBrandModelQueries(merke, raw).forEach(add);
   add(cleaned);
   if (sigTokens.length) add(sigTokens.join(' '));
 
-  for (let n = sigTokens.length; n >= 2; n -= 1) {
+  for (let n = sigTokens.length; n >= 1; n -= 1) {
     const prefix = sigTokens.slice(0, n);
+    if (n === 1 && prefix[0].length < 3) continue;
     if (bodyStyles.length && !bodyStyles.every(function (token) { return prefix.includes(token); })) {
       continue;
     }
     add(prefix.join(' '));
+    if (n === 1) {
+      add(prefix[0] + '-Serie');
+    }
   }
 
   return queries;
+}
+
+function extractFinnSubmodelQuery(modell, resolvedLabel) {
+  const label = String(resolvedLabel || '').trim();
+  if (!label || !/(-serie|-klasse)$/i.test(label)) return null;
+
+  const labelKey = normalizeFinnMatchKey(label);
+  const sig = significantModelTokens(modell);
+  for (const token of sig) {
+    if (token.length < 2 || MODEL_BODY_STYLES.has(token)) continue;
+    const tokenKey = normalizeFinnMatchKey(token);
+    if (labelKey.includes(tokenKey)) continue;
+    if (/-klasse$/i.test(label) && /^[a-z]\d{2,3}[a-z]*$/i.test(token)) continue;
+    if (/\d/.test(token) || tokenKey.length >= 4) return token;
+  }
+  return null;
 }
 
 function pickBestFinnMatchFromQueries(queries, options, originalModell) {
@@ -205,7 +274,7 @@ function pickBestFinnMatchFromQueries(queries, options, originalModell) {
     if (
       !best
       || match.score > best.score
-      || (match.score === best.score && String(match.label).length > String(best.label).length)
+      || (match.score === best.score && String(match.label).length < String(best.label).length)
     ) {
       best = match;
     }
@@ -323,7 +392,7 @@ async function resolveFinnVariant(merke, modell) {
   let modelLabel = null;
 
   if (modellRaw) {
-    const modelQueries = modelMatchQueries(modellRaw);
+    const modelQueries = modelMatchQueries(merkeRaw, modellRaw);
     if (!makeVariant) {
       let bestModelMatch = null;
       let bestMake = null;
@@ -379,12 +448,14 @@ function buildFinnMarkedsSokParams(inn) {
   return params;
 }
 
-function buildFinnMarkedsSokUrl(inn, variant) {
+function buildFinnMarkedsSokUrl(inn, variant, submodelQuery) {
   const filterVariant = String(variant || '').trim();
   if (!filterVariant) return null;
 
   const params = buildFinnMarkedsSokParams(inn);
   params.set('variant', filterVariant);
+  const q = String(submodelQuery || '').trim();
+  if (q) params.set('q', q.toLowerCase());
   return `${FINN_SEARCH_BASE}?${params.toString()}`;
 }
 
@@ -402,8 +473,16 @@ function buildFinnMarkedsSokUrlQ(inn) {
 async function resolveFinnMarkedsSok(inn) {
   const resolved = await resolveFinnVariant(inn?.merke, inn?.modell);
   if (resolved?.variant) {
-    const url = buildFinnMarkedsSokUrl(inn, resolved.variant);
-    if (url) return { url, ...resolved, mode: 'filter' };
+    const submodelQuery = extractFinnSubmodelQuery(inn?.modell, resolved.modelLabel || resolved.makeLabel);
+    const url = buildFinnMarkedsSokUrl(inn, resolved.variant, submodelQuery);
+    if (url) {
+      return {
+        url,
+        ...resolved,
+        submodelQuery: submodelQuery || null,
+        mode: 'filter'
+      };
+    }
   }
 
   const fallbackUrl = buildFinnMarkedsSokUrlQ(inn);
