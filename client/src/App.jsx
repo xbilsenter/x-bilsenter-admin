@@ -4372,7 +4372,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
         )}
 
         {activeTab === 'okonomi' && (
-          <BilOkonomiTab bil={bil} oppdater={oppdater} oppdaterOkonomi={oppdaterOkonomi} />
+          <BilOkonomiTab bil={bil} bilRef={bilRef} oppdater={oppdater} oppdaterOkonomi={oppdaterOkonomi} />
         )}
 
         {activeTab === 'reservasjon' && (
@@ -4441,7 +4441,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   );
 }
 
-function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
+function BilOkonomiTab({ bil, bilRef, oppdater, oppdaterOkonomi }) {
   const okonomi = normalizeBilOkonomi(bil.okonomi);
   const stats = calcBilOkonomi(
     bil.innkjop,
@@ -4452,22 +4452,29 @@ function BilOkonomiTab({ bil, oppdater, oppdaterOkonomi }) {
   const [nyKostLabel, setNyKostLabel] = useState('');
   const [nyKostBelop, setNyKostBelop] = useState('');
 
+  const getOkonomiState = function () {
+    return normalizeBilOkonomi((bilRef?.current || bil).okonomi);
+  };
+
   const oppdaterSalg = function (value) {
     const parsed = parseNumberInput(value);
-    oppdater('salg', parsed, 'Salgspris oppdatert ✓');
+    const prevSalg = okonomiBelopValue(bil.salg);
     const salgNum = okonomiBelopValue(parsed);
-    if (salgNum > 0) {
-      const salgDato = okonomi.salgDato || getTodayIsoDate();
+    oppdater('salg', parsed, 'Salgspris oppdatert ✓');
+    if (salgNum <= 0) {
       oppdaterOkonomi({
-        salgDato,
-        ...deriveProfittFieldsFromSalgDato(salgDato)
+        salgDato: null,
+        profittMaaned: null,
+        profittUke: null
       });
       return;
     }
+    const existingSalgDato = normalizeSalgDato(getOkonomiState().salgDato);
+    if (existingSalgDato || prevSalg > 0) return;
+    const salgDato = getTodayIsoDate();
     oppdaterOkonomi({
-      salgDato: null,
-      profittMaaned: null,
-      profittUke: null
+      salgDato,
+      ...deriveProfittFieldsFromSalgDato(salgDato)
     });
   };
 
