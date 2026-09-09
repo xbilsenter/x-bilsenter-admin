@@ -26,7 +26,7 @@ import {
 import { matchesInnbytteTilBil } from './lib/innbytteBilMatch.js';
 import {
   DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, canDeleteBil, canAddBil, displayRole,
-  canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch,
+  canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch, innbytteMatchesSearch,
   normalizeHenvStatusFarger, normalizeBilStatusFarger, DEFAULT_HENV_STATUS_FARGER,
   DEFAULT_INNBYTTE_STATUS_FARGER, normalizeInnbytteStatusFarger,
   DEFAULT_BIL_STATUS_FARGER, DEFAULT_SJEKKLISTE_MAL, DEFAULT_BIL_SJEKKLISTER,
@@ -1535,7 +1535,7 @@ export default function App() {
             />
           )}
           {tab === 'innbytte' && (
-            <InnbytteView innbytte={innbytte} setModal={setModal} lists={lists} kunder={kunder} visTost={visTost} />
+            <InnbytteView innbytte={innbytte} setModal={setModal} lists={lists} visTost={visTost} />
           )}
           {tab === 'selgbil' && (
             <SelgBilView selgBil={selgBil} setModal={setModal} lists={lists} visTost={visTost} />
@@ -8162,8 +8162,18 @@ function finnItemUrl(id) {
 }
 
 function InnbytteView({ innbytte, setModal, lists, visTost }) {
+  const [search, setSearch] = useState('');
   const [finnSokLasterId, setFinnSokLasterId] = useState(null);
   const innbytteColors = lists?.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+  const searchQuery = search.trim();
+  const searchActive = searchQuery.length > 0;
+  const filteredInnbytte = useMemo(function () {
+    if (!searchActive) return innbytte;
+    return innbytte.filter(function (inn) {
+      return innbytteMatchesSearch(inn, searchQuery);
+    });
+  }, [innbytte, searchActive, searchQuery]);
+  const nyeCount = innbytte.filter(function (i) { return i.status === 'Ny'; }).length;
 
   async function handleFinnMarkedsSok(inn) {
     if (!canFinnMarkedsSok(inn) || finnSokLasterId != null) return;
@@ -8183,10 +8193,35 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
       <div className="ph">
         <div>
           <div className="ph-title">Innbytteforespørsler</div>
-          <div className="ph-sub">Fra xbilsenter.no/innbytte · {innbytte.filter(i => i.status === 'Ny').length} nye</div>
+          <div className="ph-sub">
+            Fra xbilsenter.no/innbytte · {nyeCount} nye
+            {searchActive ? ` · ${filteredInnbytte.length} treff` : ''}
+          </div>
         </div>
       </div>
-      {innbytte.map(inn => (
+      <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
+        <div className="fl">Søk i innbytteforespørsler</div>
+        <div className="search-row" style={{ marginBottom: 0 }}>
+          <input
+            type="search"
+            value={search}
+            onChange={function (e) { setSearch(e.target.value); }}
+            placeholder="Navn, e-post, telefon, reg.nr., bil, FINN-kode…"
+            aria-label="Søk i innbytteforespørsler"
+          />
+          {searchActive && (
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setSearch(''); }}>
+              Nullstill
+            </button>
+          )}
+        </div>
+      </div>
+      {searchActive && filteredInnbytte.length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--t4)', padding: 40, fontSize: 13 }}>
+          Ingen treff på «{searchQuery}».
+        </div>
+      ) : null}
+      {filteredInnbytte.map(inn => (
         <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, innbytteColors)}>
           <div className="inb-card__head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
             <div>
@@ -8222,7 +8257,7 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
           {inn.beskrivelse && <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 8, fontStyle: 'italic' }}>{inn.beskrivelse}</div>}
         </div>
       ))}
-      {innbytte.length === 0 && (
+      {!searchActive && innbytte.length === 0 && (
         <div style={{ textAlign: 'center', color: 'var(--t4)', padding: 40, fontSize: 13 }}>Ingen innbytteforespørsler ennå.</div>
       )}
     </>

@@ -1758,6 +1758,56 @@ function bilSearchFieldValues(bil) {
     .map(normalizeSearchQuery);
 }
 
+function innbytteSearchFieldValues(inn) {
+  return [
+    inn.navn,
+    inn.epost,
+    inn.tlf,
+    String(inn.tlf || '').replace(/\D/g, ''),
+    inn.reg,
+    inn.merke,
+    inn.modell,
+    inn.aar,
+    inn.onsketBil,
+    inn.onsketBilChassis,
+    inn.ansvarlig,
+    inn.beskrivelse,
+    inn.status,
+    inn.drivstoff,
+    inn.farge,
+    inn.forventning
+  ]
+    .filter(function (value) { return value != null && value !== ''; })
+    .map(normalizeSearchQuery);
+}
+
+export function innbytteMatchesSearch(inn, query) {
+  if (!inn || !String(query || '').trim()) return false;
+
+  if (looksLikeRegnrQuery(query)) {
+    const q = normalizeBilReg(query);
+    const reg = normalizeBilReg(inn.reg);
+    if (q && reg && reg.includes(q)) return true;
+  }
+
+  const phoneDigits = String(query).replace(/\D/g, '');
+  if (phoneDigits.length >= 4) {
+    const tlfDigits = String(inn.tlf || '').replace(/\D/g, '');
+    if (tlfDigits.includes(phoneDigits)) return true;
+  }
+
+  const terms = extractSearchTerms(query);
+  if (!terms.length) return false;
+
+  const fields = innbytteSearchFieldValues(inn);
+  const hay = fields.join(' ');
+  const hayCompact = hay.replace(/\s+/g, '');
+
+  return terms.every(function (term) {
+    return searchTermMatches(term, fields, hay, hayCompact);
+  });
+}
+
 export const MODUL_ICONS = {
   dashboard: '▦',
   biler: '🚗',
