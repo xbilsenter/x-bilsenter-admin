@@ -1781,31 +1781,67 @@ function innbytteSearchFieldValues(inn) {
     .map(normalizeSearchQuery);
 }
 
-export function innbytteMatchesSearch(inn, query) {
-  if (!inn || !String(query || '').trim()) return false;
+function foresporselMatchesSearch(item, query, fieldValuesFn) {
+  if (!item || !String(query || '').trim()) return false;
 
   if (looksLikeRegnrQuery(query)) {
     const q = normalizeBilReg(query);
-    const reg = normalizeBilReg(inn.reg);
+    const reg = normalizeBilReg(item.reg);
     if (q && reg && reg.includes(q)) return true;
   }
 
   const phoneDigits = String(query).replace(/\D/g, '');
   if (phoneDigits.length >= 4) {
-    const tlfDigits = String(inn.tlf || '').replace(/\D/g, '');
+    const tlfDigits = String(item.tlf || '').replace(/\D/g, '');
     if (tlfDigits.includes(phoneDigits)) return true;
   }
 
   const terms = extractSearchTerms(query);
   if (!terms.length) return false;
 
-  const fields = innbytteSearchFieldValues(inn);
+  const fields = fieldValuesFn(item);
   const hay = fields.join(' ');
   const hayCompact = hay.replace(/\s+/g, '');
 
   return terms.every(function (term) {
     return searchTermMatches(term, fields, hay, hayCompact);
   });
+}
+
+export function innbytteMatchesSearch(inn, query) {
+  return foresporselMatchesSearch(inn, query, innbytteSearchFieldValues);
+}
+
+function selgBilSearchFieldValues(item) {
+  return [
+    item.navn,
+    item.epost,
+    item.tlf,
+    String(item.tlf || '').replace(/\D/g, ''),
+    item.reg,
+    item.merke,
+    item.modell,
+    item.aar,
+    item.forventning,
+    item.ansvarlig,
+    item.beskrivelse,
+    item.status,
+    item.drivstoff,
+    item.farge,
+    item.servicehistorikk,
+    item.sisteService,
+    item.sommerdekk,
+    item.vinterdekk,
+    item.kjoretoyType,
+    item.hjuldrift,
+    ...(item.kommentarer || []).map(function (c) { return c.text; })
+  ]
+    .filter(function (value) { return value != null && value !== ''; })
+    .map(normalizeSearchQuery);
+}
+
+export function selgBilMatchesSearch(item, query) {
+  return foresporselMatchesSearch(item, query, selgBilSearchFieldValues);
 }
 
 export const MODUL_ICONS = {

@@ -26,7 +26,7 @@ import {
 import { matchesInnbytteTilBil } from './lib/innbytteBilMatch.js';
 import {
   DEFAULT_INNSTILLINGER, SFARGE, KFARGE, TAB_PERMISSIONS, canAccess, canDeleteBil, canAddBil, displayRole,
-  canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch, innbytteMatchesSearch,
+  canDeleteHenvKommentar, createHenvKommentar, normalizeInternKommentarer, formatKommentarDato, bilMatchesSearch, innbytteMatchesSearch, selgBilMatchesSearch,
   normalizeHenvStatusFarger, normalizeBilStatusFarger, DEFAULT_HENV_STATUS_FARGER,
   DEFAULT_INNBYTTE_STATUS_FARGER, normalizeInnbytteStatusFarger,
   DEFAULT_BIL_STATUS_FARGER, DEFAULT_SJEKKLISTE_MAL, DEFAULT_BIL_SJEKKLISTER,
@@ -8265,8 +8265,18 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
 }
 
 function SelgBilView({ selgBil, setModal, lists, visTost }) {
+  const [search, setSearch] = useState('');
   const [finnSokLasterId, setFinnSokLasterId] = useState(null);
   const statusColors = lists?.innbytteStatusFarger || DEFAULT_INNBYTTE_STATUS_FARGER;
+  const searchQuery = search.trim();
+  const searchActive = searchQuery.length > 0;
+  const filteredSelgBil = useMemo(function () {
+    if (!searchActive) return selgBil;
+    return selgBil.filter(function (item) {
+      return selgBilMatchesSearch(item, searchQuery);
+    });
+  }, [selgBil, searchActive, searchQuery]);
+  const nyeCount = selgBil.filter(function (i) { return i.status === 'Ny'; }).length;
 
   async function handleFinnMarkedsSok(inn) {
     if (!canFinnMarkedsSok(inn) || finnSokLasterId != null) return;
@@ -8286,10 +8296,35 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
       <div className="ph">
         <div>
           <div className="ph-title">Selg din bil</div>
-          <div className="ph-sub">Fra xbilsenter.no/selg-bil · {selgBil.filter(i => i.status === 'Ny').length} nye</div>
+          <div className="ph-sub">
+            Fra xbilsenter.no/selg-bil · {nyeCount} nye
+            {searchActive ? ` · ${filteredSelgBil.length} treff` : ''}
+          </div>
         </div>
       </div>
-      {selgBil.map(inn => (
+      <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
+        <div className="fl">Søk i oppkjøpsforespørsler</div>
+        <div className="search-row" style={{ marginBottom: 0 }}>
+          <input
+            type="search"
+            value={search}
+            onChange={function (e) { setSearch(e.target.value); }}
+            placeholder="Navn, e-post, telefon, reg.nr., bil…"
+            aria-label="Søk i oppkjøpsforespørsler"
+          />
+          {searchActive && (
+            <button type="button" className="btn btn-g btn-sm" onClick={function () { setSearch(''); }}>
+              Nullstill
+            </button>
+          )}
+        </div>
+      </div>
+      {searchActive && filteredSelgBil.length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--t4)', padding: 40, fontSize: 13 }}>
+          Ingen treff på «{searchQuery}».
+        </div>
+      ) : null}
+      {filteredSelgBil.map(inn => (
         <div className="inb-card" key={inn.id} style={statusCardStyle(inn.status, statusColors)}>
           <div className="inb-card__head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
             <div>
@@ -8325,7 +8360,7 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
           {inn.beskrivelse && <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 8, fontStyle: 'italic' }}>{inn.beskrivelse}</div>}
         </div>
       ))}
-      {selgBil.length === 0 && (
+      {!searchActive && selgBil.length === 0 && (
         <div style={{ textAlign: 'center', color: 'var(--t4)', padding: 40, fontSize: 13 }}>Ingen oppkjøpsforespørsler ennå.</div>
       )}
     </>
