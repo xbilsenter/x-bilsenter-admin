@@ -581,7 +581,7 @@ function mergeLocalBilFromServer(local, server) {
     next.svvData = local.svvData;
   }
   if (local.okonomi || server.okonomi) {
-    next.okonomi = normalizeBilOkonomi(mergeBilOkonomi(server.okonomi, local.okonomi));
+    next.okonomi = mergeBilOkonomi(server.okonomi, local.okonomi);
   }
   return next;
 }
@@ -1085,7 +1085,7 @@ export default function App() {
         if (b.id !== id) return b;
         let next = { ...b, ...patch };
         if (patch.okonomi != null) {
-          next.okonomi = normalizeBilOkonomi(mergeBilOkonomi(b.okonomi, patch.okonomi));
+          next.okonomi = mergeBilOkonomi(b.okonomi, patch.okonomi);
         }
         if (patch.status && patch.status !== b.status && patch.sjekklister == null) {
           next = { ...next, ...withStatusChange(b, patch.status, innstillinger.bilSjekklister) };
@@ -3569,6 +3569,9 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const pendingAutosysTextPatchRef = useRef(null);
   const okonomiSaveTimerRef = useRef(null);
   const okonomiSaveMsgRef = useRef(null);
+  const numericSaveTimerRef = useRef(null);
+  const pendingNumericPatchRef = useRef({});
+  const numericSaveMsgRef = useRef(null);
   const composingRef = useRef(false);
   const pendingPatchRef = useRef({});
   const bilSnapshotRef = useRef(data);
@@ -3710,6 +3713,31 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     }, 450);
   }, [flushOkonomiSave]);
 
+  const flushNumericSave = useCallback(function (msg) {
+    clearTimeout(numericSaveTimerRef.current);
+    numericSaveTimerRef.current = null;
+    const pending = pendingNumericPatchRef.current;
+    pendingNumericPatchRef.current = {};
+    if (!Object.keys(pending).length) return saveChainRef.current;
+    const toSave = {};
+    Object.keys(pending).forEach(function (key) {
+      toSave[key] = numberInputForSave(pending[key]);
+    });
+    const finalMsg = msg || numericSaveMsgRef.current;
+    numericSaveMsgRef.current = null;
+    return saveImmediate(toSave, finalMsg);
+  }, [saveImmediate]);
+
+  const scheduleNumericSave = useCallback(function (patch, msg) {
+    if (msg) numericSaveMsgRef.current = msg;
+    pendingNumericPatchRef.current = { ...pendingNumericPatchRef.current, ...patch };
+    clearTimeout(numericSaveTimerRef.current);
+    numericSaveTimerRef.current = setTimeout(function () {
+      numericSaveTimerRef.current = null;
+      flushNumericSave();
+    }, 450);
+  }, [flushNumericSave]);
+
   const bilTextCompositionHandlers = useMemo(function () {
     return {
       onCompositionStart: function () { composingRef.current = true; },
@@ -3742,19 +3770,21 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
     Promise.all([
       flushTextSave(),
       flushAutosysTextSave(),
+      flushNumericSave(),
       flushOkonomiSave(),
       saveChainRef.current.catch(function () {})
     ]).finally(function () {
       setClosing(false);
       onClose();
     });
-  }, [closing, flushTextSave, flushAutosysTextSave, flushOkonomiSave, onClose]);
+  }, [closing, flushTextSave, flushAutosysTextSave, flushNumericSave, flushOkonomiSave, onClose]);
 
   useEffect(function () {
     return function () {
       clearTimeout(debounceTimerRef.current);
       clearTimeout(autosysTextDebounceRef.current);
       clearTimeout(okonomiSaveTimerRef.current);
+      clearTimeout(numericSaveTimerRef.current);
       const toSend = collectPendingTextPatch();
       const id = bilRef.current?.id;
       if (id && toSend && Object.keys(toSend).length) {
@@ -3769,6 +3799,16 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
         okonomiSaveTimerRef.current = null;
         const normalized = normalizeBilOkonomi(bilRef.current?.okonomi);
         saveImmediateRef.current({ okonomi: normalized });
+      }
+      const pendingNumeric = pendingNumericPatchRef.current;
+      if (id && (numericSaveTimerRef.current || Object.keys(pendingNumeric).length)) {
+        numericSaveTimerRef.current = null;
+        pendingNumericPatchRef.current = {};
+        const toSave = {};
+        Object.keys(pendingNumeric).forEach(function (key) {
+          toSave[key] = numberInputForSave(pendingNumeric[key]);
+        });
+        if (Object.keys(toSave).length) saveImmediateRef.current(toSave);
       }
     };
   }, [enqueueTextSave, collectPendingTextPatch]);
@@ -3983,6 +4023,9 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
       } else if (BIL_DEBOUNCED_TEXT_FIELDS.has(k)) {
         applyBilPatchLocal(prev.id, patch);
         queueTextSave({ [k]: payload }, msg);
+      } else if (BIL_NUMERIC_FIELDS.has(k)) {
+        applyBilPatchLocal(prev.id, { [k]: stored });
+        scheduleNumericSave({ [k]: stored }, msg);
       } else {
         saveImmediate(patch, msg);
       }
@@ -4002,15 +4045,15 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const oppdaterOkonomi = useCallback(function (patch, msg) {
     userEditedRef.current = true;
     const prev = bilRef.current || bil;
-    const resolvedPatch = typeof patch === 'function' ? patch(prev.okonomi) : patch;
+    const resolvedPatch = typeof patch === 'function' ? patch(prev.okonomi || {}) : patch;
     const local = mergeBilOkonomi(prev.okonomi, resolvedPatch);
-    const normalized = normalizeBilOkonomi(local);
-    const next = { ...prev, okonomi: normalized };
+    const next = { ...prev, okonomi: local };
     bilRef.current = next;
-    bilSnapshotRef.current = { ...bilSnapshotRef.current, okonomi: normalized };
+    bilSnapshotRef.current = { ...bilSnapshotRef.current, okonomi: local };
+    applyBilPatchLocal(prev.id, { okonomi: local });
     setBil(next);
     scheduleOkonomiSave(msg);
-  }, [bil, scheduleOkonomiSave]);
+  }, [bil, scheduleOkonomiSave, applyBilPatchLocal]);
 
   const oppdaterReservasjon = useCallback(function (patch, msg) {
     const prev = bilRef.current || bil;
@@ -4441,12 +4484,41 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   );
 }
 
+function OkonomiBelopField({ value, onChange, placeholder }) {
+  const [draft, setDraft] = useState('');
+  const [focused, setFocused] = useState(false);
+  const shown = focused ? draft : okonomiBelopDisplay(value);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      placeholder={placeholder}
+      value={shown}
+      onFocus={function () {
+        setFocused(true);
+        setDraft(okonomiBelopDisplay(value));
+      }}
+      onChange={function (e) {
+        const raw = e.target.value;
+        setDraft(raw);
+        onChange(parseNumberInput(raw));
+      }}
+      onBlur={function () {
+        setFocused(false);
+        setDraft('');
+      }}
+    />
+  );
+}
+
 function BilOkonomiTab({ bil, bilRef, oppdater, oppdaterOkonomi }) {
-  const okonomi = normalizeBilOkonomi(bil.okonomi);
+  const okonomi = bil.okonomi && typeof bil.okonomi === 'object' ? bil.okonomi : {};
+  const okonomiForCalc = normalizeBilOkonomi(okonomi);
   const stats = calcBilOkonomi(
     bil.innkjop,
     bil.salg,
-    okonomi
+    okonomiForCalc
   );
   const harSalg = okonomiBelopValue(bil.salg) > 0;
   const [nyKostLabel, setNyKostLabel] = useState('');
@@ -4494,8 +4566,8 @@ function BilOkonomiTab({ bil, bilRef, oppdater, oppdaterOkonomi }) {
     }, 'Salgsdato oppdatert ✓');
   };
 
-  const settOkonomiFelt = (key, value) => {
-    oppdaterOkonomi({ [key]: parseNumberInput(value) });
+  const settOkonomiFelt = function (key, value) {
+    oppdaterOkonomi({ [key]: value });
   };
 
   const leggTilKostnad = () => {
@@ -4544,11 +4616,14 @@ function BilOkonomiTab({ bil, bilRef, oppdater, oppdaterOkonomi }) {
           <div className="form-row gap">
             <div>
               <div className="fl">Innkjøpspris (kr)</div>
-              <input type="number" value={monetaryInputDisplay(bil.innkjop)} onChange={e => oppdater('innkjop', parseNumberInput(e.target.value), 'Innkjøp oppdatert ✓')} />
+              <OkonomiBelopField
+                value={bil.innkjop}
+                onChange={function (v) { oppdater('innkjop', v, 'Innkjøp oppdatert ✓'); }}
+              />
             </div>
             <div>
               <div className="fl">Salgspris (kr)</div>
-              <input type="number" value={monetaryInputDisplay(bil.salg)} onChange={e => oppdaterSalg(e.target.value)} />
+              <OkonomiBelopField value={bil.salg} onChange={oppdaterSalg} />
             </div>
           </div>
         </div>
@@ -4581,7 +4656,7 @@ function BilOkonomiTab({ bil, bilRef, oppdater, oppdaterOkonomi }) {
               <div className="fl">Salgsdato</div>
               <input
                 type="date"
-                value={okonomi.salgDato || ''}
+                value={normalizeSalgDato(okonomi.salgDato) || ''}
                 onChange={function (e) { oppdaterSalgDato(e.target.value); }}
               />
             </div>
@@ -4623,7 +4698,10 @@ function BilOkonomiTab({ bil, bilRef, oppdater, oppdaterOkonomi }) {
           return (
             <div key={key}>
               <div className="fl">{label}</div>
-              <input type="number" value={okonomiBelopDisplay(okonomi[key])} onChange={e => settOkonomiFelt(key, e.target.value)} />
+              <OkonomiBelopField
+                value={okonomi[key]}
+                onChange={function (v) { settOkonomiFelt(key, v); }}
+              />
             </div>
           );
         })}
@@ -4641,11 +4719,10 @@ function BilOkonomiTab({ bil, bilRef, oppdater, oppdaterOkonomi }) {
               placeholder="Beskrivelse"
               onChange={e => oppdaterKostnad(item.id, { label: e.target.value })}
             />
-            <input
-              type="number"
-              value={okonomiBelopDisplay(item.belop)}
+            <OkonomiBelopField
+              value={item.belop}
               placeholder="Beløp"
-              onChange={e => oppdaterKostnad(item.id, { belop: parseNumberInput(e.target.value) })}
+              onChange={function (v) { oppdaterKostnad(item.id, { belop: v }); }}
             />
             <button type="button" className="btn btn-red btn-xs" onClick={function () { slettKostnad(item.id); }}>
               Slett

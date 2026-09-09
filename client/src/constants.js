@@ -769,7 +769,9 @@ function normalizeBilOkonomiKostnader(kostnader) {
       label: String(item?.label || '').trim(),
       belop: okonomiBelopForSave(item?.belop)
     };
-  }).filter(function (item) { return item.label || item.belop != null; });
+  }).filter(function (item) {
+    return item.label || item.belop != null || !!item.id;
+  });
 }
 
 export function mergeBilOkonomi(prev, patch) {
@@ -1424,8 +1426,8 @@ export function mergeBilDebouncedTextFields(saved, local) {
   BIL_LOCAL_TEXT_PRESERVE_FIELDS.forEach(function (key) {
     if (local[key] !== undefined) next[key] = local[key];
   });
-  if (local.innkjop !== undefined && local.innkjop !== '') next.innkjop = local.innkjop;
-  if (local.salg !== undefined && local.salg !== '') next.salg = local.salg;
+  if (local.innkjop !== undefined) next.innkjop = local.innkjop;
+  if (local.salg !== undefined) next.salg = local.salg;
   if (local.okonomi && typeof local.okonomi === 'object') {
     next.okonomi = mergeBilOkonomi(saved.okonomi, local.okonomi);
   }
