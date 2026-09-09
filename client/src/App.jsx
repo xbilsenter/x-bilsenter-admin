@@ -148,8 +148,8 @@ function formatKalTid(e) {
   return e.tid;
 }
 
-function SignaturePreview({ body, signatur, label }) {
-  const html = buildSignaturePreviewHtml(body, signatur);
+function SignaturePreview({ body, signatur, fromName, label }) {
+  const html = buildSignaturePreviewHtml(body, signatur, fromName);
   if (!html) return null;
   return (
     <div className="mail-signatur-preview">
@@ -5422,7 +5422,7 @@ function ComposeMailModal({ kontoer, draftId: initialDraftId, replyTo, forwardFr
     }
   };
 
-  const previewHtml = buildMailPreviewHtml(bodyHtml, valgtKonto?.signatur || '', quoteHtml);
+  const previewHtml = buildMailPreviewHtml(bodyHtml, valgtKonto?.signatur || '', quoteHtml, valgtKonto?.fromName || '');
 
   const slettUtkast = async () => {
     if (replyTo) {
@@ -7883,10 +7883,11 @@ function HenvModal({ data, onClose, updateHenv, deleteHenv, onSendSvar, visTost,
               </div>
             )}
             <textarea rows={8} value={svar} onChange={e => setSvar(e.target.value)} placeholder="Skriv svar her..." />
-            {sendKonto?.signatur && mailStatus?.smtpConfigured && (
+            {mailStatus?.smtpConfigured && sendKonto && (
               <SignaturePreview
                 body={svar}
-                signatur={sendKonto.signatur}
+                signatur={sendKonto.signatur || ''}
+                fromName={sendKonto.fromName || sendKonto.navn || 'X Bilsenter AS'}
                 label={`Signatur fra ${sendKonto.navn} legges til automatisk`}
               />
             )}
@@ -8704,10 +8705,11 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
                   placeholder="Skriv e-post til kunden..."
                   style={{ marginTop: 6, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}
                 />
-                {sendKonto?.signatur && mailStatus?.smtpConfigured && (
+                {mailStatus?.smtpConfigured && sendKonto && (
                   <SignaturePreview
                     body={melding}
-                    signatur={sendKonto.signatur}
+                    signatur={sendKonto.signatur || ''}
+                    fromName={sendKonto.fromName || sendKonto.navn || 'X Bilsenter AS'}
                     label={`Signatur fra ${sendKonto.navn} legges til automatisk`}
                   />
                 )}
@@ -9049,10 +9051,11 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
                   placeholder="Skriv e-post til kunden..."
                   style={{ marginTop: 6, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}
                 />
-                {sendKonto?.signatur && mailStatus?.smtpConfigured && (
+                {mailStatus?.smtpConfigured && sendKonto && (
                   <SignaturePreview
                     body={melding}
-                    signatur={sendKonto.signatur}
+                    signatur={sendKonto.signatur || ''}
+                    fromName={sendKonto.fromName || sendKonto.navn || 'X Bilsenter AS'}
                     label={`Signatur fra ${sendKonto.navn} legges til automatisk`}
                   />
                 )}

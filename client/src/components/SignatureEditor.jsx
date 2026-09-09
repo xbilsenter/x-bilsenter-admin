@@ -64,10 +64,11 @@ function normalizeUploadUrls(html) {
     .replace(/src=["'](\/uploads\/[^"']+)["']/gi, 'src="$1"');
 }
 
-export function buildSignaturePreviewHtml(bodyText, signaturHtml) {
+export function buildSignaturePreviewHtml(bodyText, signaturHtml, fromName) {
   return buildOutgoingMailPreviewHtml({
     text: bodyText,
-    signatur: signaturHtml
+    signatur: signaturHtml,
+    fromName: fromName || ''
   });
 }
 

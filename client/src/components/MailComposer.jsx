@@ -61,11 +61,12 @@ export function cleanComposeHtml(html) {
   return normalizeOutgoingHtml(html);
 }
 
-export function buildMailPreviewHtml(bodyHtml, signaturHtml, quoteHtml) {
+export function buildMailPreviewHtml(bodyHtml, signaturHtml, quoteHtml, fromName) {
   return buildOutgoingMailPreviewHtml({
     html: cleanComposeHtml(bodyHtml),
     signatur: signaturHtml,
-    quoteHtml: quoteHtml || ''
+    quoteHtml: quoteHtml || '',
+    fromName: fromName || ''
   });
 }
 

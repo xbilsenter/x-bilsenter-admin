@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { openUpload, toUploadPath, uploadPathToKey } = require('./storage');
+const { fixSignatureImageSources } = require('../shared/mail-content');
 
 const KNOWN_PUBLIC_ORIGINS = [
   process.env.ADMIN_PUBLIC_URL,
@@ -192,7 +193,7 @@ function countUnembeddedLocalImages(html) {
 }
 
 async function embedInlineImagesInHtml(html, baseUrl) {
-  const htmlStr = String(html || '');
+  const htmlStr = fixSignatureImageSources(String(html || ''));
   if (!htmlStr || !/<img\b/i.test(htmlStr)) {
     return { html: htmlStr, attachments: [], failed: [] };
   }

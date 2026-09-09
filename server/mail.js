@@ -238,7 +238,14 @@ async function sendMail(options) {
   const konto = await resolveSendAccount(kontoId);
   const transporter = createTransporter(konto);
   const from = getFromAddress(konto);
-  const merged = prepareMailContent(bodyText, bodyHtml, konto.signatur, ADMIN_PUBLIC_URL, replyQuoteHtml);
+  const merged = prepareMailContent(
+    bodyText,
+    bodyHtml,
+    konto.signatur,
+    ADMIN_PUBLIC_URL,
+    replyQuoteHtml,
+    konto.fromName
+  );
   const embedded = await embedInlineImagesInHtml(merged.html, ADMIN_PUBLIC_URL);
   if (embedded.failed?.length) {
     console.error('[mail/send] Signaturbilde kunne ikke legges ved:', embedded.failed.join(', '));
