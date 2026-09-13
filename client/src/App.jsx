@@ -7998,21 +7998,41 @@ function InfoGrid({ items }) {
   );
 }
 
-function formatIngestMotoreffekt(row) {
+function formatIngestSamletEffekt(row) {
   const motorer = Array.isArray(row?.motorer) ? row.motorer.filter(Boolean) : [];
-  if (motorer.length > 1) {
-    return motorer.map(function (m) {
-      const eff = m.effektHk ? `${m.effektHk} hk` : (m.effektKw ? `${m.effektKw} kW` : '—');
-      return `Motor ${m.nr || ''}: ${eff}`.replace('Motor :', 'Motor');
-    }).join(' · ');
+  let sumHk = 0;
+  let sumKw = 0;
+  let hasHk = false;
+  let hasKw = false;
+  motorer.forEach(function (m) {
+    const hk = Number(m.effektHk);
+    const kw = Number(m.effektKw);
+    if (Number.isFinite(hk) && hk > 0) {
+      sumHk += hk;
+      hasHk = true;
+    }
+    if (Number.isFinite(kw) && kw > 0) {
+      sumKw += kw;
+      hasKw = true;
+    }
+  });
+  if (hasHk) {
+    return `${sumHk} hk${hasKw ? ` (${sumKw} kW)` : ''}`;
   }
-  if (motorer.length === 1) {
-    const m = motorer[0];
-    if (m.effektHk) return `${m.effektHk} hk${m.effektKw ? ` (${m.effektKw} kW)` : ''}`;
-    if (m.effektKw) return `${m.effektKw} kW`;
-  }
+  if (motorer.length === 1 && motorer[0].effektKw) return `${motorer[0].effektKw} kW`;
   if (row?.effektHk) return `${row.effektHk} hk${row.effektKw ? ` (${row.effektKw} kW)` : ''}`;
   if (row?.effektKw) return `${row.effektKw} kW`;
+  return '';
+}
+
+function formatIngestHjuldrift(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'forhjulsdrift' || raw === 'bakhjulsdrift' || raw === 'firehjulsdrift') return raw;
+  if (raw.includes('firehjul') || raw.includes('4wd') || raw.includes('awd') || raw === '2 aksler') return 'firehjulsdrift';
+  if (raw.includes('forhjul') || raw.includes('fwd')) return 'forhjulsdrift';
+  if (raw.includes('bakhjul') || raw.includes('rwd')) return 'bakhjulsdrift';
+  if (raw === '1 aksel') return '';
   return '';
 }
 
@@ -8040,6 +8060,7 @@ function mergeIngestVehicleRow(row, vehicle) {
     bruktimport: has(row.bruktimport) ? row.bruktimport : (vehicle.bruktimport || ''),
     effektHk: has(row.effektHk) ? row.effektHk : (vehicle.effektHk ?? ''),
     effektKw: has(row.effektKw) ? row.effektKw : (vehicle.effektKw ?? ''),
+    hjuldrift: has(row.hjuldrift) ? row.hjuldrift : (vehicle.hjuldrift || ''),
     antallMotorer: has(row.antallMotorer) ? row.antallMotorer : (vehicle.antallMotorer ?? ''),
     rekkevidde: has(row.rekkevidde) ? row.rekkevidde : formatIngestRekkevidde(vehicle),
     chassisnr: has(row.chassisnr) ? row.chassisnr : (vehicle.understell || row.understell || ''),
@@ -8085,8 +8106,9 @@ function IngestKundensBilSeksjon({ row, active }) {
 }
 
 function buildIngestKundensBilItems(row) {
-  const effekt = formatIngestMotoreffekt(row);
-  const antallMotorer = Number(row?.antallMotorer);
+  const effekt = formatIngestSamletEffekt(row);
+  const hjuldrift = formatIngestHjuldrift(row.hjuldrift);
+  const farge = formatSvvFargeNavn(row.farge) || String(row.farge || '').trim();
   const chassisnr = String(row?.chassisnr || row?.understell || '').trim().toUpperCase();
   const items = [
     ['Registreringsnr.', row.reg],
@@ -8094,17 +8116,15 @@ function buildIngestKundensBilItems(row) {
     ['Merke / modell', [row.merke, row.modell].filter(Boolean).join(' ')],
     ['Årsmodell', row.aar],
     ['Kilometerstand', row.km ? `${fmtKm(row.km)} km` : ''],
+    ['Farge', farge],
     ['Drivstoff', row.drivstoff],
     ['Girkasse', row.girkasse],
-    ['Farge', formatSvvFargeNavn(row.farge)],
+    ['Hjuldrift', hjuldrift],
     ['Førstegangsregistrert', row.forstegangsregistrert],
     ['Bruktimport', row.bruktimport],
     ['Neste EU-kontroll', row.nesteEuKontroll ? formatEuKontrollVisning(row.nesteEuKontroll) : ''],
     ['Effekt', effekt],
   ];
-  if (antallMotorer > 1) {
-    items.push(['Antall motorer', String(antallMotorer)]);
-  }
   if (row.rekkevidde) {
     items.push(['Rekkevidde', row.rekkevidde]);
   }
@@ -8383,8 +8403,20 @@ function InnbytteView({ innbytte, setModal, lists, visTost }) {
               <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ t: 'visInb', d: inn })}>Behandle</button>
             </div>
           </div>
+          <div className="inb-card__deal">
+            <div className="inb-card__deal-item">
+              <div className="fl">Prisforventning</div>
+              <div className="fv inb-card__deal-value--gold">
+                {inn.forventning ? formatForventningDisplay(inn.forventning) : 'Ikke oppgitt'}
+              </div>
+            </div>
+            <div className="inb-card__deal-item">
+              <div className="fl">Ønsket bil hos oss</div>
+              <div className="fv inb-card__deal-value--acc">{inn.onsketBil || '—'}</div>
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-            {[['Ønsket bil', inn.onsketBil || '—'], ['Tilstand', inn.tilstand], ['Tilbud', inn.tilbud ? nok(inn.tilbud) : 'Ikke gitt'], ['Ansvarlig', inn.ansvarlig || 'Ikke tildelt'], ['Dato', inn.dato]].map(([l, v]) => (
+            {[['Tilstand', inn.tilstand], ['Tilbud', inn.tilbud ? nok(inn.tilbud) : 'Ikke gitt'], ['Ansvarlig', inn.ansvarlig || 'Ikke tildelt'], ['Dato', inn.dato]].map(([l, v]) => (
               <div key={l}>
                 <div className="fl">{l}</div>
                 <div className="fv" style={{ fontSize: 12, color: l === 'Tilbud' && inn.tilbud ? 'var(--gold)' : 'var(--t2)' }}>{v}</div>
@@ -8810,6 +8842,41 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
   );
 }
 
+function InnbytteDealHighlight({ inn, finnMeta, finnLaster }) {
+  const onsketVisning = finnLaster
+    ? 'Henter annonse fra FINN…'
+    : (finnMeta?.title || inn.onsketBil || '—');
+  const onsketUrl = finnMeta?.url || null;
+
+  return (
+    <div className="inb-modal__deal-highlight">
+      <div className="inb-modal__deal-block">
+        <div className="inb-modal__deal-label">Kundens prisforventning</div>
+        <div className="inb-modal__deal-value inb-modal__deal-value--gold">
+          {inn.forventning ? formatForventningDisplay(inn.forventning) : 'Ikke oppgitt'}
+        </div>
+      </div>
+      <div className="inb-modal__deal-block">
+        <div className="inb-modal__deal-label">Ønsket bil hos oss</div>
+        {onsketUrl && !finnLaster ? (
+          <a
+            href={onsketUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inb-modal__deal-value inb-modal__deal-value--link"
+          >
+            {onsketVisning}
+          </a>
+        ) : (
+          <div className={`inb-modal__deal-value${finnLaster ? '' : ' inb-modal__deal-value--acc'}`}>
+            {onsketVisning}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud, visTost, lists, mailStatus, currentUser, kunder, setKunder, setModal }) {
   const [inn, setInn] = useState(data);
   const [activeTab, setActiveTab] = useState('foresporsel');
@@ -8977,6 +9044,8 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
           </button>
         </div>
 
+        <InnbytteDealHighlight inn={inn} finnMeta={finnMeta} finnLaster={finnLaster} />
+
         <ModalTabs
           active={activeTab}
           onChange={setActiveTab}
@@ -9015,45 +9084,17 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
                 ) : null}
                 <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 12, lineHeight: 1.45 }}>
                   {canFinnMarkedsSok(inn)
-                    ? <>FINN-markedssøk: {finnMarkedsSokLabel(inn)}{finnMarkedsSokFilterText(inn) ? ` (${finnMarkedsSokFilterText(inn)})` : ''} · pris lav → høy</>
+                    ? <>FINN-markedssøk: {finnMarkedsSokLabel(inn)}{finnMarkedsSokFilterText(inn) ? ` (${finnMarkedsSokFilterText(inn)})` : ''} · pris lav → høy · kun filter</>
                     : 'Legg inn merke og modell for å sammenligne mot FINN.'}
                 </div>
               </section>
 
-              <section className="inb-modal__panel inb-modal__panel--secondary">
-                <div className="modal-sec">Ønsket bil hos oss</div>
-                {finnLaster ? (
-                  <div className="fv" style={{ fontSize: 12, color: 'var(--t3)' }}>Henter annonse fra FINN…</div>
-                ) : null}
-                {!finnLaster && finnMeta?.title ? (
-                  <>
-                    <div className="fv" style={{ color: 'var(--acc)', fontWeight: 600 }}>{finnMeta.title}</div>
-                    {finnMeta.url ? (
-                      <a href={finnMeta.url} target="_blank" rel="noopener noreferrer" className="inb-modal__link">
-                        {finnMeta.url}
-                      </a>
-                    ) : null}
-                  </>
-                ) : null}
-                {!finnLaster && !finnMeta?.title && inn.onsketBil ? (
-                  <div className="fv" style={{ color: 'var(--acc)', fontWeight: 600 }}>{inn.onsketBil}</div>
-                ) : null}
-                {!finnLaster && !finnMeta?.title && !inn.onsketBil ? (
-                  <div className="fv">—</div>
-                ) : null}
-                {inn.forventning ? (
-                  <div className="gap" style={{ marginTop: 14 }}>
-                    <div className="fl">Kundens prisforventning</div>
-                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{formatForventningDisplay(inn.forventning)}</div>
-                  </div>
-                ) : null}
-                {inn.tilbud ? (
-                  <div className="gap" style={{ marginTop: 14 }}>
-                    <div className="fl">Gitt tilbud</div>
-                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{nok(inn.tilbud)}</div>
-                  </div>
-                ) : null}
-              </section>
+              {inn.tilbud ? (
+                <section className="inb-modal__panel inb-modal__panel--secondary">
+                  <div className="modal-sec">Gitt tilbud</div>
+                  <div className="fv" style={{ color: 'var(--gold)', fontWeight: 700, fontSize: 18 }}>{nok(inn.tilbud)}</div>
+                </section>
+              ) : null}
             </div>
           ) : null}
 

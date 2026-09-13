@@ -448,14 +448,12 @@ function buildFinnMarkedsSokParams(inn) {
   return params;
 }
 
-function buildFinnMarkedsSokUrl(inn, variant, submodelQuery) {
+function buildFinnMarkedsSokUrl(inn, variant) {
   const filterVariant = String(variant || '').trim();
   if (!filterVariant) return null;
 
   const params = buildFinnMarkedsSokParams(inn);
   params.set('variant', filterVariant);
-  const q = String(submodelQuery || '').trim();
-  if (q) params.set('q', q.toLowerCase());
   return `${FINN_SEARCH_BASE}?${params.toString()}`;
 }
 
@@ -473,29 +471,17 @@ function buildFinnMarkedsSokUrlQ(inn) {
 async function resolveFinnMarkedsSok(inn) {
   const resolved = await resolveFinnVariant(inn?.merke, inn?.modell);
   if (resolved?.variant) {
-    const submodelQuery = extractFinnSubmodelQuery(inn?.modell, resolved.modelLabel || resolved.makeLabel);
-    const url = buildFinnMarkedsSokUrl(inn, resolved.variant, submodelQuery);
+    const url = buildFinnMarkedsSokUrl(inn, resolved.variant);
     if (url) {
       return {
         url,
         ...resolved,
-        submodelQuery: submodelQuery || null,
         mode: 'filter'
       };
     }
   }
 
-  const fallbackUrl = buildFinnMarkedsSokUrlQ(inn);
-  if (!fallbackUrl) return null;
-  return {
-    url: fallbackUrl,
-    makeVariant: null,
-    modelVariant: null,
-    makeLabel: normalizeFinnSearchTerm(inn?.merke) || null,
-    modelLabel: normalizeFinnSearchTerm(inn?.modell) || null,
-    variant: null,
-    mode: 'search'
-  };
+  return null;
 }
 
 async function lookupFinnAnnonse(ref) {

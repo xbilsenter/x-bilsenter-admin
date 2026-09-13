@@ -291,13 +291,18 @@ function parseHjuldrift(motor, akslinger, ovrige) {
       || String(aksel?.drivAksel).toLowerCase() === 'true';
   });
 
-  if (driveAxles.length > 0) {
-    return driveAxles.length === 1 ? '1 aksel' : `${driveAxles.length} aksler`;
+  if (driveAxles.length >= 2) return 'firehjulsdrift';
+
+  if (driveAxles.length === 1) {
+    const plass = Number(driveAxles[0]?.plasseringAksel);
+    if (plass === 1) return 'forhjulsdrift';
+    if (plass >= 2) return 'bakhjulsdrift';
+    if (driveAxles[0]?.styreAksel === true || driveAxles[0]?.styreAksel === 1) return 'forhjulsdrift';
+    return 'bakhjulsdrift';
   }
 
   const antallHjul = Number(motor?.antallHjulDrift);
-  if (antallHjul >= 4) return '2 aksler';
-  if (antallHjul === 2 || antallHjul === 1) return '1 aksel';
+  if (antallHjul >= 4) return 'firehjulsdrift';
 
   return null;
 }

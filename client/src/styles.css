@@ -948,6 +948,18 @@ select option{background:var(--s1);}
 .inb-modal{padding-top:22px;}
 .inb-modal__head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;}
 .inb-modal__meta{font-size:12px;color:var(--t3);line-height:1.45;}
+.inb-modal__deal-highlight{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;padding:14px 16px;background:linear-gradient(180deg,#fff9eb 0%,#fff 100%);border:1px solid rgba(201,162,39,.35);border-radius:12px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.6);}
+.inb-modal__deal-block{min-width:0;}
+.inb-modal__deal-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:6px;}
+.inb-modal__deal-value{font-size:17px;font-weight:700;color:var(--t1);line-height:1.35;word-break:break-word;}
+.inb-modal__deal-value--gold{color:var(--gold);}
+.inb-modal__deal-value--acc{color:var(--acc);}
+.inb-modal__deal-value--link{color:var(--acc);text-decoration:none;}
+.inb-modal__deal-value--link:hover{text-decoration:underline;}
+.inb-card__deal{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;padding:10px 12px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;}
+.inb-card__deal-item{min-width:0;}
+.inb-card__deal-value--gold{font-size:14px;font-weight:700;color:var(--gold);}
+.inb-card__deal-value--acc{font-size:13px;font-weight:600;color:var(--acc);word-break:break-word;}
 .inb-modal__toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;margin-bottom:14px;background:var(--s2);border:1px solid var(--b1);border-radius:12px;}
 .inb-modal__toolbar-fields{display:flex;gap:12px;flex-wrap:wrap;flex:1;}
 .inb-modal__field{display:flex;flex-direction:column;gap:4px;min-width:160px;}
@@ -1048,6 +1060,8 @@ select option{background:var(--s1);}
 @media(max-width:900px){
   .inb-modal__grid{grid-template-columns:1fr;}
   .inb-modal__grid--ingest{grid-template-areas:"kunde" "bil" "secondary";}
+  .inb-modal__deal-highlight{grid-template-columns:1fr;}
+  .inb-card__deal{grid-template-columns:1fr;}
   .inb-modal__toolbar{align-items:stretch;flex-direction:column;}
   .inb-modal__toolbar .btn{width:100%;justify-content:center;}
   .bil-reservasjon__layout{grid-template-columns:1fr;}
