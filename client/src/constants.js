@@ -1135,12 +1135,12 @@ export function euKontrollManederIgjen(value) {
   return months;
 }
 
-/** Grønn >15 mnd, oransje 3–15 mnd, rød <3 mnd (eller passert). */
+/** Rød <4 mnd, gul 4–9 mnd, grønn ≥10 mnd (eller passert = rød). */
 export function euKontrollChipClass(value) {
   const months = euKontrollManederIgjen(value);
   if (months == null) return 'chip-gray';
-  if (months < 3) return 'chip-red';
-  if (months > 15) return 'chip-green';
+  if (months < 4) return 'chip-red';
+  if (months >= 10) return 'chip-green';
   return 'chip-orange';
 }
 
