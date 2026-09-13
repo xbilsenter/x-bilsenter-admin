@@ -704,25 +704,33 @@ export default function App() {
   }, []);
 
   const runEuKontrollBackgroundSync = useCallback(function (options) {
-    if (euKontrollSyncInFlightRef.current) return Promise.resolve();
+    if (euKontrollSyncInFlightRef.current) return Promise.resolve(null);
     const last = Number(sessionStorage.getItem(EU_KONTROLL_SYNC_STORAGE_KEY) || 0);
     const minGap = options?.force ? 0 : EU_KONTROLL_SYNC_MIN_GAP_MS;
-    if (last && (Date.now() - last) < minGap) return Promise.resolve();
+    if (last && (Date.now() - last) < minGap) return Promise.resolve(null);
 
     euKontrollSyncInFlightRef.current = true;
     return syncBilerEuKontroll(options || {})
       .then(function (res) {
         sessionStorage.setItem(EU_KONTROLL_SYNC_STORAGE_KEY, String(Date.now()));
-        if (!res?.items?.length) return res;
-        const items = normalizeBilItems(res.items);
-        setBiler(items);
-        writeBilerCache(items);
-        if (res.updated > 0) {
+        if (res?.items?.length) {
+          const items = normalizeBilItems(res.items);
+          setBiler(items);
+          writeBilerCache(items);
+        }
+        if (res?.updated > 0) {
           visTost(`EU-kontroll oppdatert for ${res.updated} bil${res.updated === 1 ? '' : 'er'} ✓`);
+        } else if (options?.notifyAlways) {
+          visTost('Ingen endringer i EU-frister ✓');
         }
         return res;
       })
-      .catch(function () { /* stille bakgrunnssync */ })
+      .catch(function (err) {
+        if (options?.notifyAlways) {
+          visTost(err?.message || 'Kunne ikke oppdatere EU-frister ✗');
+        }
+        return null;
+      })
       .finally(function () {
         euKontrollSyncInFlightRef.current = false;
       });
@@ -1526,6 +1534,7 @@ export default function App() {
               kunder={kunder}
               currentUser={user}
               visTost={visTost}
+              onSyncEuKontroll={runEuKontrollBackgroundSync}
             />
           )}
           {tab === 'kunder' && (
@@ -2634,7 +2643,7 @@ function BilOrderBadge({ value, editing, onEditingChange, onSave, revealAdd }) {
   );
 }
 
-function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser, visTost }) {
+function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser, visTost, onSyncEuKontroll }) {
   const kanLeggeTilBil = canAddBil(currentUser);
   const [mFilter, setMFilter] = useState('Alle');
   const [sFilter, setSFilter] = useState('Alle');
@@ -2676,6 +2685,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
   const [visSlettelog, setVisSlettelog] = useState(false);
   const [orderEditId, setOrderEditId] = useState(null);
   const [hoveredBilId, setHoveredBilId] = useState(null);
+  const [euSyncing, setEuSyncing] = useState(false);
 
   useEffect(function () {
     if (mFilter !== 'Alle' && !merker.includes(mFilter)) setMFilter('Alle');
@@ -2693,6 +2703,13 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     setDropStatus(null);
     setDropTarget(null);
   }, []);
+
+  const syncEuKontroll = useCallback(function () {
+    if (euSyncing || !onSyncEuKontroll) return;
+    setEuSyncing(true);
+    onSyncEuKontroll({ force: true, notifyAlways: true })
+      .finally(function () { setEuSyncing(false); });
+  }, [euSyncing, onSyncEuKontroll]);
 
   const restoreBil = (bil) => {
     updateBil(bil.id, {
@@ -2897,6 +2914,19 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
               : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · klikk «Nr.» på kortet for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
+        {section === 'lager' && onSyncEuKontroll ? (
+          <div className="ph-actions">
+            <button
+              type="button"
+              className="btn btn-g"
+              onClick={syncEuKontroll}
+              disabled={euSyncing}
+              title="Henter neste EU-kontroll fra Vegvesen/Autosys for alle biler"
+            >
+              {euSyncing ? 'Oppdaterer EU-frister…' : '↻ Oppdater EU-frister'}
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
         <div className="fl">Søk i alle biler</div>
