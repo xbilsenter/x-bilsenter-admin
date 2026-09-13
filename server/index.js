@@ -110,10 +110,7 @@ const { normalizeBilReservasjon } = require('../shared/reservasjon');
 
 const {
   lookupVehicleFull,
-  lookupVehicleFullByUnderstell,
-  nesteEuKontrollIso,
-  resolveVehicleFromStoredSvvData,
-  toIsoDateFromNorwegian
+  lookupVehicleFullByUnderstell
 } = require('./vegvesen');
 const { enrichIngestVehicleBody, ingestVehicleDbFields } = require('./ingest-vehicle');
 const { isConfigured: isOmregConfigured, lookupOmregistreringsavgift } = require('./skatteetaten-omreg');
@@ -148,6 +145,8 @@ const {
   matchKlarBilerToFinn
 } = require('./finn-bil-match');
 const { runMailSyncCron } = require('./cron-mail-sync');
+const { runEuKontrollSyncCron } = require('./cron-eu-kontroll-sync');
+const { syncBilerEuKontrollFromVegvesen } = require('./eu-kontroll-sync');
 const { getDashboardCache, setDashboardCache } = require('./dashboard-cache');
 const { getSyncRevision } = require('./sync-revision');
 const {
@@ -2817,95 +2816,21 @@ app.post('/api/biler/:id/dokumenter', requireAuth, function (req, res, next) {
   }
 });
 
-function bilNeedsEuKontrollSync(row, iso, force) {
-  if (!iso) return false;
-  if (force) return toIsoDateFromNorwegian(row.eu_kontroll) !== iso;
-  if (!row.eu_kontroll) return true;
-  return !toIsoDateFromNorwegian(row.eu_kontroll);
-}
-
 app.post('/api/biler/sync-eu-kontroll', requireAuth, async function (req, res) {
-  const force = !!req.body?.force;
-  const onlyMissing = req.body?.onlyMissing !== false && !force;
-  const apiKey = process.env.VEGVESEN_API_KEY || '';
-
-  const rows = await prepare(`
-    SELECT id, reg, eu_kontroll, svv_data
-    FROM biler
-    WHERE reg IS NOT NULL AND TRIM(reg) != ''
-    ORDER BY id ASC
-  `).all();
-
-  let updated = 0;
-  let skipped = 0;
-  let failed = 0;
-  const errors = [];
-
-  for (const row of rows) {
-    const reg = String(row.reg || '').trim().toUpperCase().replace(/\s/g, '');
-    if (reg.length < 5) {
-      skipped++;
-      continue;
-    }
-
-    try {
-      let iso = nesteEuKontrollIso(resolveVehicleFromStoredSvvData(parseJson(row.svv_data, null)));
-
-      if (!iso) {
-        const result = await lookupVehicleFull(reg, apiKey);
-        iso = nesteEuKontrollIso(result.parsed);
-        await new Promise(function (resolve) { setTimeout(resolve, 120); });
+  try {
+    const onlyMissing = !!req.body?.onlyMissing;
+    const result = await syncBilerEuKontrollFromVegvesen(
+      { onlyMissing },
+      {
+        mapBilerForApi,
+        getAllBilKundeIdsMap
       }
-
-      if (!iso) {
-        skipped++;
-        continue;
-      }
-
-      if (onlyMissing && row.eu_kontroll) {
-        const currentIso = toIsoDateFromNorwegian(row.eu_kontroll);
-        if (currentIso && /^\d{4}-\d{2}-\d{2}$/.test(currentIso)) {
-          skipped++;
-          continue;
-        }
-      }
-
-      if (!bilNeedsEuKontrollSync(row, iso, force)) {
-        skipped++;
-        continue;
-      }
-
-      await prepare(`
-        UPDATE biler SET
-          eu_kontroll = @eu_kontroll,
-          updated_at = datetime('now')
-        WHERE id = @id
-      `).run({
-        id: row.id,
-        eu_kontroll: iso
-      });
-      updated++;
-    } catch (err) {
-      failed++;
-      if (errors.length < 8) {
-        errors.push({ reg: row.reg, error: err.message || 'Oppslag feilet.' });
-      }
-    }
+    );
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[biler/sync-eu-kontroll]', err.message);
+    res.status(500).json({ ok: false, error: err.message || 'EU-kontroll sync feilet.' });
   }
-
-  const [freshRows, kundeMap] = await Promise.all([
-    prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all(),
-    getAllBilKundeIdsMap()
-  ]);
-
-  res.json({
-    ok: true,
-    updated: updated,
-    skipped: skipped,
-    failed: failed,
-    errors: errors,
-    items: await mapBilerForApi(freshRows, kundeMap)
-  });
 });
 
 // ─── Kalender ───
@@ -3552,6 +3477,12 @@ app.get('/api/omregistreringsavgift', requireAuth, async function (req, res) {
 
 app.get('/api/cron/mail-sync', runMailSyncCron);
 app.post('/api/cron/mail-sync', runMailSyncCron);
+app.get('/api/cron/eu-kontroll-sync', function (req, res) {
+  return runEuKontrollSyncCron(req, res);
+});
+app.post('/api/cron/eu-kontroll-sync', function (req, res) {
+  return runEuKontrollSyncCron(req, res);
+});
 
 app.get('/uploads/:filename', async function (req, res) {
   const uploadPath = toUploadPath(req.params.filename);

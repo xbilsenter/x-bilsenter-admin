@@ -660,6 +660,9 @@ function mergeBilerFromServer(prev, serverItems, openBilId) {
 }
 
 const LIVE_SYNC_MS = 5000;
+const EU_KONTROLL_SYNC_MS = 4 * 60 * 60 * 1000;
+const EU_KONTROLL_SYNC_MIN_GAP_MS = 60 * 60 * 1000;
+const EU_KONTROLL_SYNC_STORAGE_KEY = 'xb-eu-kontroll-sync-at';
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -678,6 +681,7 @@ export default function App() {
   });
   const bilerRef = useRef(biler);
   bilerRef.current = biler;
+  const euKontrollSyncInFlightRef = useRef(false);
   const [kunder, setKunder] = useState([]);
   const [henv, setHenv] = useState([]);
   const [innbytte, setInnbytte] = useState([]);
@@ -698,6 +702,31 @@ export default function App() {
     setToast(m);
     setTimeout(() => setToast(null), 2800);
   }, []);
+
+  const runEuKontrollBackgroundSync = useCallback(function (options) {
+    if (euKontrollSyncInFlightRef.current) return Promise.resolve();
+    const last = Number(sessionStorage.getItem(EU_KONTROLL_SYNC_STORAGE_KEY) || 0);
+    const minGap = options?.force ? 0 : EU_KONTROLL_SYNC_MIN_GAP_MS;
+    if (last && (Date.now() - last) < minGap) return Promise.resolve();
+
+    euKontrollSyncInFlightRef.current = true;
+    return syncBilerEuKontroll(options || {})
+      .then(function (res) {
+        sessionStorage.setItem(EU_KONTROLL_SYNC_STORAGE_KEY, String(Date.now()));
+        if (!res?.items?.length) return res;
+        const items = normalizeBilItems(res.items);
+        setBiler(items);
+        writeBilerCache(items);
+        if (res.updated > 0) {
+          visTost(`EU-kontroll oppdatert for ${res.updated} bil${res.updated === 1 ? '' : 'er'} ✓`);
+        }
+        return res;
+      })
+      .catch(function () { /* stille bakgrunnssync */ })
+      .finally(function () {
+        euKontrollSyncInFlightRef.current = false;
+      });
+  }, [visTost]);
 
   const refreshStats = useCallback(async () => {
     try {
@@ -799,17 +828,6 @@ export default function App() {
     }
 
     setDataLoading(false);
-
-    syncBilerEuKontroll({ onlyMissing: true }).then(function (res) {
-      if (!res?.items?.length) return;
-      const items = normalizeBilItems(res.items);
-      setBiler(items);
-      writeBilerCache(items);
-      if (res.updated > 0) {
-        setToast(`EU-kontroll frist hentet for ${res.updated} bil${res.updated === 1 ? '' : 'er'} ✓`);
-        setTimeout(function () { setToast(null); }, 2800);
-      }
-    }).catch(function () { /* stille bakgrunnssync */ });
   }, []);
 
   const applyBootstrap = useCallback(function (res) {
@@ -1009,6 +1027,17 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [user, coreLoading, syncLiveData]);
+
+  useEffect(function () {
+    if (!user || coreLoading) return;
+
+    runEuKontrollBackgroundSync();
+    const id = setInterval(function () {
+      runEuKontrollBackgroundSync();
+    }, EU_KONTROLL_SYNC_MS);
+
+    return function () { clearInterval(id); };
+  }, [user, coreLoading, runEuKontrollBackgroundSync]);
 
   const syncMailStatus = useCallback((status) => {
     if (status) setMailStatus(status);
