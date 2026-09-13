@@ -32,9 +32,22 @@ function formatSvvFargeNavn(farge) {
     if (/^(grå|sort|hvit|sølv|blå|rød|grønn|gull|oransje|brun|beige|fiolett|gul|rosa)$/i.test(first)) {
       return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
     }
+    const twoWord = `${words[0]} ${words[1]}`;
+    if (/^(mørk|lys|metallic)\s+(grå|blå|grønn|rød|sort|hvit|sølv)$/i.test(twoWord)) {
+      return twoWord.split(/\s+/).map(function (w, i) {
+        return i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase();
+      }).join(' ');
+    }
   }
 
-  return s;
+  const firstColor = words.find(function (w) {
+    return /^(grå|sort|hvit|sølv|blå|rød|grønn|gull|oransje|brun|beige|fiolett|gul|rosa)$/i.test(w);
+  });
+  if (firstColor) {
+    return firstColor.charAt(0).toUpperCase() + firstColor.slice(1).toLowerCase();
+  }
+
+  return words[0] ? words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase() : s;
 }
 
 function normalizeSvvDataFarge(svvData) {

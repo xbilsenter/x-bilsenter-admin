@@ -8053,7 +8053,7 @@ function mergeIngestVehicleRow(row, vehicle) {
     ...row,
     aar: vehicle.arsmodell || row.aar || '',
     girkasse: vehicle.girkasse || row.girkasse || '',
-    farge: has(row.farge) ? row.farge : (vehicle.farge || ''),
+    farge: formatSvvFargeNavn(has(row.farge) ? row.farge : (vehicle.farge || '')) || (has(row.farge) ? row.farge : (vehicle.farge || '')),
     drivstoff: has(row.drivstoff) ? row.drivstoff : (vehicle.drivstoff || ''),
     nesteEuKontroll: has(row.nesteEuKontroll) ? row.nesteEuKontroll : (vehicle.nesteEuKontroll || ''),
     forstegangsregistrert: has(row.forstegangsregistrert) ? row.forstegangsregistrert : (vehicle.forstegangsregistrert || ''),
@@ -8068,6 +8068,19 @@ function mergeIngestVehicleRow(row, vehicle) {
       ? row.motorer
       : (Array.isArray(vehicle.motorer) ? vehicle.motorer : [])
   };
+}
+
+function IngestFargeVisning({ farge }) {
+  const navn = formatSvvFargeNavn(farge) || String(farge || '').trim();
+  if (!navn) return null;
+  return (
+    <div className="ingest-farge">
+      <span className="chip chip-gray ingest-farge__chip">
+        <span className="ingest-farge__dot" style={{ background: svvFarge(navn) }} />
+        {navn}
+      </span>
+    </div>
+  );
 }
 
 function IngestKundensBilSeksjon({ row, active }) {
@@ -8100,6 +8113,7 @@ function IngestKundensBilSeksjon({ row, active }) {
       {laster ? (
         <div style={{ fontSize: 11, color: 'var(--t4)', marginBottom: 8 }}>Henter kjøretøydata fra Vegvesen…</div>
       ) : null}
+      <IngestFargeVisning farge={displayRow.farge} />
       <InfoGrid items={buildIngestKundensBilItems(displayRow)} />
     </>
   );
@@ -8108,7 +8122,6 @@ function IngestKundensBilSeksjon({ row, active }) {
 function buildIngestKundensBilItems(row) {
   const effekt = formatIngestSamletEffekt(row);
   const hjuldrift = formatIngestHjuldrift(row.hjuldrift);
-  const farge = formatSvvFargeNavn(row.farge) || String(row.farge || '').trim();
   const chassisnr = String(row?.chassisnr || row?.understell || '').trim().toUpperCase();
   const items = [
     ['Registreringsnr.', row.reg],
@@ -8116,7 +8129,6 @@ function buildIngestKundensBilItems(row) {
     ['Merke / modell', [row.merke, row.modell].filter(Boolean).join(' ')],
     ['Årsmodell', row.aar],
     ['Kilometerstand', row.km ? `${fmtKm(row.km)} km` : ''],
-    ['Farge', farge],
     ['Drivstoff', row.drivstoff],
     ['Girkasse', row.girkasse],
     ['Hjuldrift', hjuldrift],
