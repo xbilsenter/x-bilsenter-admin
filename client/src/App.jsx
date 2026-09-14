@@ -11,6 +11,7 @@ import {
   buildInnbytteVisningMelding,
   buildSelgBilTilbudMelding,
   buildSelgBilVisningMelding,
+  patchTilbudPrisInMelding,
   DEFAULT_TILBUD_EPOST_MALER,
   TILBUD_EPOST_MAL_DEFS,
   normalizeTilbudEpostMaler
@@ -8555,7 +8556,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
     } else {
       setMelding(buildSelgBilTilbudMelding(inn, tilbud, lists?.tilbudEpostMaler));
     }
-  }, [svarType, tilbud, inn, lists?.tilbudEpostMaler]);
+  }, [svarType, inn.id, lists?.tilbudEpostMaler]);
 
   const setSvarModus = (type) => {
     setSvarType(type);
@@ -8564,10 +8565,23 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
       : buildSelgBilTilbudMelding(inn, tilbud, lists?.tilbudEpostMaler));
   };
 
+  const oppdaterTilbudPris = (nyPris) => {
+    setTilbud(nyPris);
+    setMelding(function (prev) {
+      return patchTilbudPrisInMelding(prev, nyPris, 'selgBilTilbud', lists?.tilbudEpostMaler);
+    });
+  };
+
   const oppdaterMelding = () => {
-    setMelding(svarType === 'visning'
-      ? buildSelgBilVisningMelding(inn, lists?.tilbudEpostMaler)
-      : buildSelgBilTilbudMelding(inn, tilbud, lists?.tilbudEpostMaler));
+    if (svarType === 'visning') {
+      setMelding(buildSelgBilVisningMelding(inn, lists?.tilbudEpostMaler));
+      return;
+    }
+    setMelding(function (prev) {
+      const patched = patchTilbudPrisInMelding(prev, tilbud, 'selgBilTilbud', lists?.tilbudEpostMaler);
+      if (patched !== prev) return patched;
+      return buildSelgBilTilbudMelding(inn, tilbud, lists?.tilbudEpostMaler);
+    });
   };
 
   const opp = (k, v, msg) => {
@@ -8774,7 +8788,7 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
               ) : (
                 <div className="gap" style={{ marginBottom: 10 }}>
                   <div className="fl">Tilbudspris (kr)</div>
-                  <input type="number" placeholder="f.eks. 85000" value={tilbud} onChange={e => setTilbud(e.target.value)} />
+                  <input type="number" placeholder="f.eks. 85000" value={tilbud} onChange={e => oppdaterTilbudPris(e.target.value)} />
                 </div>
               )}
               <div className="gap">
@@ -8922,7 +8936,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
     } else {
       setMelding(buildInnbytteTilbudMelding(inn, tilbud, finnMeta, lists?.tilbudEpostMaler));
     }
-  }, [finnMeta, finnLaster, svarType, tilbud, inn, lists?.tilbudEpostMaler]);
+  }, [finnMeta, finnLaster, svarType, inn.id, lists?.tilbudEpostMaler]);
 
   const setSvarModus = (type) => {
     setSvarType(type);
@@ -8931,10 +8945,23 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
       : buildInnbytteTilbudMelding(inn, tilbud, finnMeta, lists?.tilbudEpostMaler));
   };
 
+  const oppdaterTilbudPris = (nyPris) => {
+    setTilbud(nyPris);
+    setMelding(function (prev) {
+      return patchTilbudPrisInMelding(prev, nyPris, 'innbytteTilbud', lists?.tilbudEpostMaler);
+    });
+  };
+
   const oppdaterMelding = () => {
-    setMelding(svarType === 'visning'
-      ? buildInnbytteVisningMelding(inn, finnMeta, lists?.tilbudEpostMaler)
-      : buildInnbytteTilbudMelding(inn, tilbud, finnMeta, lists?.tilbudEpostMaler));
+    if (svarType === 'visning') {
+      setMelding(buildInnbytteVisningMelding(inn, finnMeta, lists?.tilbudEpostMaler));
+      return;
+    }
+    setMelding(function (prev) {
+      const patched = patchTilbudPrisInMelding(prev, tilbud, 'innbytteTilbud', lists?.tilbudEpostMaler);
+      if (patched !== prev) return patched;
+      return buildInnbytteTilbudMelding(inn, tilbud, finnMeta, lists?.tilbudEpostMaler);
+    });
   };
 
   const opp = (k, v, msg) => {
@@ -9129,7 +9156,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
               ) : (
                 <div className="gap" style={{ marginBottom: 10 }}>
                   <div className="fl">Tilbudspris (kr)</div>
-                  <input type="number" placeholder="f.eks. 85000" value={tilbud} onChange={e => setTilbud(e.target.value)} />
+                  <input type="number" placeholder="f.eks. 85000" value={tilbud} onChange={e => oppdaterTilbudPris(e.target.value)} />
                 </div>
               )}
               <div className="gap">

@@ -114,6 +114,40 @@ function formatPrisKr(value) {
   return n.toLocaleString('nb-NO');
 }
 
+function formatTilbudPrisForMal(malKey, pris) {
+  if (malKey === 'innbytteTilbud') {
+    return pris ? `kr ${formatPrisKr(pris)}` : '…';
+  }
+  if (malKey === 'selgBilTilbud') {
+    return formatPrisKr(pris);
+  }
+  return String(pris || '');
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Oppdater kun pris-delen i eksisterende e-posttekst uten å tilbakestille øvrig innhold. */
+export function patchTilbudPrisInMelding(melding, nyPris, malKey, maler) {
+  const template = pickMal(maler, malKey);
+  const nyPrisStr = formatTilbudPrisForMal(malKey, nyPris);
+  let result = String(melding || '');
+  let patched = false;
+
+  template.split('\n').forEach(function (templateLine) {
+    if (!templateLine.includes('{{pris}}')) return;
+    const parts = templateLine.split('{{pris}}');
+    if (parts.length !== 2) return;
+    const regex = new RegExp(escapeRegex(parts[0]) + '(.+?)' + escapeRegex(parts[1]));
+    if (!regex.test(result)) return;
+    result = result.replace(regex, parts[0] + nyPrisStr + parts[1]);
+    patched = true;
+  });
+
+  return patched ? result : melding;
+}
+
 function innbytteKundeBil(inn) {
   const bil = [inn.merke, inn.modell, inn.aar].filter(Boolean).join(' ');
   if (bil && inn.reg) return `${bil} (${inn.reg})`;
