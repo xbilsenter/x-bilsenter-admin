@@ -146,7 +146,7 @@ const {
 } = require('./finn-bil-match');
 const { runMailSyncCron } = require('./cron-mail-sync');
 const { runEuKontrollSyncCron } = require('./cron-eu-kontroll-sync');
-const { syncBilerEuKontrollFromVegvesen } = require('./eu-kontroll-sync');
+const { syncBilerEuKontrollFromVegvesen, syncSingleBilEuKontrollFromVegvesen } = require('./eu-kontroll-sync');
 const { getDashboardCache, setDashboardCache } = require('./dashboard-cache');
 const { getSyncRevision } = require('./sync-revision');
 const {
@@ -2830,6 +2830,23 @@ app.post('/api/biler/sync-eu-kontroll', requireAuth, async function (req, res) {
   } catch (err) {
     console.error('[biler/sync-eu-kontroll]', err.message);
     res.status(500).json({ ok: false, error: err.message || 'EU-kontroll sync feilet.' });
+  }
+});
+
+app.post('/api/biler/:id/sync-eu-kontroll', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ ok: false, error: 'Ugyldig bil-ID.' });
+  }
+  try {
+    const result = await syncSingleBilEuKontrollFromVegvesen(id, {
+      mapBilForApi,
+      getAllBilKundeIdsMap
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[biler/:id/sync-eu-kontroll]', err.message);
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke oppdatere EU-kontroll.' });
   }
 });
 

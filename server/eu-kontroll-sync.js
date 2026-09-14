@@ -101,7 +101,62 @@ async function syncBilerEuKontrollFromVegvesen(options, deps) {
   return { updated, skipped, failed, errors, items };
 }
 
+/** Synkroniser neste EU-kontroll for én bil. */
+async function syncSingleBilEuKontrollFromVegvesen(bilId, deps) {
+  const id = Number(bilId);
+  if (!Number.isFinite(id) || id <= 0) {
+    throw new Error('Ugyldig bil-ID.');
+  }
+
+  const row = await prepare('SELECT id, reg, eu_kontroll FROM biler WHERE id = @id').get({ id });
+  if (!row) throw new Error('Bil ikke funnet.');
+
+  const reg = normalizeReg(row.reg);
+  if (reg.length < 5) throw new Error('Mangler gyldig registreringsnummer på bilen.');
+
+  const apiKey = deps?.apiKey || process.env.VEGVESEN_API_KEY || '';
+  const mapBilForApi = deps?.mapBilForApi;
+  const getAllBilKundeIdsMap = deps?.getAllBilKundeIdsMap;
+
+  const result = await lookupVehicleFull(reg, apiKey);
+  const iso = nesteEuKontrollIso(result.parsed);
+  if (!iso) {
+    return { updated: 0, skipped: true, unchanged: false, euKontroll: euKontrollIsoFromRow(row), item: null };
+  }
+
+  const currentIso = euKontrollIsoFromRow(row);
+  if (currentIso === iso) {
+    let item = null;
+    if (typeof mapBilForApi === 'function' && typeof getAllBilKundeIdsMap === 'function') {
+      const fresh = await prepare('SELECT * FROM biler WHERE id = @id').get({ id });
+      const kundeMap = await getAllBilKundeIdsMap();
+      item = await mapBilForApi(fresh, kundeMap[id] || []);
+    }
+    return { updated: 0, skipped: false, unchanged: true, euKontroll: iso, item };
+  }
+
+  await prepare(`
+    UPDATE biler SET
+      eu_kontroll = @eu_kontroll,
+      updated_at = datetime('now')
+    WHERE id = @id
+  `).run({
+    id,
+    eu_kontroll: iso
+  });
+
+  let item = null;
+  if (typeof mapBilForApi === 'function' && typeof getAllBilKundeIdsMap === 'function') {
+    const fresh = await prepare('SELECT * FROM biler WHERE id = @id').get({ id });
+    const kundeMap = await getAllBilKundeIdsMap();
+    item = await mapBilForApi(fresh, kundeMap[id] || []);
+  }
+
+  return { updated: 1, skipped: false, unchanged: false, euKontroll: iso, item };
+}
+
 module.exports = {
   syncBilerEuKontrollFromVegvesen,
+  syncSingleBilEuKontrollFromVegvesen,
   euKontrollShouldUpdate
 };

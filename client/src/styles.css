@@ -223,6 +223,7 @@ tr:hover td{background:var(--accl);}
 .modal.xl.bil-modal{width:1040px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;}
 .modal.xl{width:960px;}
 .bil-modal__header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;gap:12px;flex-shrink:0;}
+.bil-modal__eu-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px;}
 .bil-modal__body{flex:1;min-height:0;overflow-y:auto;}
 .modal.xl.bil-modal .modal-footer{flex-shrink:0;margin-top:0;}
 .bil-modal__footer{align-items:center;}

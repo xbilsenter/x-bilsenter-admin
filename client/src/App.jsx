@@ -70,7 +70,7 @@ import {
   getInnbytte, patchInnbytte, deleteInnbytte, sendInnbytteTilbud as sendInnbytteTilbudApi, lookupFinnAnnonse as fetchFinnAnnonseApi,
   getSelgBil, patchSelgBil, deleteSelgBil, sendSelgBilTilbud as sendSelgBilTilbudApi,
   getKunder, getKundeAktivitet, postKunde, patchKunde, deleteKunde,
-  getBiler, getBil, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll,
+  getBiler, getBil, postBil, patchBil, deleteBil as deleteBilApi, getBilSlettelog, reorderBiler as reorderBilerApi, uploadBilDokumenter, syncBilerEuKontroll, syncBilEuKontroll,
   getKalender, postKalender, patchKalender, deleteKalender,
   getInnkjopskalkyle,
   lookupKjoretoy, lookupKjoretoyByUnderstell, getInnstillinger, getLister, patchInnstillinger,
@@ -1535,7 +1535,6 @@ export default function App() {
               kunder={kunder}
               currentUser={user}
               visTost={visTost}
-              onSyncEuKontroll={runEuKontrollBackgroundSync}
             />
           )}
           {tab === 'kunder' && (
@@ -2644,7 +2643,7 @@ function BilOrderBadge({ value, editing, onEditingChange, onSave, revealAdd }) {
   );
 }
 
-function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser, visTost, onSyncEuKontroll }) {
+function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateBil, reorderBiler, currentUser, visTost }) {
   const kanLeggeTilBil = canAddBil(currentUser);
   const [mFilter, setMFilter] = useState('Alle');
   const [sFilter, setSFilter] = useState('Alle');
@@ -2686,8 +2685,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
   const [visSlettelog, setVisSlettelog] = useState(false);
   const [orderEditId, setOrderEditId] = useState(null);
   const [hoveredBilId, setHoveredBilId] = useState(null);
-  const [euSyncing, setEuSyncing] = useState(false);
-
   useEffect(function () {
     if (mFilter !== 'Alle' && !merker.includes(mFilter)) setMFilter('Alle');
   }, [merker, mFilter]);
@@ -2704,13 +2701,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     setDropStatus(null);
     setDropTarget(null);
   }, []);
-
-  const syncEuKontroll = useCallback(function () {
-    if (euSyncing || !onSyncEuKontroll) return;
-    setEuSyncing(true);
-    onSyncEuKontroll({ force: true, notifyAlways: true })
-      .finally(function () { setEuSyncing(false); });
-  }, [euSyncing, onSyncEuKontroll]);
 
   const restoreBil = (bil) => {
     updateBil(bil.id, {
@@ -2915,19 +2905,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
               : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · klikk «Nr.» på kortet for å sette nummer · ${view === 'kanban' ? 'dra bil mellom kolonner (bortover)' : 'dra bil mellom stasjoner og opp/ned i listen (nedover)'}`}
           </div>
         </div>
-        {section === 'lager' && onSyncEuKontroll ? (
-          <div className="ph-actions">
-            <button
-              type="button"
-              className="btn btn-g"
-              onClick={syncEuKontroll}
-              disabled={euSyncing}
-              title="Henter neste EU-kontroll fra Vegvesen/Autosys for alle biler"
-            >
-              {euSyncing ? 'Oppdaterer EU-frister…' : '↻ Oppdater EU-frister'}
-            </button>
-          </div>
-        ) : null}
       </div>
       <div className="bil-search-bar card" style={{ padding: '12px 16px', marginBottom: 12 }}>
         <div className="fl">Søk i alle biler</div>
@@ -3636,8 +3613,37 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
   const pendingPatchRef = useRef({});
   const bilSnapshotRef = useRef(data);
   const [closing, setClosing] = useState(false);
+  const [euSyncing, setEuSyncing] = useState(false);
   bilRef.current = bil;
   autosysOverstyrtRef.current = autosysOverstyrt;
+
+  const syncEuKontrollFromVegvesen = useCallback(async function () {
+    if (euSyncing || !bil.id) return;
+    if (!isValidBilReg(bil.reg)) {
+      visTost('Mangler gyldig registreringsnummer ✗');
+      return;
+    }
+    setEuSyncing(true);
+    try {
+      const res = await syncBilEuKontroll(bil.id);
+      if (res?.item) {
+        const next = normalizeBilItems([res.item])[0];
+        setBil(function (prev) { return mergeLocalBilFromServer(prev, next); });
+        hydrateBil(res.item);
+      }
+      if (res?.updated > 0) {
+        visTost('EU-frist oppdatert fra Vegvesen ✓');
+      } else if (res?.skipped) {
+        visTost('Fant ingen EU-frist i Vegvesen ✗');
+      } else {
+        visTost('EU-frist er allerede oppdatert ✓');
+      }
+    } catch (err) {
+      visTost((err?.message || 'Kunne ikke hente EU-frist') + ' ✗');
+    } finally {
+      setEuSyncing(false);
+    }
+  }, [bil.id, bil.reg, euSyncing, hydrateBil, visTost]);
 
   const collectPendingTextPatch = useCallback(function () {
     const pending = pendingPatchRef.current;
@@ -4224,9 +4230,20 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Badge s={bil.status} />
               {bil.archived && <span className="chip chip-gray">Arkivert</span>}
-              {bil.euKontroll && (
-                <span className={`chip ${euKontrollChipClass(bil.euKontroll)}`}>
-                  Neste EU-kontroll: {formatEuKontrollVisning(bil.euKontroll)}
+              {(bil.euKontroll || isValidBilReg(bil.reg)) && (
+                <span className={`chip ${bil.euKontroll ? euKontrollChipClass(bil.euKontroll) : 'chip-gray'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {bil.euKontroll
+                    ? `Neste EU-kontroll: ${formatEuKontrollVisning(bil.euKontroll)}`
+                    : 'EU-kontroll ikke satt'}
+                  <button
+                    type="button"
+                    className="btn btn-g btn-xs"
+                    onClick={syncEuKontrollFromVegvesen}
+                    disabled={euSyncing || !isValidBilReg(bil.reg)}
+                    title="Hent neste EU-kontroll fra Vegvesen for denne bilen"
+                  >
+                    {euSyncing ? '…' : '↻'}
+                  </button>
                 </span>
               )}
               {(() => {
@@ -4343,7 +4360,18 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
                 </div>
               </div>
               <div className="gap">
-                <div className="fl">Frist neste EU-kontroll</div>
+                <div className="bil-modal__eu-head">
+                  <div className="fl" style={{ marginBottom: 0 }}>Frist neste EU-kontroll</div>
+                  <button
+                    type="button"
+                    className="btn btn-g btn-sm"
+                    onClick={syncEuKontrollFromVegvesen}
+                    disabled={euSyncing || !isValidBilReg(bil.reg)}
+                    title="Hent neste EU-kontroll fra Vegvesen for denne bilen"
+                  >
+                    {euSyncing ? 'Henter fra Vegvesen…' : '↻ Hent fra Vegvesen'}
+                  </button>
+                </div>
                 <input type="date" value={normalizeEuKontrollDato(bil.euKontroll)} onChange={e => oppdater('euKontroll', e.target.value)} />
               </div>
               <BilTilstandsrapportSeksjon

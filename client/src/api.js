@@ -252,6 +252,10 @@ export function syncBilerEuKontroll(options = {}) {
   });
 }
 
+export function syncBilEuKontroll(id) {
+  return request(`/biler/${id}/sync-eu-kontroll`, { method: 'POST' });
+}
+
 export async function downloadReservasjonPdf(id) {
   const token = localStorage.getItem(TOKEN_KEY);
   const res = await fetch(`${BASE}/biler/${id}/reservasjon-pdf`, {
