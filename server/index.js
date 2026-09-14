@@ -102,6 +102,7 @@ const {
   summarizeMaanedAnsatte,
   canViewAllTimereg,
   canApproveTimereg,
+  isTimeregLaast,
   maskTimeregForViewer,
   normalizeTimeregNotat
 } = require('./timeregistrering-shared');
@@ -3254,6 +3255,16 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
     && body.slutt_tid == null
     && body.pauser == null
     && body.notat == null;
+  if (isTimeregLaast(row)) {
+    const nextStatus = body.status != null ? String(body.status) : null;
+    const isUnapprove = isStatusOnlyPatch && nextStatus === 'fullfort' && kanGodkjenne;
+    if (!isUnapprove) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Godkjente timer er låst. Angre godkjenning først for å endre.'
+      });
+    }
+  }
   let notat = body.notat != null ? normalizeTimeregNotat(body.notat) : normalizeTimeregNotat(row.notat);
   if (!isStatusOnlyPatch && !notat) {
     return res.status(400).json({ ok: false, error: 'Notat er påkrevd ved timeregistrering.' });
@@ -3322,6 +3333,9 @@ app.delete('/api/timeregistrering/:id', requireAuth, requirePermission('timeregi
   }
   if ((row.status === 'aktiv' || row.status === 'pause') && Number(row.user_id) !== Number(req.user.sub)) {
     return res.status(400).json({ ok: false, error: 'Kan ikke slette aktiv registrering for annen bruker.' });
+  }
+  if (isTimeregLaast(row)) {
+    return res.status(403).json({ ok: false, error: 'Godkjente timer er låst. Angre godkjenning først for å slette.' });
   }
   await prepare('DELETE FROM timeregistrering WHERE id = ?').run(id);
   res.json({ ok: true });

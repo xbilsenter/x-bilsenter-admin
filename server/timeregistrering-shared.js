@@ -92,15 +92,21 @@ function calcTimeregStats(entry, nowTime) {
   };
 }
 
+function isTimeregLaast(row) {
+  return (row?.status || '') === 'godkjent';
+}
+
 function mapTimeregistreringRow(row) {
   if (!row) return null;
   const pauser = parsePauser(row.pauser);
+  const status = row.status || 'fullfort';
   const item = {
     id: Number(row.id),
     userId: Number(row.user_id),
     brukerNavn: row.bruker_navn || '',
     dato: row.dato || '',
-    status: row.status || 'fullfort',
+    status,
+    laast: isTimeregLaast({ status }),
     startTid: row.start_tid || '',
     sluttTid: row.slutt_tid || '',
     pauser,
@@ -300,6 +306,7 @@ module.exports = {
   minutesToDisplay,
   minutesToDecimalHours,
   calcTimeregStats,
+  isTimeregLaast,
   mapTimeregistreringRow,
   weekStartIso,
   addDaysIso,

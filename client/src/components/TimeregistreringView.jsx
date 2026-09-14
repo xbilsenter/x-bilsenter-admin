@@ -469,7 +469,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const maanedTotalt = maanedData?.totalt || null;
 
   const kanRedigere = function (item) {
-    if (item.status === 'fullfort' || (item.status === 'godkjent' && kanGodkjenne) || kanSeAlle) return true;
+    if (item.laast) return false;
+    if (item.status === 'fullfort' || kanSeAlle) return true;
     if ((item.status === 'aktiv' || item.status === 'pause') && Number(item.userId) === Number(currentUser?.id)) {
       return true;
     }
