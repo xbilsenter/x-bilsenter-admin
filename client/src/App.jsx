@@ -8547,8 +8547,16 @@ function SelgBilView({ selgBil, setModal, lists, visTost }) {
               <button type="button" className="btn btn-p btn-sm" onClick={() => setModal({ t: 'visSelgBil', d: inn })}>Behandle</button>
             </div>
           </div>
+          <div className="inb-card__deal inb-card__deal--single">
+            <div className="inb-card__deal-item">
+              <div className="fl">Prisforventning</div>
+              <div className="fv inb-card__deal-value--gold">
+                {inn.forventning ? formatForventningDisplay(inn.forventning) : 'Ikke oppgitt'}
+              </div>
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-            {[['Forventning', formatForventningDisplay(inn.forventning)], ['Tilstand', inn.tilstand], ['Tilbud', inn.tilbud ? nok(inn.tilbud) : 'Ikke gitt'], ['Ansvarlig', inn.ansvarlig || 'Ikke tildelt'], ['Dato', inn.dato]].map(([l, v]) => (
+            {[['Tilstand', inn.tilstand], ['Tilbud', inn.tilbud ? nok(inn.tilbud) : 'Ikke gitt'], ['Ansvarlig', inn.ansvarlig || 'Ikke tildelt'], ['Dato', inn.dato]].map(([l, v]) => (
               <div key={l}>
                 <div className="fl">{l}</div>
                 <div className="fv" style={{ fontSize: 12, color: l === 'Tilbud' && inn.tilbud ? 'var(--gold)' : 'var(--t2)' }}>{v}</div>
@@ -8719,6 +8727,8 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
           </button>
         </div>
 
+        <IngestDealHighlight inn={inn} variant="oppkjop" />
+
         <ModalTabs
           active={activeTab}
           onChange={setActiveTab}
@@ -8757,31 +8767,17 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
                 ) : null}
                 <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 12, lineHeight: 1.45 }}>
                   {canFinnMarkedsSok(inn)
-                    ? <>FINN-markedssøk: {finnMarkedsSokLabel(inn)}{finnMarkedsSokFilterText(inn) ? ` (${finnMarkedsSokFilterText(inn)})` : ''} · pris lav → høy</>
+                    ? <>FINN-markedssøk: {finnMarkedsSokLabel(inn)}{finnMarkedsSokFilterText(inn) ? ` (${finnMarkedsSokFilterText(inn)})` : ''} · pris lav → høy · kun filter</>
                     : 'Legg inn merke og modell for å sammenligne mot FINN.'}
                 </div>
               </section>
 
-              <section className="inb-modal__panel inb-modal__panel--secondary">
-                <div className="modal-sec">Oppkjøp</div>
-                {inn.forventning ? (
-                  <div className="gap">
-                    <div className="fl">Kundens prisforventning</div>
-                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{formatForventningDisplay(inn.forventning)}</div>
-                  </div>
-                ) : (
-                  <div className="fv">Ingen prisforventning oppgitt.</div>
-                )}
-                {inn.tilbud ? (
-                  <div className="gap" style={{ marginTop: 14 }}>
-                    <div className="fl">Gitt tilbud</div>
-                    <div className="fv" style={{ color: 'var(--gold)', fontWeight: 600 }}>{nok(inn.tilbud)}</div>
-                  </div>
-                ) : null}
-                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 14, lineHeight: 1.45 }}>
-                  Direkte oppkjøp fra xbilsenter.no/selg-bil · vurder bilen mot markedet på FINN før du sender tilbud.
-                </div>
-              </section>
+              {inn.tilbud ? (
+                <section className="inb-modal__panel inb-modal__panel--secondary">
+                  <div className="modal-sec">Gitt tilbud</div>
+                  <div className="fv" style={{ color: 'var(--gold)', fontWeight: 700, fontSize: 18 }}>{nok(inn.tilbud)}</div>
+                </section>
+              ) : null}
             </div>
           ) : null}
 
@@ -8884,37 +8880,40 @@ function SelgBilModal({ data, onClose, updateSelgBil, deleteSelgBil, onSendTilbu
   );
 }
 
-function InnbytteDealHighlight({ inn, finnMeta, finnLaster }) {
+function IngestDealHighlight({ inn, finnMeta, finnLaster, variant }) {
+  const isInnbytte = variant !== 'oppkjop';
   const onsketVisning = finnLaster
     ? 'Henter annonse fra FINN…'
     : (finnMeta?.title || inn.onsketBil || '—');
   const onsketUrl = finnMeta?.url || null;
 
   return (
-    <div className="inb-modal__deal-highlight">
+    <div className={'inb-modal__deal-highlight' + (isInnbytte ? '' : ' inb-modal__deal-highlight--single')}>
       <div className="inb-modal__deal-block">
         <div className="inb-modal__deal-label">Kundens prisforventning</div>
         <div className="inb-modal__deal-value inb-modal__deal-value--gold">
           {inn.forventning ? formatForventningDisplay(inn.forventning) : 'Ikke oppgitt'}
         </div>
       </div>
-      <div className="inb-modal__deal-block">
-        <div className="inb-modal__deal-label">Ønsket bil hos oss</div>
-        {onsketUrl && !finnLaster ? (
-          <a
-            href={onsketUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inb-modal__deal-value inb-modal__deal-value--link"
-          >
-            {onsketVisning}
-          </a>
-        ) : (
-          <div className={`inb-modal__deal-value${finnLaster ? '' : ' inb-modal__deal-value--acc'}`}>
-            {onsketVisning}
-          </div>
-        )}
-      </div>
+      {isInnbytte ? (
+        <div className="inb-modal__deal-block">
+          <div className="inb-modal__deal-label">Ønsket bil hos oss</div>
+          {onsketUrl && !finnLaster ? (
+            <a
+              href={onsketUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inb-modal__deal-value inb-modal__deal-value--link"
+            >
+              {onsketVisning}
+            </a>
+          ) : (
+            <div className={`inb-modal__deal-value${finnLaster ? '' : ' inb-modal__deal-value--acc'}`}>
+              {onsketVisning}
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -9099,7 +9098,7 @@ function InbModal({ data, onClose, updateInnbytte, deleteInnbytte, onSendTilbud,
           </button>
         </div>
 
-        <InnbytteDealHighlight inn={inn} finnMeta={finnMeta} finnLaster={finnLaster} />
+        <IngestDealHighlight inn={inn} finnMeta={finnMeta} finnLaster={finnLaster} variant="innbytte" />
 
         <ModalTabs
           active={activeTab}

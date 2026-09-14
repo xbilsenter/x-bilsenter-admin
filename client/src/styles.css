@@ -950,6 +950,8 @@ select option{background:var(--s1);}
 .inb-modal__head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;}
 .inb-modal__meta{font-size:12px;color:var(--t3);line-height:1.45;}
 .inb-modal__deal-highlight{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;padding:14px 16px;background:linear-gradient(180deg,#fff9eb 0%,#fff 100%);border:1px solid rgba(201,162,39,.35);border-radius:12px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.6);}
+.inb-modal__deal-highlight--single{grid-template-columns:1fr;}
+.inb-card__deal--single{grid-template-columns:1fr;}
 .inb-modal__deal-block{min-width:0;}
 .inb-modal__deal-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:6px;}
 .inb-modal__deal-value{font-size:17px;font-weight:700;color:var(--t1);line-height:1.35;word-break:break-word;}
