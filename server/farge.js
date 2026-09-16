@@ -1,43 +1,32 @@
 'use strict';
 
-/** Enkel fargebetegnelse fra Vegvesen (f.eks. «Grå», ikke «Grå herunder …»). */
+/** Enkel fargebetegnelse fra Vegvesen (f.eks. «Grå», «Blåsvart» — ikke «herunder: …»). */
 function formatSvvFargeNavn(farge) {
   let s = String(farge || '').trim();
   if (!s) return '';
 
-  const herunderIdx = s.search(/\bherunder\b/i);
-  if (herunderIdx >= 0) {
-    s = s.slice(0, herunderIdx).trim();
+  if (/^herunder\s*:/i.test(s)) {
+    s = s.replace(/^herunder\s*:\s*/i, '').trim();
+  } else {
+    const herunderIdx = s.search(/\bherunder\b/i);
+    if (herunderIdx > 0) {
+      s = s.slice(0, herunderIdx).trim();
+    }
   }
 
   s = s.replace(/\s*\([^)]*\)/g, ' ').trim();
   s = s.split(/[,;/]/)[0].trim();
+  if (!s) return '';
 
   const words = s.split(/\s+/).filter(Boolean);
-  if (words.length === 1) {
-    const w = words[0];
-    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-  }
+  if (!words.length) return '';
 
-  const knownMulti = [
-    'Mørk blå', 'Lys blå', 'Mørk grå', 'Lys grå', 'Mørk grønn', 'Lys grønn',
-    'Mørk rød', 'Lys rød', 'Metallic grå', 'Metallic blå', 'Metallic sort'
-  ];
-  const lower = s.toLowerCase();
-  const multi = knownMulti.find(function (k) { return lower === k.toLowerCase(); });
-  if (multi) return multi;
-
-  if (words.length > 1) {
-    const first = words[0];
-    if (/^(grå|sort|hvit|sølv|blå|rød|grønn|gull|oransje|brun|beige|fiolett|gul|rosa)$/i.test(first)) {
-      return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
-    }
-    const twoWord = `${words[0]} ${words[1]}`;
-    if (/^(mørk|lys|metallic)\s+(grå|blå|grønn|rød|sort|hvit|sølv)$/i.test(twoWord)) {
-      return twoWord.split(/\s+/).map(function (w, i) {
-        return i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase();
-      }).join(' ');
-    }
+  if (words.length <= 3 && s.length <= 32) {
+    return words.map(function (w, i) {
+      return i === 0
+        ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+        : w.toLowerCase();
+    }).join(' ');
   }
 
   const firstColor = words.find(function (w) {
@@ -47,7 +36,8 @@ function formatSvvFargeNavn(farge) {
     return firstColor.charAt(0).toUpperCase() + firstColor.slice(1).toLowerCase();
   }
 
-  return words[0] ? words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase() : s;
+  const w = words[0];
+  return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
 }
 
 function normalizeSvvDataFarge(svvData) {

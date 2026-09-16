@@ -8082,7 +8082,7 @@ function mergeIngestVehicleRow(row, vehicle) {
     ...row,
     aar: vehicle.arsmodell || row.aar || '',
     girkasse: vehicle.girkasse || row.girkasse || '',
-    farge: formatSvvFargeNavn(has(row.farge) ? row.farge : (vehicle.farge || '')) || (has(row.farge) ? row.farge : (vehicle.farge || '')),
+    farge: formatSvvFargeNavn(has(row.farge) ? row.farge : (vehicle.farge || '')),
     drivstoff: has(row.drivstoff) ? row.drivstoff : (vehicle.drivstoff || ''),
     nesteEuKontroll: has(row.nesteEuKontroll) ? row.nesteEuKontroll : (vehicle.nesteEuKontroll || ''),
     forstegangsregistrert: has(row.forstegangsregistrert) ? row.forstegangsregistrert : (vehicle.forstegangsregistrert || ''),
@@ -8137,7 +8137,7 @@ function IngestKundensBilSeksjon({ row, active }) {
 function buildIngestKundensBilItems(row) {
   const effekt = formatIngestSamletEffekt(row);
   const hjuldrift = formatIngestHjuldrift(row.hjuldrift);
-  const farge = formatSvvFargeNavn(row.farge) || String(row.farge || '').trim();
+  const farge = formatSvvFargeNavn(row.farge);
   const chassisnr = String(row?.chassisnr || row?.understell || '').trim().toUpperCase();
   const items = [
     ['Registreringsnr.', row.reg],

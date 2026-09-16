@@ -15,7 +15,7 @@ function hasIngestVehicleData(body) {
 
 async function enrichIngestVehicleBody(body) {
   const next = { ...(body || {}) };
-  next.farge = formatSvvFargeNavn(next.farge) || next.farge || '';
+  next.farge = formatSvvFargeNavn(next.farge) || '';
 
   const apiKey = process.env.VEGVESEN_API_KEY || '';
   if (!next.regnr || !apiKey || hasIngestVehicleData(next)) return next;
@@ -34,7 +34,7 @@ async function enrichIngestVehicleBody(body) {
     if (!hasValue(next.antallMotorer) && v.antallMotorer != null) next.antallMotorer = v.antallMotorer;
     if (!hasValue(next.rekkevidde)) next.rekkevidde = formatRekkeviddeDisplay(v) || '';
     if (!Array.isArray(next.motorer) || !next.motorer.length) next.motorer = Array.isArray(v.motorer) ? v.motorer : [];
-    if (!hasValue(next.farge)) next.farge = formatSvvFargeNavn(v.farge) || v.farge || '';
+    if (!hasValue(next.farge)) next.farge = formatSvvFargeNavn(v.farge) || '';
     if (!hasValue(next.drivstoff)) next.drivstoff = v.drivstoff || '';
     if (!hasValue(next.girkasse)) next.girkasse = v.girkasse || '';
     if (!hasValue(next.bruktimport)) next.bruktimport = v.bruktimport || '';
@@ -49,7 +49,7 @@ function ingestVehicleDbFields(body) {
   const b = body || {};
   const motorer = Array.isArray(b.motorer) ? b.motorer : [];
   return {
-    farge: formatSvvFargeNavn(b.farge) || b.farge || '',
+    farge: formatSvvFargeNavn(b.farge) || '',
     hjuldrift: b.hjuldrift || '',
     effekt_hk: b.effektHk != null && b.effektHk !== '' ? String(b.effektHk) : '',
     effekt_kw: b.effektKw != null && b.effektKw !== '' ? String(b.effektKw) : '',
