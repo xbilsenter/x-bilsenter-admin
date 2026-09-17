@@ -246,10 +246,9 @@ function drawPaymentBox(doc, y, payment, boxH) {
 const LIST_FONT_SIZE = 8.5;
 const LIST_LINE_GAP = 1.2;
 
-function listTextOptions(width, indent, lineGap) {
+function listTextOptions(textWidth, lineGap) {
   return {
-    width: width,
-    indent: indent,
+    width: textWidth,
     align: 'left',
     characterSpacing: 0,
     wordSpacing: 0,
@@ -267,9 +266,9 @@ function measureListHeight(doc, items, width, fontSize, itemGap, lineGap, number
 
   items.forEach(function (item, index) {
     const prefix = numbered ? `${index + 1}.` : '•';
-    const indent = listPrefixWidth(doc, prefix, fontSize, numbered);
+    const prefixW = listPrefixWidth(doc, prefix, fontSize, numbered);
     doc.font('PJ').fontSize(fontSize);
-    const h = doc.heightOfString(item, listTextOptions(width, indent, lineGap));
+    const h = doc.heightOfString(item, listTextOptions(width - prefixW, lineGap));
     total += Math.max(h, fontSize + 1);
     if (index < items.length - 1) total += itemGap;
   });
@@ -297,13 +296,14 @@ function drawListInBox(doc, x, y, width, maxHeight, items, numbered, fit) {
 
   items.forEach(function (item, index) {
     const prefix = numbered ? `${index + 1}.` : '•';
-    const indent = listPrefixWidth(doc, prefix, fit.fontSize, numbered);
-    const textOpts = listTextOptions(width, indent, fit.lineGap);
+    const prefixW = listPrefixWidth(doc, prefix, fit.fontSize, numbered);
+    const textX = x + prefixW;
+    const textOpts = listTextOptions(width - prefixW, fit.lineGap);
 
     doc.font(numbered ? 'PJ-SB' : 'PJ-M').fontSize(fit.fontSize).fillColor(numbered ? C.accentInk : C.faint)
       .text(prefix, x, cy, { lineBreak: false, characterSpacing: 0 });
     doc.font('PJ').fontSize(fit.fontSize).fillColor(C.ink2)
-      .text(item, x, cy, textOpts);
+      .text(item, textX, cy, textOpts);
     cy = doc.y + (index < items.length - 1 ? fit.itemGap : 0);
   });
 
