@@ -243,13 +243,33 @@ function drawPaymentBox(doc, y, payment, boxH) {
   return y + boxH;
 }
 
-function measureListHeight(doc, items, width, fontSize, itemGap, lineGap) {
-  const textW = width - 16;
+const LIST_FONT_SIZE = 8.5;
+const LIST_LINE_GAP = 1.2;
+
+function listTextOptions(width, indent, lineGap) {
+  return {
+    width: width,
+    indent: indent,
+    align: 'left',
+    characterSpacing: 0,
+    wordSpacing: 0,
+    lineGap: lineGap
+  };
+}
+
+function listPrefixWidth(doc, prefix, fontSize, numbered) {
+  doc.font(numbered ? 'PJ-SB' : 'PJ-M').fontSize(fontSize);
+  return Math.ceil(doc.widthOfString(prefix)) + 5;
+}
+
+function measureListHeight(doc, items, width, fontSize, itemGap, lineGap, numbered) {
   let total = 0;
 
   items.forEach(function (item, index) {
+    const prefix = numbered ? `${index + 1}.` : '•';
+    const indent = listPrefixWidth(doc, prefix, fontSize, numbered);
     doc.font('PJ').fontSize(fontSize);
-    const h = doc.heightOfString(item, { width: textW, lineGap: lineGap });
+    const h = doc.heightOfString(item, listTextOptions(width, indent, lineGap));
     total += Math.max(h, fontSize + 1);
     if (index < items.length - 1) total += itemGap;
   });
@@ -257,17 +277,16 @@ function measureListHeight(doc, items, width, fontSize, itemGap, lineGap) {
   return total;
 }
 
-function resolveListFit(doc, items, width, maxHeight) {
-  for (let fontSize = 8.5; fontSize >= 6.5; fontSize -= 0.25) {
-    for (let itemGap = 6; itemGap >= 2; itemGap -= 1) {
-      const lineGap = fontSize <= 7 ? 0.8 : 1.2;
-      const h = measureListHeight(doc, items, width, fontSize, itemGap, lineGap);
-      if (h <= maxHeight) {
-        return { fontSize, itemGap, lineGap };
-      }
+function resolveListFit(doc, items, width, maxHeight, numbered) {
+  const fontSize = LIST_FONT_SIZE;
+  const lineGap = LIST_LINE_GAP;
+  for (let itemGap = 6; itemGap >= 3; itemGap -= 1) {
+    const h = measureListHeight(doc, items, width, fontSize, itemGap, lineGap, numbered);
+    if (h <= maxHeight) {
+      return { fontSize, itemGap, lineGap };
     }
   }
-  return { fontSize: 6.5, itemGap: 2, lineGap: 0.6 };
+  return { fontSize, itemGap: 3, lineGap: 1 };
 }
 
 function drawListInBox(doc, x, y, width, maxHeight, items, numbered, fit) {
@@ -275,14 +294,16 @@ function drawListInBox(doc, x, y, width, maxHeight, items, numbered, fit) {
   doc.rect(x, y, width, maxHeight).clip();
 
   let cy = y;
-  const textW = width - 16;
 
   items.forEach(function (item, index) {
     const prefix = numbered ? `${index + 1}.` : '•';
+    const indent = listPrefixWidth(doc, prefix, fit.fontSize, numbered);
+    const textOpts = listTextOptions(width, indent, fit.lineGap);
+
     doc.font(numbered ? 'PJ-SB' : 'PJ-M').fontSize(fit.fontSize).fillColor(numbered ? C.accentInk : C.faint)
-      .text(prefix, x, cy, { width: 14, lineBreak: false });
+      .text(prefix, x, cy, { lineBreak: false, characterSpacing: 0 });
     doc.font('PJ').fontSize(fit.fontSize).fillColor(C.ink2)
-      .text(item, x + 14, cy, { width: textW, lineGap: fit.lineGap });
+      .text(item, x, cy, textOpts);
     cy = doc.y + (index < items.length - 1 ? fit.itemGap : 0);
   });
 
@@ -314,8 +335,9 @@ function drawTwoColumnSections(doc, y, model, boxH, titleAlreadyDrawn) {
   const listY = ty + COL_HEADER_H + 8;
   const innerW = colW - pad * 2;
 
-  const vilkarFit = resolveListFit(doc, model.vilkar, innerW, listMaxH);
-  const stegFit = resolveListFit(doc, model.nesteSteg, innerW, listMaxH);
+  doc.font('PJ').fontSize(LIST_FONT_SIZE);
+  const vilkarFit = resolveListFit(doc, model.vilkar, innerW, listMaxH, false);
+  const stegFit = resolveListFit(doc, model.nesteSteg, innerW, listMaxH, true);
 
   drawListInBox(doc, leftX + pad, listY, innerW, listMaxH, model.vilkar, false, vilkarFit);
   drawListInBox(doc, rightX + pad, listY, innerW, listMaxH, model.nesteSteg, true, stegFit);
