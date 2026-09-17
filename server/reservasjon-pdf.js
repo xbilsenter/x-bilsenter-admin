@@ -337,6 +337,7 @@ function drawClosing(doc, y, model) {
 
 function computeLayout(model, introEndY, doc) {
   const summaryRows = model.summaryRows.length;
+  const kundeRows = (model.kundeRows || []).length;
   const commentH = commentBlockHeight(doc, model.avtaleKommentar || '')
     + commentBlockHeight(doc, model.innbytte?.kommentar || '');
   const minSummaryRowH = 19;
@@ -344,7 +345,8 @@ function computeLayout(model, introEndY, doc) {
   const minPaymentH = 68;
   const maxPaymentH = 80;
   const minTwoColH = COL_HEADER_H + 84;
-  const sectionCount = model.skipPayment ? 2 : 3;
+  const hasKundeSection = kundeRows > 0;
+  const sectionCount = (model.skipPayment ? 2 : 3) + (hasKundeSection ? 1 : 0);
   const sectionTitles = sectionTitleHeight() * sectionCount;
   const gaps = SECTION_GAP * (sectionCount - 1);
   const skipPayment = !!model.skipPayment;
@@ -355,8 +357,9 @@ function computeLayout(model, introEndY, doc) {
     for (let rowH = maxSummaryRowH; rowH >= minSummaryRowH; rowH -= 1) {
       for (let payH = skipPayment ? 0 : maxPaymentH; payH >= (skipPayment ? 0 : minPaymentH); payH -= skipPayment ? 999 : 2) {
         for (let colH = 228; colH >= minTwoColH; colH -= 4) {
+          const kundeTableH = hasKundeSection ? kundeRows * rowH : 0;
           const summaryH = summaryRows * rowH + commentH;
-          const used = sectionTitles + gaps + summaryH + (skipPayment ? 0 : payH) + colH;
+          const used = sectionTitles + gaps + kundeTableH + summaryH + (skipPayment ? 0 : payH) + colH;
           if (used <= available) {
             return { summaryRowH: rowH, paymentH: skipPayment ? 0 : payH, twoColH: colH };
           }
@@ -387,6 +390,12 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
 
     const pickLayout = computeLayout(model, y, doc);
     const layout = pickLayout();
+
+    if (model.kundeRows?.length) {
+      y = drawSectionTitle(doc, y, 'Kunde');
+      y = drawSummaryTable(doc, y, model.kundeRows, layout.summaryRowH, '', '');
+      y += SECTION_GAP;
+    }
 
     y = drawSectionTitle(doc, y, 'Avtalen i korthet');
     y = drawSummaryTable(

@@ -110,7 +110,8 @@ const { buildReservasjonPdfBuffer } = require('./reservasjon-pdf');
 const {
   normalizeBilReservasjon,
   DOKUMENT_TYPE_TILBUD,
-  buildBilAvtaleNavn
+  buildBilAvtaleNavn,
+  resolveKundeForDokument
 } = require('../shared/reservasjon');
 
 const {
@@ -2796,23 +2797,22 @@ app.post('/api/biler/:id/send-reservasjon-dokument', requireAuth, async function
 
     const kundeMap = await getAllBilKundeIdsMap();
     const bil = await mapBilForApi(row, kundeMap[id] || []);
-    const kundeIds = bil.kundeIds || [];
-    if (!kundeIds.length) {
-      return res.status(400).json({ ok: false, error: 'Koble kunde til bilen først.' });
-    }
-
-    const kundeRow = await prepare('SELECT * FROM kunder WHERE id = ?').get(kundeIds[0]);
-    if (!kundeRow) return res.status(400).json({ ok: false, error: 'Kunden finnes ikke.' });
-    const kunde = mapKunde(kundeRow);
-
-    const toEmail = normalizeRecipientEmail(kunde.epost);
-    if (!toEmail) return res.status(400).json({ ok: false, error: 'Kunden mangler e-postadresse.' });
-    if (!isValidEmail(toEmail)) {
-      return res.status(400).json({ ok: false, error: `Ugyldig e-postadresse på kunde: ${kunde.epost}` });
-    }
-
     const okonomi = parseJson(row.okonomi, {});
     const reservasjon = normalizeBilReservasjon(okonomi.reservasjon, null, bil);
+
+    const kundeIds = bil.kundeIds || [];
+    let kunde = null;
+    if (kundeIds.length) {
+      const kundeRow = await prepare('SELECT * FROM kunder WHERE id = ?').get(kundeIds[0]);
+      if (kundeRow) kunde = mapKunde(kundeRow);
+    }
+
+    const kundeDok = resolveKundeForDokument(kunde, reservasjon);
+    const toEmail = normalizeRecipientEmail(kundeDok.epost);
+    if (!toEmail) return res.status(400).json({ ok: false, error: 'Legg inn e-postadresse på kunden.' });
+    if (!isValidEmail(toEmail)) {
+      return res.status(400).json({ ok: false, error: `Ugyldig e-postadresse: ${kundeDok.epost}` });
+    }
     if (!reservasjon.kjopesum) {
       return res.status(400).json({ ok: false, error: 'Legg inn kjøpesum først.' });
     }
@@ -2827,12 +2827,12 @@ app.post('/api/biler/:id/send-reservasjon-dokument', requireAuth, async function
     const filnavn = [
       erTilbud ? 'Tilbud' : 'Reservasjon',
       bil.reg || id,
-      kunde.navn || ''
+      kundeDok.navn !== 'Kunde' ? kundeDok.navn : ''
     ].filter(Boolean).join('-').replace(/\s+/g, '-') + '.pdf';
 
     await sendMail({
       to: toEmail,
-      toName: kunde.navn,
+      toName: kundeDok.navn,
       subject: subject,
       text: melding,
       kontoId: b.kontoId || null,

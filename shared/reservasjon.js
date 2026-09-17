@@ -83,7 +83,7 @@ function normalizeInnbytteFields(o) {
     innbytteReg: String(src.innbytteReg || '').trim().toUpperCase(),
     innbytteKm,
     innbyttePris: belopForLagring(src.innbyttePris),
-    innbytteKommentar: String(src.innbytteKommentar || '').trim()
+    innbytteKommentar: String(src.innbytteKommentar ?? '')
   };
 }
 
@@ -101,7 +101,7 @@ function buildInnbytteDocumentData(reservasjon) {
     reg: innbytte.innbytteReg || '—',
     kmTekst: formatKm(innbytte.innbytteKm),
     prisTekst: innbytte.innbyttePris != null ? formatNok(innbytte.innbyttePris) : '—',
-    kommentar: innbytte.innbytteKommentar || ''
+    kommentar: String(innbytte.innbytteKommentar || '').trim()
   };
 }
 
@@ -114,13 +114,51 @@ function buildInnbytteSummaryRows(innbytte) {
   ];
 }
 
+function formatKundeAdresse(kunde) {
+  if (!kunde) return '';
+  const post = [kunde.postnr, kunde.poststed].filter(Boolean).join(' ').trim();
+  return [String(kunde.adresse || '').trim(), post].filter(Boolean).join(', ');
+}
+
+function resolveKundeForDokument(kunde, reservasjon) {
+  const pick = function (override, fallback) {
+    if (override != null && String(override).trim() !== '') return String(override).trim();
+    return String(fallback || '').trim();
+  };
+
+  return {
+    navn: pick(reservasjon?.kundeNavn, kunde?.navn) || 'Kunde',
+    epost: pick(reservasjon?.kundeEpost, kunde?.epost),
+    tlf: pick(reservasjon?.kundeTlf, kunde?.tlf),
+    adresse: pick(reservasjon?.kundeAdresse, formatKundeAdresse(kunde)),
+    orgNr: pick(reservasjon?.kundeOrgNr, kunde?.organisasjonsnummer)
+  };
+}
+
+function buildKundeSummaryRows(kundeData) {
+  if (!kundeData) return [];
+  const rows = [
+    kundeData.navn ? { label: 'Navn', value: kundeData.navn } : null,
+    kundeData.epost ? { label: 'E-post', value: kundeData.epost } : null,
+    kundeData.tlf ? { label: 'Telefon', value: kundeData.tlf } : null,
+    kundeData.adresse ? { label: 'Adresse', value: kundeData.adresse } : null,
+    kundeData.orgNr ? { label: 'Org.nr.', value: kundeData.orgNr } : null
+  ].filter(Boolean);
+  return rows;
+}
+
 function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
   const normalized = {
     dokumentType: normalizeDokumentType(o.dokumentType ?? base.dokumentType),
-    avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? '').trim(),
+    avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? ''),
     tilbudGyldigTil: isoDateOnly(o.tilbudGyldigTil || base.tilbudGyldigTil || addDaysIso(new Date(), 7)),
+    kundeNavn: String(o.kundeNavn ?? base.kundeNavn ?? ''),
+    kundeEpost: String(o.kundeEpost ?? base.kundeEpost ?? ''),
+    kundeTlf: String(o.kundeTlf ?? base.kundeTlf ?? ''),
+    kundeAdresse: String(o.kundeAdresse ?? base.kundeAdresse ?? ''),
+    kundeOrgNr: String(o.kundeOrgNr ?? base.kundeOrgNr ?? ''),
     kjopesum: belopForLagring(o.kjopesum ?? base.kjopesum),
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
@@ -220,14 +258,26 @@ function buildNesteSteg(erTerminal, depositumForfallTekst) {
   ];
 }
 
-function buildTilbudNesteSteg(gyldigTilTekst) {
+function buildTilbudVilkar(gyldigTilTekst) {
+  const gyldighetslinje = gyldigTilTekst && gyldigTilTekst !== '—'
+    ? `Tilbudet er gyldig til og med ${gyldigTilTekst}, med mindre annet avtales skriftlig.`
+    : 'Tilbudets gyldighet avtales skriftlig dersom frist ikke er angitt.';
+
   return [
-    'Les gjennom tilbudet og ta kontakt dersom du har spørsmål.',
-    gyldigTilTekst && gyldigTilTekst !== '—'
-      ? `Tilbudet gjelder til ${gyldigTilTekst}.`
-      : 'Ta kontakt for å avtale videre.',
-    'Vi reserverer gjerne bilen når dere er enige om vilkårene.'
-  ].filter(Boolean);
+    'Tilbudet er uforpliktende og innebærer ingen reservasjon av kjøretøyet før bindende avtale er inngått.',
+    gyldighetslinje,
+    `Bindende avtale foreligger først når reservasjonsbekreftelsen er akseptert/signert og avtalt depositum er innbetalt og mottatt av ${RESERVASJON_FIRMA.navn}.`,
+    `Frem til bindende avtale foreligger, står ${RESERVASJON_FIRMA.navn} fritt til å selge eller reservere kjøretøyet til annen interessent.`,
+    'Eventuelle endringer eller tillegg til tilbudet må avtales skriftlig.'
+  ];
+}
+
+function buildTilbudNesteSteg() {
+  return [
+    'Les gjennom tilbudet og ta gjerne kontakt dersom dere har spørsmål eller ønsker avklaringer.',
+    `Dersom tilbudet er av interesse, ber vi dere bekrefte dette skriftlig til ${RESERVASJON_FIRMA.epost} innen tilbudets gyldighetsfrist.`,
+    'Ved enighet oversender vi reservasjonsbekreftelse med informasjon om eventuelt depositum og videre prosess.'
+  ];
 }
 
 function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
@@ -238,7 +288,9 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const idag = formatNorskDato(isoDateOnly(new Date()));
   const erTerminal = doc.betalingsmate === BETALINGSMATE_BANKTERMINAL;
   const tilbudGyldigTilTekst = formatNorskDato(reservasjon.tilbudGyldigTil);
-  const avtaleKommentar = reservasjon.avtaleKommentar || '';
+  const avtaleKommentar = String(reservasjon.avtaleKommentar || '').trim();
+  const kundeDok = resolveKundeForDokument(kunde, reservasjon);
+  const kundeRows = buildKundeSummaryRows(kundeDok);
 
   const summaryRows = [
     { label: 'Kjøretøy', value: doc.bilNavn },
@@ -277,14 +329,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       ];
 
   const vilkar = erTilbud
-    ? [
-        'Tilbudet er uforpliktende inntil dere bekrefter og eventuelt betaler avtalt depositum.',
-        tilbudGyldigTilTekst && tilbudGyldigTilTekst !== '—'
-          ? `Tilbudet gjelder til ${tilbudGyldigTilTekst}, med mindre annet er avtalt skriftlig.`
-          : 'Tilbudet kan endres dersom bilen selges til annen kunde.',
-        'Endelig avtale inngås først ved signert reservasjonsbekreftelse og mottatt depositum.',
-        'X Bilsenter AS forbeholder seg retten til å selge bilen til andre inntil bindende avtale foreligger.'
-      ]
+    ? buildTilbudVilkar(tilbudGyldigTilTekst)
     : [
         'Depositum trekkes fra kjøpesum ved gjennomført handel.',
         'Ved kansellering fra kundens side refunderes ikke depositum.',
@@ -293,7 +338,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       ];
 
   const nesteSteg = erTilbud
-    ? buildTilbudNesteSteg(tilbudGyldigTilTekst)
+    ? buildTilbudNesteSteg()
     : buildNesteSteg(erTerminal, doc.depositumForfallTekst);
 
   return {
@@ -307,11 +352,8 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       dato: idag,
       referanse: bil?.reg ? String(bil.reg).toUpperCase() : (bil?.id ? `Bil #${bil.id}` : '')
     },
-    kunde: {
-      navn: doc.kundeNavn || 'Kunde',
-      epost: String(kunde?.epost || '').trim(),
-      tlf: String(kunde?.tlf || '').trim()
-    },
+    kunde: kundeDok,
+    kundeRows,
     bil: {
       navn: doc.bilNavn,
       reg: bil?.reg ? String(bil.reg).toUpperCase() : '',
@@ -328,11 +370,11 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     vilkar,
     nesteSteg,
     intro: erTilbud
-      ? (doc.kundeNavn
-        ? `Hei ${doc.kundeNavn}, takk for interessen for vår ${doc.bilNavn}.`
+      ? (kundeDok.navn && kundeDok.navn !== 'Kunde'
+        ? `Hei ${kundeDok.navn}, takk for interessen for vår ${doc.bilNavn}.`
         : `Hei, takk for interessen for vår ${doc.bilNavn}.`)
-      : (doc.kundeNavn
-        ? `Hei ${doc.kundeNavn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
+      : (kundeDok.navn && kundeDok.navn !== 'Kunde'
+        ? `Hei ${kundeDok.navn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
         : `Hei, takk for avtalen om kjøp av ${doc.bilNavn}.`),
     avslutning: erTilbud
       ? 'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.'
@@ -398,6 +440,9 @@ module.exports = {
   buildDepositumIntro,
   buildDepositumVilkar,
   buildAnnetTekst,
+  formatKundeAdresse,
+  resolveKundeForDokument,
+  buildKundeSummaryRows,
   buildReservasjonPdfModel,
   reservasjonSeksjoner
 };

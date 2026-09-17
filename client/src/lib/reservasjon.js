@@ -83,7 +83,7 @@ function normalizeInnbytteFields(o) {
     innbytteReg: String(src.innbytteReg || '').trim().toUpperCase(),
     innbytteKm,
     innbyttePris: belopForLagring(src.innbyttePris),
-    innbytteKommentar: String(src.innbytteKommentar || '').trim()
+    innbytteKommentar: String(src.innbytteKommentar ?? '')
   };
 }
 
@@ -101,7 +101,7 @@ export function buildInnbytteDocumentData(reservasjon) {
     reg: innbytte.innbytteReg || '—',
     kmTekst: formatKm(innbytte.innbytteKm),
     prisTekst: innbytte.innbyttePris != null ? formatNokBelop(innbytte.innbyttePris) : '—',
-    kommentar: innbytte.innbytteKommentar || ''
+    kommentar: String(innbytte.innbytteKommentar || '').trim()
   };
 }
 
@@ -114,13 +114,61 @@ export function buildInnbytteSummaryRows(innbytte) {
   ];
 }
 
+export function formatKundeAdresse(kunde) {
+  if (!kunde) return '';
+  const post = [kunde.postnr, kunde.poststed].filter(Boolean).join(' ').trim();
+  return [String(kunde.adresse || '').trim(), post].filter(Boolean).join(', ');
+}
+
+export function resolveKundeForDokument(kunde, reservasjon) {
+  const pick = function (override, fallback) {
+    if (override != null && String(override).trim() !== '') return String(override).trim();
+    return String(fallback || '').trim();
+  };
+
+  return {
+    navn: pick(reservasjon?.kundeNavn, kunde?.navn) || 'Kunde',
+    epost: pick(reservasjon?.kundeEpost, kunde?.epost),
+    tlf: pick(reservasjon?.kundeTlf, kunde?.tlf),
+    adresse: pick(reservasjon?.kundeAdresse, formatKundeAdresse(kunde)),
+    orgNr: pick(reservasjon?.kundeOrgNr, kunde?.organisasjonsnummer)
+  };
+}
+
+export function buildKundeSummaryRows(kundeData) {
+  if (!kundeData) return [];
+  return [
+    kundeData.navn ? { label: 'Navn', value: kundeData.navn } : null,
+    kundeData.epost ? { label: 'E-post', value: kundeData.epost } : null,
+    kundeData.tlf ? { label: 'Telefon', value: kundeData.tlf } : null,
+    kundeData.adresse ? { label: 'Adresse', value: kundeData.adresse } : null,
+    kundeData.orgNr ? { label: 'Org.nr.', value: kundeData.orgNr } : null
+  ].filter(Boolean);
+}
+
+export function patchKundeTilReservasjon(kunde) {
+  if (!kunde) return {};
+  return {
+    kundeNavn: String(kunde.navn || '').trim(),
+    kundeEpost: String(kunde.epost || '').trim(),
+    kundeTlf: String(kunde.tlf || '').trim(),
+    kundeAdresse: formatKundeAdresse(kunde),
+    kundeOrgNr: String(kunde.organisasjonsnummer || '').trim()
+  };
+}
+
 export function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
   const normalized = {
     dokumentType: normalizeDokumentType(o.dokumentType ?? base.dokumentType),
-    avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? '').trim(),
+    avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? ''),
     tilbudGyldigTil: isoDateOnly(o.tilbudGyldigTil || base.tilbudGyldigTil || addDaysIso(new Date(), 7)),
+    kundeNavn: String(o.kundeNavn ?? base.kundeNavn ?? ''),
+    kundeEpost: String(o.kundeEpost ?? base.kundeEpost ?? ''),
+    kundeTlf: String(o.kundeTlf ?? base.kundeTlf ?? ''),
+    kundeAdresse: String(o.kundeAdresse ?? base.kundeAdresse ?? ''),
+    kundeOrgNr: String(o.kundeOrgNr ?? base.kundeOrgNr ?? ''),
     kjopesum: belopForLagring(o.kjopesum ?? base.kjopesum),
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
@@ -195,14 +243,26 @@ export function buildNesteSteg(erTerminal, depositumForfallTekst) {
   ];
 }
 
-function buildTilbudNesteSteg(gyldigTilTekst) {
+function buildTilbudVilkar(gyldigTilTekst) {
+  const gyldighetslinje = gyldigTilTekst && gyldigTilTekst !== '—'
+    ? `Tilbudet er gyldig til og med ${gyldigTilTekst}, med mindre annet avtales skriftlig.`
+    : 'Tilbudets gyldighet avtales skriftlig dersom frist ikke er angitt.';
+
   return [
-    'Les gjennom tilbudet og ta kontakt dersom du har spørsmål.',
-    gyldigTilTekst && gyldigTilTekst !== '—'
-      ? `Tilbudet gjelder til ${gyldigTilTekst}.`
-      : 'Ta kontakt for å avtale videre.',
-    'Vi reserverer gjerne bilen når dere er enige om vilkårene.'
-  ].filter(Boolean);
+    'Tilbudet er uforpliktende og innebærer ingen reservasjon av kjøretøyet før bindende avtale er inngått.',
+    gyldighetslinje,
+    `Bindende avtale foreligger først når reservasjonsbekreftelsen er akseptert/signert og avtalt depositum er innbetalt og mottatt av ${RESERVASJON_FIRMA.navn}.`,
+    `Frem til bindende avtale foreligger, står ${RESERVASJON_FIRMA.navn} fritt til å selge eller reservere kjøretøyet til annen interessent.`,
+    'Eventuelle endringer eller tillegg til tilbudet må avtales skriftlig.'
+  ];
+}
+
+function buildTilbudNesteSteg() {
+  return [
+    'Les gjennom tilbudet og ta gjerne kontakt dersom dere har spørsmål eller ønsker avklaringer.',
+    `Dersom tilbudet er av interesse, ber vi dere bekrefte dette skriftlig til ${RESERVASJON_FIRMA.epost} innen tilbudets gyldighetsfrist.`,
+    'Ved enighet oversender vi reservasjonsbekreftelse med informasjon om eventuelt depositum og videre prosess.'
+  ];
 }
 
 export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
@@ -218,6 +278,8 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
   const depositumForfallTekst = formatNorskDato(reservasjon.depositumForfall);
   const reservasjonTilTekst = formatNorskDato(reservasjon.reservasjonTil);
   const tilbudGyldigTilTekst = formatNorskDato(reservasjon.tilbudGyldigTil);
+  const kundeDok = resolveKundeForDokument(kunde, reservasjon);
+  const kundeRows = buildKundeSummaryRows(kundeDok);
 
   const summaryRows = [
     { label: 'Kjøretøy', value: bilNavn },
@@ -261,29 +323,24 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
       dato: formatNorskDato(isoDateOnly(new Date())),
       referanse: bil?.reg ? String(bil.reg).toUpperCase() : ''
     },
-    kundeNavn: kundeNavn || 'Kunde',
+    kundeNavn: kundeDok.navn,
+    kunde: kundeDok,
+    kundeRows,
     intro: erTilbud
-      ? (kundeNavn
-        ? `Hei ${kundeNavn}, takk for interessen for vår ${bilNavn}.`
+      ? (kundeDok.navn && kundeDok.navn !== 'Kunde'
+        ? `Hei ${kundeDok.navn}, takk for interessen for vår ${bilNavn}.`
         : `Hei, takk for interessen for vår ${bilNavn}.`)
-      : (kundeNavn
-        ? `Hei ${kundeNavn}, takk for avtalen om kjøp av ${bilNavn}.`
+      : (kundeDok.navn && kundeDok.navn !== 'Kunde'
+        ? `Hei ${kundeDok.navn}, takk for avtalen om kjøp av ${bilNavn}.`
         : `Hei, takk for avtalen om kjøp av ${bilNavn}.`),
     finnUrl,
     summaryRows,
-    avtaleKommentar: reservasjon.avtaleKommentar || '',
+    avtaleKommentar: String(reservasjon.avtaleKommentar || '').trim(),
     innbytte,
     innbytteRows: buildInnbytteSummaryRows(innbytte),
     payment,
     vilkar: erTilbud
-      ? [
-          'Tilbudet er uforpliktende inntil dere bekrefter og eventuelt betaler avtalt depositum.',
-          tilbudGyldigTilTekst && tilbudGyldigTilTekst !== '—'
-            ? `Tilbudet gjelder til ${tilbudGyldigTilTekst}, med mindre annet er avtalt skriftlig.`
-            : 'Tilbudet kan endres dersom bilen selges til annen kunde.',
-          'Endelig avtale inngås først ved signert reservasjonsbekreftelse og mottatt depositum.',
-          'X Bilsenter AS forbeholder seg retten til å selge bilen til andre inntil bindende avtale foreligger.'
-        ]
+      ? buildTilbudVilkar(tilbudGyldigTilTekst)
       : [
           'Depositum trekkes fra kjøpesum ved gjennomført handel.',
           'Ved kansellering fra kundens side refunderes ikke depositum.',
@@ -291,7 +348,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
           'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen.'
         ],
     nesteSteg: erTilbud
-      ? buildTilbudNesteSteg(tilbudGyldigTilTekst)
+      ? buildTilbudNesteSteg()
       : buildNesteSteg(erTerminal, depositumForfallTekst),
     avslutning: erTilbud
       ? 'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.'
