@@ -286,8 +286,8 @@ function buildNesteSteg(erTerminal, depositumForfallTekst) {
 
 function buildTilbudVilkar() {
   return [
-    'Tilbudet er uforpliktende og innebærer ingen reservasjon av kjøretøyet før bindende avtale er inngått.',
-    `Bindende avtale foreligger først når reservasjonsbekreftelsen er akseptert/signert og avtalt depositum er innbetalt og mottatt av ${RESERVASJON_FIRMA.navn}.`,
+    'Tilbudet i seg selv er ikke bindende. Bindende avtale foreligger først når reservasjonsbekreftelse eller kjøpekontrakt er signert av begge parter og dess innhold er oppfylt.',
+    'Slik reservasjonsbekreftelse eller kjøpekontrakt sendes ut etter at kunden har akseptert tilbudet.',
     `Frem til bindende avtale foreligger, står ${RESERVASJON_FIRMA.navn} fritt til å selge eller reservere kjøretøyet til annen interessent.`,
     'Eventuelle endringer eller tillegg til tilbudet må avtales skriftlig.'
   ];
