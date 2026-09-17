@@ -250,7 +250,7 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
 
   useEffect(function () {
     setMelding(buildReservasjonEpostMelding(bil, kunde, reservasjonVisning));
-  }, [rawReservasjon.dokumentType, bil.id, kunde?.id]);
+  }, [rawReservasjon.dokumentType, bil.id, kunde?.id, tekstDraft.kundeNavn, reservasjonVisning.kundeNavn]);
 
   const oppdater = function (patch, msg) {
     oppdaterReservasjon(patch, msg);

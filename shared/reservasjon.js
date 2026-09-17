@@ -141,6 +141,12 @@ function formatKundeAdresse(kunde) {
   return [String(kunde.adresse || '').trim(), post].filter(Boolean).join(', ');
 }
 
+function extractKundeFornavn(navn) {
+  const s = String(navn || '').trim();
+  if (!s || s === 'Kunde') return '';
+  return s.split(/\s+/)[0] || s;
+}
+
 function resolveKundeForDokument(kunde, reservasjon) {
   const pick = function (override, fallback) {
     if (override != null && String(override).trim() !== '') return String(override).trim();
@@ -302,6 +308,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   );
   const avtaleKommentar = String(reservasjon.avtaleKommentar || '').trim();
   const kundeDok = resolveKundeForDokument(kunde, reservasjon);
+  const kundeFornavn = extractKundeFornavn(kundeDok.navn);
   const kundeRows = buildKundeSummaryRows(kundeDok);
 
   const summaryRows = [
@@ -382,11 +389,11 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     vilkar,
     nesteSteg,
     intro: erTilbud
-      ? (kundeDok.navn && kundeDok.navn !== 'Kunde'
-        ? `Hei ${kundeDok.navn}, takk for interessen for vår ${doc.bilNavn}.`
+      ? (kundeFornavn
+        ? `Hei ${kundeFornavn}, takk for interessen for vår ${doc.bilNavn}.`
         : `Hei, takk for interessen for vår ${doc.bilNavn}.`)
-      : (kundeDok.navn && kundeDok.navn !== 'Kunde'
-        ? `Hei ${kundeDok.navn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
+      : (kundeFornavn
+        ? `Hei ${kundeFornavn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
         : `Hei, takk for avtalen om kjøp av ${doc.bilNavn}.`),
     avslutning: erTilbud
       ? 'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.'
@@ -397,12 +404,13 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
 function reservasjonSeksjoner(data) {
   const doc = enrichReservasjonDocumentData(data);
   const finnDel = doc.finnUrl ? ` (${doc.finnUrl})` : '';
+  const kundeFornavn = extractKundeFornavn(doc.kundeNavn);
 
   return [
     {
       title: null,
       body: [
-        doc.kundeNavn ? `Hei ${doc.kundeNavn}` : 'Hei',
+        kundeFornavn ? `Hei ${kundeFornavn}` : 'Hei',
         '',
         `Takk for en hyggelig avtale vedr. kjøp av vår ${doc.bilNavn}${finnDel}.`
       ].join('\n')
@@ -455,6 +463,7 @@ module.exports = {
   buildDepositumVilkar,
   buildAnnetTekst,
   formatKundeAdresse,
+  extractKundeFornavn,
   resolveKundeForDokument,
   buildKundeSummaryRows,
   buildReservasjonPdfModel,

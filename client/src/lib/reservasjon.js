@@ -141,6 +141,12 @@ export function formatKundeAdresse(kunde) {
   return [String(kunde.adresse || '').trim(), post].filter(Boolean).join(', ');
 }
 
+export function extractKundeFornavn(navn) {
+  const s = String(navn || '').trim();
+  if (!s || s === 'Kunde') return '';
+  return s.split(/\s+/)[0] || s;
+}
+
 export function resolveKundeForDokument(kunde, reservasjon) {
   const pick = function (override, fallback) {
     if (override != null && String(override).trim() !== '') return String(override).trim();
@@ -289,6 +295,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
     reservasjon.tilbudGyldigTilKlokkeslett
   );
   const kundeDok = resolveKundeForDokument(kunde, reservasjon);
+  const kundeFornavn = extractKundeFornavn(kundeDok.navn);
   const kundeRows = buildKundeSummaryRows(kundeDok);
 
   const summaryRows = [
@@ -337,11 +344,11 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
     kunde: kundeDok,
     kundeRows,
     intro: erTilbud
-      ? (kundeDok.navn && kundeDok.navn !== 'Kunde'
-        ? `Hei ${kundeDok.navn}, takk for interessen for vår ${bilNavn}.`
+      ? (kundeFornavn
+        ? `Hei ${kundeFornavn}, takk for interessen for vår ${bilNavn}.`
         : `Hei, takk for interessen for vår ${bilNavn}.`)
-      : (kundeDok.navn && kundeDok.navn !== 'Kunde'
-        ? `Hei ${kundeDok.navn}, takk for avtalen om kjøp av ${bilNavn}.`
+      : (kundeFornavn
+        ? `Hei ${kundeFornavn}, takk for avtalen om kjøp av ${bilNavn}.`
         : `Hei, takk for avtalen om kjøp av ${bilNavn}.`),
     finnUrl,
     summaryRows,
@@ -369,7 +376,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
 export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
   const bilNavn = buildBilAvtaleNavn(bil);
   const kundeDok = resolveKundeForDokument(kunde, reservasjon || {});
-  const fornavn = kundeDok.navn !== 'Kunde' ? kundeDok.navn.split(/\s+/)[0] : '';
+  const fornavn = extractKundeFornavn(kundeDok.navn);
   const erTilbud = reservasjon?.dokumentType === DOKUMENT_TYPE_TILBUD;
   const hilsen = fornavn ? `Hei ${fornavn},` : 'Hei,';
 
