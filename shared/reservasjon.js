@@ -42,6 +42,27 @@ function formatNorskDato(iso) {
   return `${day}.${m}.${y}`;
 }
 
+function normalizeKlokkeslett(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  const s = String(value).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return '';
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return '';
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function formatTilbudGyldigTilTekst(datoIso, klokkeslett) {
+  const dato = formatNorskDato(datoIso);
+  const kl = normalizeKlokkeslett(klokkeslett);
+  if (dato === '—') return '—';
+  if (!kl) return dato;
+  return `${dato} kl. ${kl}`;
+}
+
 function formatNok(amount) {
   const n = Number(amount);
   if (!Number.isFinite(n)) return '—';
@@ -146,6 +167,7 @@ function normalizeBilReservasjon(raw, defaults, bil) {
     dokumentType: normalizeDokumentType(o.dokumentType ?? base.dokumentType),
     avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? ''),
     tilbudGyldigTil: isoDateOnly(o.tilbudGyldigTil || base.tilbudGyldigTil || addDaysIso(new Date(), 7)),
+    tilbudGyldigTilKlokkeslett: normalizeKlokkeslett(o.tilbudGyldigTilKlokkeslett ?? base.tilbudGyldigTilKlokkeslett ?? ''),
     kundeNavn: String(o.kundeNavn ?? base.kundeNavn ?? ''),
     kundeEpost: String(o.kundeEpost ?? base.kundeEpost ?? ''),
     kundeTlf: String(o.kundeTlf ?? base.kundeTlf ?? ''),
@@ -250,14 +272,9 @@ function buildNesteSteg(erTerminal, depositumForfallTekst) {
   ];
 }
 
-function buildTilbudVilkar(gyldigTilTekst) {
-  const gyldighetslinje = gyldigTilTekst && gyldigTilTekst !== '—'
-    ? `Tilbudet er gyldig til og med ${gyldigTilTekst}, med mindre annet avtales skriftlig.`
-    : 'Tilbudets gyldighet avtales skriftlig dersom frist ikke er angitt.';
-
+function buildTilbudVilkar() {
   return [
     'Tilbudet er uforpliktende og innebærer ingen reservasjon av kjøretøyet før bindende avtale er inngått.',
-    gyldighetslinje,
     `Bindende avtale foreligger først når reservasjonsbekreftelsen er akseptert/signert og avtalt depositum er innbetalt og mottatt av ${RESERVASJON_FIRMA.navn}.`,
     `Frem til bindende avtale foreligger, står ${RESERVASJON_FIRMA.navn} fritt til å selge eller reservere kjøretøyet til annen interessent.`,
     'Eventuelle endringer eller tillegg til tilbudet må avtales skriftlig.'
@@ -279,7 +296,10 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const doc = enrichReservasjonDocumentData(base);
   const idag = formatNorskDato(isoDateOnly(new Date()));
   const erTerminal = doc.betalingsmate === BETALINGSMATE_BANKTERMINAL;
-  const tilbudGyldigTilTekst = formatNorskDato(reservasjon.tilbudGyldigTil);
+  const tilbudGyldigTilTekst = formatTilbudGyldigTilTekst(
+    reservasjon.tilbudGyldigTil,
+    reservasjon.tilbudGyldigTilKlokkeslett
+  );
   const avtaleKommentar = String(reservasjon.avtaleKommentar || '').trim();
   const kundeDok = resolveKundeForDokument(kunde, reservasjon);
   const kundeRows = buildKundeSummaryRows(kundeDok);
@@ -321,7 +341,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       ];
 
   const vilkar = erTilbud
-    ? buildTilbudVilkar(tilbudGyldigTilTekst)
+    ? buildTilbudVilkar()
     : [
         'Depositum trekkes fra kjøpesum ved gjennomført handel.',
         'Ved kansellering fra kundens side refunderes ikke depositum.',
@@ -416,6 +436,8 @@ module.exports = {
   isoDateOnly,
   addDaysIso,
   formatNorskDato,
+  normalizeKlokkeslett,
+  formatTilbudGyldigTilTekst,
   formatNok,
   normalizeBetalingsmate,
   normalizeBilReservasjon,

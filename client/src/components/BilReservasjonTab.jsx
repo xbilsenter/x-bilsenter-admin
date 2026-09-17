@@ -438,13 +438,21 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
               />
             </div>
             {erTilbud ? (
-              <div>
+              <div className="bil-reservasjon__gyldighet">
                 <div className="fl">Tilbud gyldig til</div>
-                <input
-                  type="date"
-                  value={rawReservasjon.tilbudGyldigTil || ''}
-                  onChange={function (e) { oppdater({ tilbudGyldigTil: e.target.value }); }}
-                />
+                <div className="form-row gap bil-reservasjon__gyldighet-row">
+                  <input
+                    type="date"
+                    value={rawReservasjon.tilbudGyldigTil || ''}
+                    onChange={function (e) { oppdater({ tilbudGyldigTil: e.target.value }); }}
+                  />
+                  <input
+                    type="time"
+                    value={rawReservasjon.tilbudGyldigTilKlokkeslett || ''}
+                    onChange={function (e) { oppdater({ tilbudGyldigTilKlokkeslett: e.target.value }); }}
+                    aria-label="Klokkeslett for tilbudsgyldighet"
+                  />
+                </div>
               </div>
             ) : (
               <div>

@@ -1005,6 +1005,8 @@ select option{background:var(--s1);}
 .bil-reservasjon__epost{margin-top:20px;padding-top:16px;border-top:1px solid var(--b1);}
 .bil-reservasjon__warn{font-size:11px;color:var(--gold);margin:10px 0 0;}
 .bil-reservasjon__kunde{margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--b1);}
+.bil-reservasjon__gyldighet-row{align-items:end;}
+.bil-reservasjon__gyldighet-row input[type="time"]{min-width:110px;}
 .bil-reservasjon__innbytte{margin-top:18px;padding-top:16px;border-top:1px solid var(--b1);}
 .bil-reservasjon__innbytte-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
 .bil-reservasjon__toggle{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);cursor:pointer;user-select:none;}
