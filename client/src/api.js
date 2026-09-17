@@ -274,6 +274,13 @@ export async function downloadReservasjonPdf(id) {
   return res.blob();
 }
 
+export function sendReservasjonDokument(id, body) {
+  return request(`/biler/${id}/send-reservasjon-dokument`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
 export async function uploadBilDokumenter(id, files) {
   const token = localStorage.getItem(TOKEN_KEY);
   const form = new FormData();

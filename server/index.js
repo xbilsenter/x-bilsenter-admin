@@ -107,7 +107,11 @@ const {
   normalizeTimeregNotat
 } = require('./timeregistrering-shared');
 const { buildReservasjonPdfBuffer } = require('./reservasjon-pdf');
-const { normalizeBilReservasjon } = require('../shared/reservasjon');
+const {
+  normalizeBilReservasjon,
+  DOKUMENT_TYPE_TILBUD,
+  buildBilAvtaleNavn
+} = require('../shared/reservasjon');
 
 const {
   lookupVehicleFull,
@@ -2763,13 +2767,86 @@ app.get('/api/biler/:id/reservasjon-pdf', requireAuth, async function (req, res)
     const okonomi = parseJson(row.okonomi, {});
     const reservasjon = normalizeBilReservasjon(okonomi.reservasjon, null, bil);
     const pdf = await buildReservasjonPdfBuffer(bil, kunde, reservasjon);
-    const filnavn = ['Reservasjon', bil.reg || id].filter(Boolean).join('-').replace(/\s+/g, '-');
+    const erTilbud = reservasjon.dokumentType === DOKUMENT_TYPE_TILBUD;
+    const filnavn = [
+      erTilbud ? 'Tilbud' : 'Reservasjon',
+      bil.reg || id,
+      kunde?.navn || ''
+    ].filter(Boolean).join('-').replace(/\s+/g, '-');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filnavn}.pdf"`);
     res.send(pdf);
   } catch (err) {
     console.error('GET /api/biler/:id/reservasjon-pdf feilet:', err.message);
     res.status(500).json({ ok: false, error: err.message || 'Kunne ikke lage PDF.' });
+  }
+});
+
+app.post('/api/biler/:id/send-reservasjon-dokument', requireAuth, async function (req, res) {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Ugyldig id.' });
+
+  const b = req.body || {};
+  const melding = String(b.melding || '').trim();
+  if (!melding) return res.status(400).json({ ok: false, error: 'Melding kan ikke være tom.' });
+
+  try {
+    const row = await prepare('SELECT * FROM biler WHERE id = ?').get(id);
+    if (!row) return res.status(404).json({ ok: false, error: 'Bilen finnes ikke.' });
+
+    const kundeMap = await getAllBilKundeIdsMap();
+    const bil = await mapBilForApi(row, kundeMap[id] || []);
+    const kundeIds = bil.kundeIds || [];
+    if (!kundeIds.length) {
+      return res.status(400).json({ ok: false, error: 'Koble kunde til bilen først.' });
+    }
+
+    const kundeRow = await prepare('SELECT * FROM kunder WHERE id = ?').get(kundeIds[0]);
+    if (!kundeRow) return res.status(400).json({ ok: false, error: 'Kunden finnes ikke.' });
+    const kunde = mapKunde(kundeRow);
+
+    const toEmail = normalizeRecipientEmail(kunde.epost);
+    if (!toEmail) return res.status(400).json({ ok: false, error: 'Kunden mangler e-postadresse.' });
+    if (!isValidEmail(toEmail)) {
+      return res.status(400).json({ ok: false, error: `Ugyldig e-postadresse på kunde: ${kunde.epost}` });
+    }
+
+    const okonomi = parseJson(row.okonomi, {});
+    const reservasjon = normalizeBilReservasjon(okonomi.reservasjon, null, bil);
+    if (!reservasjon.kjopesum) {
+      return res.status(400).json({ ok: false, error: 'Legg inn kjøpesum først.' });
+    }
+
+    const erTilbud = reservasjon.dokumentType === DOKUMENT_TYPE_TILBUD;
+    const bilLabel = buildBilAvtaleNavn(bil);
+    const subject = erTilbud
+      ? `Tilbud${bil.reg ? ' – ' + bil.reg : ''}${bilLabel ? ' (' + bilLabel + ')' : ''}`
+      : `Reservasjonsbekreftelse${bil.reg ? ' – ' + bil.reg : ''}${bilLabel ? ' (' + bilLabel + ')' : ''}`;
+
+    const pdfBuffer = await buildReservasjonPdfBuffer(bil, kunde, reservasjon);
+    const filnavn = [
+      erTilbud ? 'Tilbud' : 'Reservasjon',
+      bil.reg || id,
+      kunde.navn || ''
+    ].filter(Boolean).join('-').replace(/\s+/g, '-') + '.pdf';
+
+    await sendMail({
+      to: toEmail,
+      toName: kunde.navn,
+      subject: subject,
+      text: melding,
+      kontoId: b.kontoId || null,
+      attachments: [{
+        filename: filnavn,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }]
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /api/biler/:id/send-reservasjon-dokument feilet:', err.message);
+    res.status(500).json({ ok: false, error: err.message || 'Kunne ikke sende e-post.' });
   }
 });
 

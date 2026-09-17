@@ -1698,6 +1698,7 @@ export default function App() {
           kunder={kunder}
           biler={biler}
           currentUser={user}
+          mailStatus={mailStatus}
         />
       )}
       {modal?.t === 'nyBil' && canAddBil(user) && (
@@ -3589,7 +3590,7 @@ async function hentAutosysPayload(reg, lists, prevBil, overstyrt) {
   return buildAutosysLagring(parsed, data.raw || null, lists, prevBil, overstyrt);
 }
 
-function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hydrateBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser }) {
+function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hydrateBil, visTost, lists, kal, henv, innbytte, epost, setModal, setTab, setInnboksOpenEpost, kunder, biler, currentUser, mailStatus }) {
   const [bil, setBil] = useState(data);
   const [autosysOverstyrt, setAutosysOverstyrt] = useState(function () {
     return getBilAutosysOverstyrt(data);
@@ -4507,7 +4508,7 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
         )}
 
         {activeTab === 'reservasjon' && (
-          <BilReservasjonTab bil={bil} kunder={kunder} knyttetInnbytte={knyttetInnbytte} oppdaterReservasjon={oppdaterReservasjon} visTost={visTost} />
+          <BilReservasjonTab bil={bil} kunder={kunder} knyttetInnbytte={knyttetInnbytte} oppdaterReservasjon={oppdaterReservasjon} visTost={visTost} mailStatus={mailStatus} />
         )}
 
         {activeTab === 'arsprove' && (

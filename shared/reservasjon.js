@@ -11,6 +11,12 @@ const RESERVASJON_FIRMA = {
 
 const BETALINGSMATE_BANKOVERFORING = 'bankoverforing';
 const BETALINGSMATE_BANKTERMINAL = 'bankterminal';
+const DOKUMENT_TYPE_TILBUD = 'tilbud';
+const DOKUMENT_TYPE_RESERVASJON = 'reservasjon';
+
+function normalizeDokumentType(value) {
+  return value === DOKUMENT_TYPE_TILBUD ? DOKUMENT_TYPE_TILBUD : DOKUMENT_TYPE_RESERVASJON;
+}
 
 function isoDateOnly(value) {
   if (!value) return '';
@@ -112,6 +118,9 @@ function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
   const normalized = {
+    dokumentType: normalizeDokumentType(o.dokumentType ?? base.dokumentType),
+    avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? '').trim(),
+    tilbudGyldigTil: isoDateOnly(o.tilbudGyldigTil || base.tilbudGyldigTil || addDaysIso(new Date(), 7)),
     kjopesum: belopForLagring(o.kjopesum ?? base.kjopesum),
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
@@ -211,25 +220,45 @@ function buildNesteSteg(erTerminal, depositumForfallTekst) {
   ];
 }
 
+function buildTilbudNesteSteg(gyldigTilTekst) {
+  return [
+    'Les gjennom tilbudet og ta kontakt dersom du har spørsmål.',
+    gyldigTilTekst && gyldigTilTekst !== '—'
+      ? `Tilbudet gjelder til ${gyldigTilTekst}.`
+      : 'Ta kontakt for å avtale videre.',
+    'Vi reserverer gjerne bilen når dere er enige om vilkårene.'
+  ].filter(Boolean);
+}
+
 function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const reservasjon = normalizeBilReservasjon(reservasjonRaw, null, bil);
+  const erTilbud = reservasjon.dokumentType === DOKUMENT_TYPE_TILBUD;
   const base = buildReservasjonDocumentData(bil, kunde, reservasjon);
   const doc = enrichReservasjonDocumentData(base);
   const idag = formatNorskDato(isoDateOnly(new Date()));
   const erTerminal = doc.betalingsmate === BETALINGSMATE_BANKTERMINAL;
+  const tilbudGyldigTilTekst = formatNorskDato(reservasjon.tilbudGyldigTil);
+  const avtaleKommentar = reservasjon.avtaleKommentar || '';
 
   const summaryRows = [
     { label: 'Kjøretøy', value: doc.bilNavn },
     bil?.reg ? { label: 'Registreringsnr.', value: String(bil.reg).toUpperCase() } : null,
-    { label: 'Kjøpesum', value: doc.kjopesumTekst, highlight: true },
-    { label: 'Depositum', value: doc.depositumTekst, highlight: true },
-    { label: 'Depositum senest', value: doc.depositumForfallTekst },
-    { label: 'Reservert til', value: doc.reservasjonTilTekst },
-    { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+    { label: erTilbud ? 'Tilbudspris' : 'Kjøpesum', value: doc.kjopesumTekst, highlight: true }
   ].filter(Boolean);
 
+  if (erTilbud) {
+    summaryRows.push({ label: 'Tilbud gyldig til', value: tilbudGyldigTilTekst });
+  } else {
+    summaryRows.push(
+      { label: 'Depositum', value: doc.depositumTekst, highlight: true },
+      { label: 'Depositum senest', value: doc.depositumForfallTekst },
+      { label: 'Reservert til', value: doc.reservasjonTilTekst },
+      { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+    );
+  }
+
   const innbytte = buildInnbytteDocumentData(reservasjon);
-  if (innbytte) {
+  if (innbytte && !erTilbud) {
     summaryRows.push(
       { label: 'Innbytte reg.nr.', value: innbytte.reg },
       { label: 'Innbytte km', value: innbytte.kmTekst },
@@ -247,20 +276,34 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
         `Mottaker: ${doc.firma.navn}. Betalingsfrist: ${doc.depositumForfallTekst}.`
       ];
 
-  const vilkar = [
-    'Depositum trekkes fra kjøpesum ved gjennomført handel.',
-    'Ved kansellering fra kundens side refunderes ikke depositum.',
-    `Bilen holdes reservert til ${doc.reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
-    'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen.'
-  ];
+  const vilkar = erTilbud
+    ? [
+        'Tilbudet er uforpliktende inntil dere bekrefter og eventuelt betaler avtalt depositum.',
+        tilbudGyldigTilTekst && tilbudGyldigTilTekst !== '—'
+          ? `Tilbudet gjelder til ${tilbudGyldigTilTekst}, med mindre annet er avtalt skriftlig.`
+          : 'Tilbudet kan endres dersom bilen selges til annen kunde.',
+        'Endelig avtale inngås først ved signert reservasjonsbekreftelse og mottatt depositum.',
+        'X Bilsenter AS forbeholder seg retten til å selge bilen til andre inntil bindende avtale foreligger.'
+      ]
+    : [
+        'Depositum trekkes fra kjøpesum ved gjennomført handel.',
+        'Ved kansellering fra kundens side refunderes ikke depositum.',
+        `Bilen holdes reservert til ${doc.reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
+        'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen.'
+      ];
 
-  const nesteSteg = buildNesteSteg(erTerminal, doc.depositumForfallTekst);
+  const nesteSteg = erTilbud
+    ? buildTilbudNesteSteg(tilbudGyldigTilTekst)
+    : buildNesteSteg(erTerminal, doc.depositumForfallTekst);
 
   return {
     firma: doc.firma,
+    dokumentType: reservasjon.dokumentType,
+    skipPayment: erTilbud,
+    metaLabel: erTilbud ? 'Tilbudsbrev' : 'Reservasjonsbekreftelse',
     dokument: {
-      tittel: 'Reservasjonsbekreftelse',
-      undertittel: 'Avtale om reservasjon av kjøretøy',
+      tittel: erTilbud ? 'Tilbudsbrev' : 'Reservasjonsbekreftelse',
+      undertittel: erTilbud ? 'Tilbud på kjøretøy' : 'Avtale om reservasjon av kjøretøy',
       dato: idag,
       referanse: bil?.reg ? String(bil.reg).toUpperCase() : (bil?.id ? `Bil #${bil.id}` : '')
     },
@@ -275,6 +318,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       finnUrl: doc.finnUrl || ''
     },
     summaryRows,
+    avtaleKommentar,
     innbytte,
     innbytteRows: buildInnbytteSummaryRows(innbytte),
     payment: {
@@ -283,10 +327,16 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     },
     vilkar,
     nesteSteg,
-    intro: doc.kundeNavn
-      ? `Hei ${doc.kundeNavn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
-      : `Hei, takk for avtalen om kjøp av ${doc.bilNavn}.`,
-    avslutning: 'Vi ser frem til å fullføre handelen sammen med deg.'
+    intro: erTilbud
+      ? (doc.kundeNavn
+        ? `Hei ${doc.kundeNavn}, takk for interessen for vår ${doc.bilNavn}.`
+        : `Hei, takk for interessen for vår ${doc.bilNavn}.`)
+      : (doc.kundeNavn
+        ? `Hei ${doc.kundeNavn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
+        : `Hei, takk for avtalen om kjøp av ${doc.bilNavn}.`),
+    avslutning: erTilbud
+      ? 'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.'
+      : 'Vi ser frem til å fullføre handelen sammen med deg.'
   };
 }
 
@@ -326,6 +376,9 @@ module.exports = {
   RESERVASJON_FIRMA,
   BETALINGSMATE_BANKOVERFORING,
   BETALINGSMATE_BANKTERMINAL,
+  DOKUMENT_TYPE_TILBUD,
+  DOKUMENT_TYPE_RESERVASJON,
+  normalizeDokumentType,
   isoDateOnly,
   addDaysIso,
   formatNorskDato,

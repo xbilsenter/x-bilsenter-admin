@@ -1,16 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   RESERVASJON_FIRMA,
   BETALINGSMATE_BANKOVERFORING,
   BETALINGSMATE_BANKTERMINAL,
+  DOKUMENT_TYPE_TILBUD,
+  DOKUMENT_TYPE_RESERVASJON,
   addDaysIso,
   buildBilVisningsnavn,
   buildReservasjonPreviewModel,
+  buildReservasjonEpostMelding,
   getRawReservasjonFromOkonomi,
   getReservasjonFromOkonomi,
   isoDateOnly
 } from '../lib/reservasjon.js';
-import { downloadReservasjonPdf } from '../api.js';
+import { downloadReservasjonPdf, sendReservasjonDokument } from '../api.js';
 
 function parseBelop(value) {
   if (value === '' || value === null || value === undefined) return null;
@@ -52,7 +55,7 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
           />
         </div>
         <div className="bil-reservasjon-preview__meta">
-          <div className="bil-reservasjon-preview__meta-label">Reservasjonsbekreftelse</div>
+          <div className="bil-reservasjon-preview__meta-label">{model.metaLabel}</div>
           <div className="bil-reservasjon-preview__meta-row">
             <span>Dato</span>
             <strong>{model.dokument.dato}</strong>
@@ -90,6 +93,12 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
                 </div>
               );
             })}
+            {model.avtaleKommentar ? (
+              <div className="bil-reservasjon-preview__cell bil-reservasjon-preview__cell--comment">
+                <div className="bil-reservasjon-preview__innbytte-kommentar-label">Avtalte forhold</div>
+                <p>{model.avtaleKommentar}</p>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -115,15 +124,17 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
         </div>
         ) : null}
 
-        <div className="bil-reservasjon-preview__section">
-          <h4>Depositum og betaling</h4>
-          <div className="bil-reservasjon-preview__payment">
-            <div className="bil-reservasjon-preview__payment-title">{model.payment.title}</div>
-            {model.payment.lines.map(function (line) {
-              return <p key={line}>{line}</p>;
-            })}
+        {!model.skipPayment ? (
+          <div className="bil-reservasjon-preview__section">
+            <h4>Depositum og betaling</h4>
+            <div className="bil-reservasjon-preview__payment">
+              <div className="bil-reservasjon-preview__payment-title">{model.payment.title}</div>
+              {model.payment.lines.map(function (line) {
+                return <p key={line}>{line}</p>;
+              })}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="bil-reservasjon-preview__section">
           <h4>Vilkår og neste steg</h4>
@@ -163,7 +174,7 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
   );
 }
 
-export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdaterReservasjon, visTost }) {
+export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdaterReservasjon, visTost, mailStatus }) {
   const rawReservasjon = getRawReservasjonFromOkonomi(bil.okonomi);
   const reservasjonVisning = getReservasjonFromOkonomi(bil.okonomi, bil);
   const kundeIds = bil.kundeIds || (bil.kundeId ? [bil.kundeId] : []);
@@ -174,12 +185,33 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
   }, [kundeIds, kunder]);
 
   const [lasterPdf, setLasterPdf] = useState(false);
+  const [senderEpost, setSenderEpost] = useState(false);
+  const [melding, setMelding] = useState(function () {
+    return buildReservasjonEpostMelding(bil, kunde, reservasjonVisning);
+  });
+
   const bilNavn = buildBilVisningsnavn(bil);
+  const erTilbud = rawReservasjon.dokumentType === DOKUMENT_TYPE_TILBUD;
   const erBankoverforing = rawReservasjon.betalingsmate === BETALINGSMATE_BANKOVERFORING;
   const harInnbytte = !!rawReservasjon.harInnbytte;
+  const sendKonto = (mailStatus?.kontoer || []).find(function (k) { return k.standard; })
+    || (mailStatus?.kontoer || [])[0];
+
+  useEffect(function () {
+    setMelding(buildReservasjonEpostMelding(bil, kunde, reservasjonVisning));
+  }, [rawReservasjon.dokumentType, bil.id, kunde?.id]);
 
   const oppdater = function (patch, msg) {
     oppdaterReservasjon(patch, msg);
+  };
+
+  const settDokumentType = function (type) {
+    if (type === rawReservasjon.dokumentType) return;
+    const patch = { dokumentType: type };
+    if (type === DOKUMENT_TYPE_TILBUD && !rawReservasjon.tilbudGyldigTil) {
+      patch.tilbudGyldigTil = addDaysIso(isoDateOnly(new Date()), 7);
+    }
+    oppdater(patch, type === DOKUMENT_TYPE_TILBUD ? 'Dokumenttype satt til tilbudsbrev ✓' : 'Dokumenttype satt til reservasjonsbekreftelse ✓');
   };
 
   const settStandardVarighet = function () {
@@ -193,6 +225,8 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
     oppdater(patchFromInnbytte(knyttetInnbytte), 'Innbyttebil hentet fra forespørsel ✓');
   };
 
+  const pdfFilnavnPrefix = erTilbud ? 'Tilbud' : 'Reservasjon';
+
   const lastNedPdf = async function () {
     if (!bil?.id) return;
     setLasterPdf(true);
@@ -200,7 +234,7 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
       const blob = await downloadReservasjonPdf(bil.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const filnavn = ['Reservasjon', bil.reg || bil.id, kunde?.navn || ''].filter(Boolean).join('-').replace(/\s+/g, '-');
+      const filnavn = [pdfFilnavnPrefix, bil.reg || bil.id, kunde?.navn || ''].filter(Boolean).join('-').replace(/\s+/g, '-');
       a.href = url;
       a.download = `${filnavn}.pdf`;
       document.body.appendChild(a);
@@ -215,14 +249,62 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
     }
   };
 
+  const sendPaEpost = async function () {
+    if (!bil?.id) return;
+    if (!kunde?.epost) {
+      visTost('Kunden mangler e-postadresse ✗');
+      return;
+    }
+    if (!melding.trim()) {
+      visTost('Meldingen kan ikke være tom ✗');
+      return;
+    }
+    if (!mailStatus?.smtpConfigured) {
+      visTost('E-post er ikke konfigurert ✗');
+      return;
+    }
+    setSenderEpost(true);
+    try {
+      await sendReservasjonDokument(bil.id, {
+        melding: melding.trim(),
+        kontoId: sendKonto?.id || null
+      });
+      visTost(erTilbud ? 'Tilbudsbrev sendt ✓' : 'Reservasjonsbekreftelse sendt ✓');
+    } catch (err) {
+      visTost((err?.message || 'Kunne ikke sende e-post') + ' ✗');
+    } finally {
+      setSenderEpost(false);
+    }
+  };
+
   return (
     <div className="bil-reservasjon">
       <div className="bil-reservasjon__layout">
         <div className="bil-reservasjon__panel">
-          <div className="modal-sec">Avtaledetaljer</div>
+          <div className="modal-sec">Dokumenttype</div>
+          <div className="view-toggle gap" role="group" aria-label="Dokumenttype">
+            <button
+              type="button"
+              className={`btn btn-sm ${erTilbud ? 'btn-p' : 'btn-g'}`}
+              onClick={function () { settDokumentType(DOKUMENT_TYPE_TILBUD); }}
+            >
+              Tilbudsbrev
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${!erTilbud ? 'btn-p' : 'btn-g'}`}
+              onClick={function () { settDokumentType(DOKUMENT_TYPE_RESERVASJON); }}
+            >
+              Reservasjonsbekreftelse
+            </button>
+          </div>
           <p className="bil-reservasjon__hint">
-            Fyll inn kjøpesum, depositum og datoer. Velg hvordan kunden skal betale depositum — teksten i PDF-en tilpasses valget.
+            {erTilbud
+              ? 'Generer uforpliktende tilbudsbrev til kunden. Depositum og reservasjonsfrister hoppes over i dokumentet.'
+              : 'Generer bindende reservasjonsbekreftelse med depositum og betalingsinformasjon.'}
           </p>
+
+          <div className="modal-sec">Avtaledetaljer</div>
 
           <div className="gap">
             <div className="fl">Kunde</div>
@@ -242,29 +324,9 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
             <div className="fv">{bilNavn}{bil.reg ? ` · ${bil.reg}` : ''}</div>
           </div>
 
-          <div className="gap">
-            <div className="fl">Betaling av depositum</div>
-            <div className="view-toggle" role="group" aria-label="Betaling av depositum">
-              <button
-                type="button"
-                className={`btn btn-sm ${erBankoverforing ? 'btn-p' : 'btn-g'}`}
-                onClick={function () { oppdater({ betalingsmate: BETALINGSMATE_BANKOVERFORING }, 'Betaling satt til bankoverføring ✓'); }}
-              >
-                Bankoverføring
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${!erBankoverforing ? 'btn-p' : 'btn-g'}`}
-                onClick={function () { oppdater({ betalingsmate: BETALINGSMATE_BANKTERMINAL }, 'Betaling satt til bankterminal ✓'); }}
-              >
-                Bankterminal i butikk
-              </button>
-            </div>
-          </div>
-
           <div className="form-row gap">
             <div>
-              <div className="fl">Kjøpesum (kr)</div>
+              <div className="fl">{erTilbud ? 'Tilbudspris (kr)' : 'Kjøpesum (kr)'}</div>
               <input
                 type="number"
                 min="0"
@@ -276,38 +338,83 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
                 }}
               />
             </div>
-            <div>
-              <div className="fl">Depositum (kr)</div>
-              <input
-                type="number"
-                min="0"
-                placeholder="f.eks. 30000"
-                value={rawReservasjon.depositum ?? ''}
-                onChange={function (e) {
-                  const val = e.target.value;
-                  oppdater({ depositum: val === '' ? null : Number(val) });
-                }}
-              />
-            </div>
+            {erTilbud ? (
+              <div>
+                <div className="fl">Tilbud gyldig til</div>
+                <input
+                  type="date"
+                  value={rawReservasjon.tilbudGyldigTil || ''}
+                  onChange={function (e) { oppdater({ tilbudGyldigTil: e.target.value }); }}
+                />
+              </div>
+            ) : (
+              <div>
+                <div className="fl">Depositum (kr)</div>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="f.eks. 30000"
+                  value={rawReservasjon.depositum ?? ''}
+                  onChange={function (e) {
+                    const val = e.target.value;
+                    oppdater({ depositum: val === '' ? null : Number(val) });
+                  }}
+                />
+              </div>
+            )}
           </div>
 
-          <div className="form-row gap">
-            <div>
-              <div className="fl">Depositum forfall</div>
-              <input
-                type="date"
-                value={rawReservasjon.depositumForfall || ''}
-                onChange={function (e) { oppdater({ depositumForfall: e.target.value }); }}
-              />
-            </div>
-            <div>
-              <div className="fl">Reservert til</div>
-              <input
-                type="date"
-                value={rawReservasjon.reservasjonTil || ''}
-                onChange={function (e) { oppdater({ reservasjonTil: e.target.value }); }}
-              />
-            </div>
+          {!erTilbud ? (
+            <>
+              <div className="gap">
+                <div className="fl">Betaling av depositum</div>
+                <div className="view-toggle" role="group" aria-label="Betaling av depositum">
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${erBankoverforing ? 'btn-p' : 'btn-g'}`}
+                    onClick={function () { oppdater({ betalingsmate: BETALINGSMATE_BANKOVERFORING }, 'Betaling satt til bankoverføring ✓'); }}
+                  >
+                    Bankoverføring
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${!erBankoverforing ? 'btn-p' : 'btn-g'}`}
+                    onClick={function () { oppdater({ betalingsmate: BETALINGSMATE_BANKTERMINAL }, 'Betaling satt til bankterminal ✓'); }}
+                  >
+                    Bankterminal i butikk
+                  </button>
+                </div>
+              </div>
+
+              <div className="form-row gap">
+                <div>
+                  <div className="fl">Depositum forfall</div>
+                  <input
+                    type="date"
+                    value={rawReservasjon.depositumForfall || ''}
+                    onChange={function (e) { oppdater({ depositumForfall: e.target.value }); }}
+                  />
+                </div>
+                <div>
+                  <div className="fl">Reservert til</div>
+                  <input
+                    type="date"
+                    value={rawReservasjon.reservasjonTil || ''}
+                    onChange={function (e) { oppdater({ reservasjonTil: e.target.value }); }}
+                  />
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          <div className="gap">
+            <div className="fl">Kommentar til avtalen</div>
+            <textarea
+              rows={3}
+              placeholder="F.eks. avtalte tillegg, forbehold, leveringsdato eller annet som skal med i dokumentet"
+              value={rawReservasjon.avtaleKommentar || ''}
+              onChange={function (e) { oppdater({ avtaleKommentar: e.target.value }); }}
+            />
           </div>
 
           <div className="bil-reservasjon__innbytte">
@@ -400,12 +507,14 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
           </div>
 
           <div className="bil-reservasjon__actions">
-            <button type="button" className="btn btn-g btn-sm" onClick={settStandardVarighet}>
-              +{RESERVASJON_FIRMA.reservasjonDager} dager reservasjon
-            </button>
+            {!erTilbud ? (
+              <button type="button" className="btn btn-g btn-sm" onClick={settStandardVarighet}>
+                +{RESERVASJON_FIRMA.reservasjonDager} dager reservasjon
+              </button>
+            ) : null}
             <button
               type="button"
-              className="btn btn-p"
+              className="btn btn-g"
               disabled={lasterPdf || !reservasjonVisning.kjopesum}
               onClick={lastNedPdf}
             >
@@ -413,8 +522,47 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
             </button>
           </div>
           {!reservasjonVisning.kjopesum ? (
-            <p className="bil-reservasjon__warn">Legg inn kjøpesum for å generere PDF.</p>
+            <p className="bil-reservasjon__warn">Legg inn {erTilbud ? 'tilbudspris' : 'kjøpesum'} for å generere PDF.</p>
           ) : null}
+
+          <div className="bil-reservasjon__epost">
+            <div className="modal-sec">Send på e-post</div>
+            {!mailStatus?.smtpConfigured ? (
+              <p className="bil-reservasjon__hint bil-reservasjon__hint--tight">
+                E-post er ikke konfigurert. Gå til Innstillinger for å sette opp SMTP.
+              </p>
+            ) : null}
+            <div className="gap">
+              <div className="fl">Melding til kunde</div>
+              <textarea
+                rows={8}
+                value={melding}
+                onChange={function (e) { setMelding(e.target.value); }}
+                disabled={!mailStatus?.smtpConfigured}
+              />
+            </div>
+            {mailStatus?.smtpConfigured && sendKonto ? (
+              <p className="bil-reservasjon__hint bil-reservasjon__hint--tight">
+                Sendes fra {sendKonto.epost || sendKonto.navn} med PDF vedlagt.
+              </p>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-p"
+              disabled={
+                senderEpost
+                || !reservasjonVisning.kjopesum
+                || !kunde?.epost
+                || !mailStatus?.smtpConfigured
+              }
+              onClick={sendPaEpost}
+            >
+              {senderEpost ? 'Sender…' : (erTilbud ? 'Send tilbudsbrev' : 'Send reservasjonsbekreftelse')}
+            </button>
+            {!kunde?.epost ? (
+              <p className="bil-reservasjon__warn">Kunden må ha e-postadresse for å sende.</p>
+            ) : null}
+          </div>
         </div>
 
         <ReservasjonPreview bil={bil} kunde={kunde} reservasjonVisning={reservasjonVisning} />

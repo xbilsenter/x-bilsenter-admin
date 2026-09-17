@@ -11,6 +11,12 @@ export const RESERVASJON_FIRMA = {
 
 export const BETALINGSMATE_BANKOVERFORING = 'bankoverforing';
 export const BETALINGSMATE_BANKTERMINAL = 'bankterminal';
+export const DOKUMENT_TYPE_TILBUD = 'tilbud';
+export const DOKUMENT_TYPE_RESERVASJON = 'reservasjon';
+
+export function normalizeDokumentType(value) {
+  return value === DOKUMENT_TYPE_TILBUD ? DOKUMENT_TYPE_TILBUD : DOKUMENT_TYPE_RESERVASJON;
+}
 
 export function isoDateOnly(value) {
   if (!value) return '';
@@ -112,6 +118,9 @@ export function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
   const normalized = {
+    dokumentType: normalizeDokumentType(o.dokumentType ?? base.dokumentType),
+    avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? '').trim(),
+    tilbudGyldigTil: isoDateOnly(o.tilbudGyldigTil || base.tilbudGyldigTil || addDaysIso(new Date(), 7)),
     kjopesum: belopForLagring(o.kjopesum ?? base.kjopesum),
     depositum: belopForLagring(o.depositum ?? base.depositum),
     depositumForfall: isoDateOnly(o.depositumForfall || base.depositumForfall || isoDateOnly(new Date())),
@@ -186,27 +195,46 @@ export function buildNesteSteg(erTerminal, depositumForfallTekst) {
   ];
 }
 
+function buildTilbudNesteSteg(gyldigTilTekst) {
+  return [
+    'Les gjennom tilbudet og ta kontakt dersom du har spørsmål.',
+    gyldigTilTekst && gyldigTilTekst !== '—'
+      ? `Tilbudet gjelder til ${gyldigTilTekst}.`
+      : 'Ta kontakt for å avtale videre.',
+    'Vi reserverer gjerne bilen når dere er enige om vilkårene.'
+  ].filter(Boolean);
+}
+
 export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
   const bilNavn = buildBilAvtaleNavn(bil);
   const finnUrl = buildFinnItemUrl(bil?.finnKode);
   const kundeNavn = String(kunde?.navn || '').trim();
   const kjopesum = resolveKjopesum(reservasjon, bil);
+  const erTilbud = reservasjon.dokumentType === DOKUMENT_TYPE_TILBUD;
   const betalingsmate = normalizeBetalingsmate(reservasjon.betalingsmate);
   const erTerminal = betalingsmate === BETALINGSMATE_BANKTERMINAL;
   const kjopesumTekst = kjopesum != null && Number.isFinite(kjopesum) ? formatNokBelop(kjopesum) : '—';
   const depositumTekst = reservasjon.depositum != null ? formatNokBelop(reservasjon.depositum) : '—';
   const depositumForfallTekst = formatNorskDato(reservasjon.depositumForfall);
   const reservasjonTilTekst = formatNorskDato(reservasjon.reservasjonTil);
+  const tilbudGyldigTilTekst = formatNorskDato(reservasjon.tilbudGyldigTil);
 
   const summaryRows = [
     { label: 'Kjøretøy', value: bilNavn },
     bil?.reg ? { label: 'Registreringsnr.', value: String(bil.reg).toUpperCase() } : null,
-    { label: 'Kjøpesum', value: kjopesumTekst, highlight: true },
-    { label: 'Depositum', value: depositumTekst, highlight: true },
-    { label: 'Depositum senest', value: depositumForfallTekst },
-    { label: 'Reservert til', value: reservasjonTilTekst },
-    { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+    { label: erTilbud ? 'Tilbudspris' : 'Kjøpesum', value: kjopesumTekst, highlight: true }
   ].filter(Boolean);
+
+  if (erTilbud) {
+    summaryRows.push({ label: 'Tilbud gyldig til', value: tilbudGyldigTilTekst });
+  } else {
+    summaryRows.push(
+      { label: 'Depositum', value: depositumTekst, highlight: true },
+      { label: 'Depositum senest', value: depositumForfallTekst },
+      { label: 'Reservert til', value: reservasjonTilTekst },
+      { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+    );
+  }
 
   const payment = {
     title: erTerminal ? 'Betaling i butikk' : 'Betaling via bankoverføring',
@@ -224,30 +252,90 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
   const innbytte = buildInnbytteDocumentData(reservasjon);
 
   return {
+    dokumentType: reservasjon.dokumentType,
+    skipPayment: erTilbud,
+    metaLabel: erTilbud ? 'Tilbudsbrev' : 'Reservasjonsbekreftelse',
     dokument: {
-      tittel: 'Reservasjonsbekreftelse',
-      undertittel: 'Avtale om reservasjon av kjøretøy',
+      tittel: erTilbud ? 'Tilbudsbrev' : 'Reservasjonsbekreftelse',
+      undertittel: erTilbud ? 'Tilbud på kjøretøy' : 'Avtale om reservasjon av kjøretøy',
       dato: formatNorskDato(isoDateOnly(new Date())),
       referanse: bil?.reg ? String(bil.reg).toUpperCase() : ''
     },
     kundeNavn: kundeNavn || 'Kunde',
-    intro: kundeNavn
-      ? `Hei ${kundeNavn}, takk for avtalen om kjøp av ${bilNavn}.`
-      : `Hei, takk for avtalen om kjøp av ${bilNavn}.`,
+    intro: erTilbud
+      ? (kundeNavn
+        ? `Hei ${kundeNavn}, takk for interessen for vår ${bilNavn}.`
+        : `Hei, takk for interessen for vår ${bilNavn}.`)
+      : (kundeNavn
+        ? `Hei ${kundeNavn}, takk for avtalen om kjøp av ${bilNavn}.`
+        : `Hei, takk for avtalen om kjøp av ${bilNavn}.`),
     finnUrl,
     summaryRows,
+    avtaleKommentar: reservasjon.avtaleKommentar || '',
     innbytte,
     innbytteRows: buildInnbytteSummaryRows(innbytte),
     payment,
-    vilkar: [
-      'Depositum trekkes fra kjøpesum ved gjennomført handel.',
-      'Ved kansellering fra kundens side refunderes ikke depositum.',
-      `Bilen holdes reservert til ${reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
-      'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen.'
-    ],
-    nesteSteg: buildNesteSteg(erTerminal, depositumForfallTekst),
-    avslutning: 'Vi ser frem til å fullføre handelen sammen med deg.'
+    vilkar: erTilbud
+      ? [
+          'Tilbudet er uforpliktende inntil dere bekrefter og eventuelt betaler avtalt depositum.',
+          tilbudGyldigTilTekst && tilbudGyldigTilTekst !== '—'
+            ? `Tilbudet gjelder til ${tilbudGyldigTilTekst}, med mindre annet er avtalt skriftlig.`
+            : 'Tilbudet kan endres dersom bilen selges til annen kunde.',
+          'Endelig avtale inngås først ved signert reservasjonsbekreftelse og mottatt depositum.',
+          'X Bilsenter AS forbeholder seg retten til å selge bilen til andre inntil bindende avtale foreligger.'
+        ]
+      : [
+          'Depositum trekkes fra kjøpesum ved gjennomført handel.',
+          'Ved kansellering fra kundens side refunderes ikke depositum.',
+          `Bilen holdes reservert til ${reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
+          'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen.'
+        ],
+    nesteSteg: erTilbud
+      ? buildTilbudNesteSteg(tilbudGyldigTilTekst)
+      : buildNesteSteg(erTerminal, depositumForfallTekst),
+    avslutning: erTilbud
+      ? 'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.'
+      : 'Vi ser frem til å fullføre handelen sammen med deg.'
   };
+}
+
+export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
+  const bilNavn = buildBilAvtaleNavn(bil);
+  const navn = String(kunde?.navn || '').trim() || 'Hei';
+  const fornavn = navn.split(/\s+/)[0] || navn;
+  const erTilbud = reservasjon?.dokumentType === DOKUMENT_TYPE_TILBUD;
+  const kjopesum = resolveKjopesum(reservasjon, bil);
+  const prisTekst = kjopesum != null && Number.isFinite(kjopesum)
+    ? `kr ${kjopesum.toLocaleString('nb-NO')}`
+    : 'avtalt pris';
+
+  if (erTilbud) {
+    return [
+      `Hei ${fornavn},`,
+      '',
+      `Takk for interessen for vår ${bilNavn}${bil?.reg ? ` (${String(bil.reg).toUpperCase()})` : ''}.`,
+      '',
+      `Vedlagt finner du tilbud på ${prisTekst}.`,
+      reservasjon.avtaleKommentar ? `\n${reservasjon.avtaleKommentar}\n` : '',
+      'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.',
+      '',
+      'Med vennlig hilsen',
+      RESERVASJON_FIRMA.navn
+    ].filter(function (line) { return line !== ''; }).join('\n');
+  }
+
+  return [
+    `Hei ${fornavn},`,
+    '',
+    `Takk for avtalen om kjøp av ${bilNavn}${bil?.reg ? ` (${String(bil.reg).toUpperCase()})` : ''}.`,
+    '',
+    'Vedlagt finner du reservasjonsbekreftelsen med avtalte vilkår og informasjon om depositum.',
+    reservasjon.avtaleKommentar ? `\n${reservasjon.avtaleKommentar}\n` : '',
+    'Ta kontakt dersom du har spørsmål.',
+    '',
+    'Med vennlig hilsen',
+    RESERVASJON_FIRMA.navn
+  ].filter(function (line) { return line !== ''; }).join('\n');
 }
 
 export function buildReservasjonPreviewData(bil, kunde, reservasjon) {
