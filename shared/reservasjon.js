@@ -114,6 +114,12 @@ function formatKm(km) {
   return `${n.toLocaleString('nb-NO')} km`;
 }
 
+function formatCaKm(km) {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `Ca. ${n.toLocaleString('nb-NO')} km`;
+}
+
 function buildInnbytteDocumentData(reservasjon) {
   const innbytte = normalizeInnbytteFields(reservasjon);
   if (!innbytte.harInnbytte) return null;
@@ -311,9 +317,11 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const kundeFornavn = extractKundeFornavn(kundeDok.navn);
   const kundeRows = buildKundeSummaryRows(kundeDok);
 
+  const bilKmTekst = formatCaKm(bil?.km);
   const summaryRows = [
     { label: 'Kjøretøy', value: doc.bilNavn },
     bil?.reg ? { label: 'Registreringsnr.', value: String(bil.reg).toUpperCase() } : null,
+    bilKmTekst ? { label: 'Kilometerstand', value: bilKmTekst } : null,
     { label: erTilbud ? 'Tilbudspris' : 'Kjøpesum', value: doc.kjopesumTekst, highlight: true }
   ].filter(Boolean);
 
@@ -453,6 +461,7 @@ module.exports = {
   buildInnbytteDocumentData,
   buildInnbytteSummaryRows,
   formatKm,
+  formatCaKm,
   resolveKjopesum,
   buildBilVisningsnavn,
   buildBilAvtaleNavn,
