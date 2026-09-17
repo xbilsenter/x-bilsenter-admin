@@ -135,16 +135,8 @@ function resolveKundeForDokument(kunde, reservasjon) {
   };
 }
 
-function buildKundeSummaryRows(kundeData) {
-  if (!kundeData) return [];
-  const rows = [
-    kundeData.navn ? { label: 'Navn', value: kundeData.navn } : null,
-    kundeData.epost ? { label: 'E-post', value: kundeData.epost } : null,
-    kundeData.tlf ? { label: 'Telefon', value: kundeData.tlf } : null,
-    kundeData.adresse ? { label: 'Adresse', value: kundeData.adresse } : null,
-    kundeData.orgNr ? { label: 'Org.nr.', value: kundeData.orgNr } : null
-  ].filter(Boolean);
-  return rows;
+function buildKundeSummaryRows() {
+  return [];
 }
 
 function normalizeBilReservasjon(raw, defaults, bil) {

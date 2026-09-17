@@ -13,8 +13,7 @@ import {
   getReservasjonFromOkonomi,
   isoDateOnly,
   resolveKundeForDokument,
-  patchKundeTilReservasjon,
-  formatKundeAdresse
+  patchKundeTilReservasjon
 } from '../lib/reservasjon.js';
 import { downloadReservasjonPdf, sendReservasjonDokument } from '../api.js';
 
@@ -38,10 +37,7 @@ function readReservasjonTekst(okonomi) {
     avtaleKommentar: src.avtaleKommentar ?? '',
     innbytteKommentar: src.innbytteKommentar ?? '',
     kundeNavn: src.kundeNavn ?? '',
-    kundeEpost: src.kundeEpost ?? '',
-    kundeTlf: src.kundeTlf ?? '',
-    kundeAdresse: src.kundeAdresse ?? '',
-    kundeOrgNr: src.kundeOrgNr ?? ''
+    kundeEpost: src.kundeEpost ?? ''
   };
 }
 
@@ -96,22 +92,6 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
             <span>FINN-annonse</span>
             <a href={model.finnUrl} target="_blank" rel="noopener noreferrer">{model.finnUrl}</a>
           </p>
-        ) : null}
-
-        {model.kundeRows?.length ? (
-          <div className="bil-reservasjon-preview__section">
-            <h4>Kunde</h4>
-            <div className="bil-reservasjon-preview__grid">
-              {model.kundeRows.map(function (row) {
-                return (
-                  <div className="bil-reservasjon-preview__cell" key={row.label}>
-                    <span>{row.label}</span>
-                    <strong>{row.value}</strong>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         ) : null}
 
         <div className="bil-reservasjon-preview__section">
@@ -327,7 +307,7 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
 
   const fyllFraKunde = function () {
     if (!kunde) return;
-    oppdaterTekstUmiddelbart(patchKundeTilReservasjon(kunde), 'Kundeinfo hentet fra kundekort ✓');
+    oppdaterTekstUmiddelbart(patchKundeTilReservasjon(kunde), 'Kundenavn hentet fra kundekort ✓');
   };
 
   const pdfFilnavnPrefix = erTilbud ? 'Tilbud' : 'Reservasjon';
@@ -414,7 +394,7 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
 
           <div className="bil-reservasjon__kunde">
             <div className="bil-reservasjon__innbytte-head">
-              <div className="modal-sec" style={{ marginBottom: 0 }}>Kundeinfo på dokument</div>
+              <div className="modal-sec" style={{ marginBottom: 0 }}>Kundenavn på dokument</div>
               {kunde ? (
                 <button type="button" className="btn btn-g btn-sm" onClick={fyllFraKunde}>
                   Hent fra kunde
@@ -423,7 +403,7 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
             </div>
             {!kunde ? (
               <p className="bil-reservasjon__hint bil-reservasjon__hint--tight">
-                Koble kunde under Informasjon-fanen for å hente data automatisk, eller fyll inn manuelt.
+                Koble kunde under Informasjon-fanen for å hente navn automatisk, eller fyll inn manuelt.
               </p>
             ) : null}
 
@@ -434,47 +414,6 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
                 placeholder={kunde?.navn || 'Kundens navn'}
                 value={tekstDraft.kundeNavn}
                 onChange={function (e) { oppdaterTekst({ kundeNavn: e.target.value }); }}
-              />
-            </div>
-
-            <div className="form-row gap">
-              <div>
-                <div className="fl">E-post</div>
-                <input
-                  type="email"
-                  placeholder={kunde?.epost || 'post@eksempel.no'}
-                  value={tekstDraft.kundeEpost}
-                  onChange={function (e) { oppdaterTekst({ kundeEpost: e.target.value }); }}
-                />
-              </div>
-              <div>
-                <div className="fl">Telefon</div>
-                <input
-                  type="text"
-                  placeholder={kunde?.tlf || 'f.eks. 912 34 567'}
-                  value={tekstDraft.kundeTlf}
-                  onChange={function (e) { oppdaterTekst({ kundeTlf: e.target.value }); }}
-                />
-              </div>
-            </div>
-
-            <div className="gap">
-              <div className="fl">Adresse</div>
-              <input
-                type="text"
-                placeholder={formatKundeAdresse(kunde) || 'Gateadresse, postnr og sted'}
-                value={tekstDraft.kundeAdresse}
-                onChange={function (e) { oppdaterTekst({ kundeAdresse: e.target.value }); }}
-              />
-            </div>
-
-            <div className="gap">
-              <div className="fl">Org.nr.</div>
-              <input
-                type="text"
-                placeholder={kunde?.organisasjonsnummer || 'Valgfritt for bedrifter'}
-                value={tekstDraft.kundeOrgNr}
-                onChange={function (e) { oppdaterTekst({ kundeOrgNr: e.target.value }); }}
               />
             </div>
           </div>
@@ -699,6 +638,16 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
                 E-post er ikke konfigurert. Gå til Innstillinger for å sette opp SMTP.
               </p>
             ) : null}
+            <div className="gap">
+              <div className="fl">E-post til kunde</div>
+              <input
+                type="email"
+                placeholder={kunde?.epost || 'post@eksempel.no'}
+                value={tekstDraft.kundeEpost}
+                onChange={function (e) { oppdaterTekst({ kundeEpost: e.target.value }); }}
+                disabled={!mailStatus?.smtpConfigured}
+              />
+            </div>
             <div className="gap">
               <div className="fl">Melding til kunde</div>
               <textarea
