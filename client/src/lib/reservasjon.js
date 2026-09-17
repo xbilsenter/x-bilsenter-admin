@@ -358,22 +358,17 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
 
 export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
   const bilNavn = buildBilAvtaleNavn(bil);
-  const navn = String(kunde?.navn || '').trim() || 'Hei';
-  const fornavn = navn.split(/\s+/)[0] || navn;
+  const kundeDok = resolveKundeForDokument(kunde, reservasjon || {});
+  const fornavn = kundeDok.navn !== 'Kunde' ? kundeDok.navn.split(/\s+/)[0] : '';
   const erTilbud = reservasjon?.dokumentType === DOKUMENT_TYPE_TILBUD;
-  const kjopesum = resolveKjopesum(reservasjon, bil);
-  const prisTekst = kjopesum != null && Number.isFinite(kjopesum)
-    ? `kr ${kjopesum.toLocaleString('nb-NO')}`
-    : 'avtalt pris';
+  const hilsen = fornavn ? `Hei ${fornavn},` : 'Hei,';
 
   if (erTilbud) {
     return [
-      `Hei ${fornavn},`,
+      hilsen,
       '',
-      `Takk for interessen for vår ${bilNavn}${bil?.reg ? ` (${String(bil.reg).toUpperCase()})` : ''}.`,
-      '',
-      `Vedlagt finner du tilbud på ${prisTekst}.`,
-      reservasjon.avtaleKommentar ? `\n${reservasjon.avtaleKommentar}\n` : '',
+      `Takk for interessen for vår ${bilNavn}. Som avtalt sender vi deg her tilbud på bilen.`,
+      reservasjon.avtaleKommentar ? `\n${String(reservasjon.avtaleKommentar).trim()}\n` : '',
       'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.',
       '',
       'Med vennlig hilsen',
@@ -382,12 +377,12 @@ export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
   }
 
   return [
-    `Hei ${fornavn},`,
+    hilsen,
     '',
     `Takk for avtalen om kjøp av ${bilNavn}${bil?.reg ? ` (${String(bil.reg).toUpperCase()})` : ''}.`,
     '',
     'Vedlagt finner du reservasjonsbekreftelsen med avtalte vilkår og informasjon om depositum.',
-    reservasjon.avtaleKommentar ? `\n${reservasjon.avtaleKommentar}\n` : '',
+    reservasjon.avtaleKommentar ? `\n${String(reservasjon.avtaleKommentar).trim()}\n` : '',
     'Ta kontakt dersom du har spørsmål.',
     '',
     'Med vennlig hilsen',
