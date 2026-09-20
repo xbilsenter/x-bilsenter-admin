@@ -42,11 +42,12 @@ const C = {
   white: '#FFFFFF'
 };
 
-const SECTION_GAP = 16;
+const SECTION_GAP = 11;
 const FOOTER_H = 26;
-const CLOSING_H = 54;
+const CLOSING_H = 48;
 const COL_HEADER_H = 24;
-const CONTENT_BOTTOM = PAGE.footerY - FOOTER_H - CLOSING_H - 12;
+const SUMMARY_GROUP_TITLE_H = 13;
+const CONTENT_BOTTOM = PAGE.footerY - FOOTER_H - CLOSING_H - 10;
 
 function registerFonts(doc) {
   doc.registerFont('PJ', FONT.reg);
@@ -130,26 +131,25 @@ function drawHeader(doc, model) {
 }
 
 function drawIntro(doc, y, model) {
-  doc.font('PJ-B').fontSize(20).fillColor(C.ink)
+  doc.font('PJ-B').fontSize(17).fillColor(C.ink)
     .text(model.dokument.tittel, PAGE.left, y, { characterSpacing: -0.2 });
   doc.font('PJ-SB').fontSize(7).fillColor(C.muted)
-    .text(model.dokument.undertittel.toUpperCase(), PAGE.left, doc.y + 6, { characterSpacing: 0.9 });
+    .text(model.dokument.undertittel.toUpperCase(), PAGE.left, doc.y + 4, { characterSpacing: 0.9 });
 
-  const introY = doc.y + 14;
-  doc.rect(PAGE.left, introY, 2, 0).fill(C.accent);
-  doc.font('PJ').fontSize(10).fillColor(C.ink2);
-  const introTextH = doc.heightOfString(model.intro, { width: PAGE.width - 16, lineGap: 2.5 });
-  doc.rect(PAGE.left, introY, 2, Math.max(28, introTextH + 4)).fill(C.accent);
-  doc.font('PJ').fontSize(10).fillColor(C.ink2)
-    .text(model.intro, PAGE.left + 12, introY, { width: PAGE.width - 16, lineGap: 2.5 });
+  const introY = doc.y + 10;
+  doc.font('PJ').fontSize(9.5).fillColor(C.ink2);
+  const introTextH = doc.heightOfString(model.intro, { width: PAGE.width - 16, lineGap: 2 });
+  doc.rect(PAGE.left, introY, 2, Math.max(24, introTextH + 4)).fill(C.accent);
+  doc.font('PJ').fontSize(9.5).fillColor(C.ink2)
+    .text(model.intro, PAGE.left + 12, introY, { width: PAGE.width - 16, lineGap: 2 });
 
-  let nextY = introY + Math.max(28, introTextH + 4) + 6;
+  let nextY = introY + Math.max(24, introTextH + 4) + 4;
   if (model.bil.finnUrl) {
-    doc.font('PJ-M').fontSize(7.5).fillColor(C.muted)
+    doc.font('PJ-M').fontSize(7).fillColor(C.muted)
       .text('FINN-annonse', PAGE.left, nextY, { continued: true });
-    doc.font('PJ').fontSize(7.5).fillColor(C.accentInk)
+    doc.font('PJ').fontSize(7).fillColor(C.accentInk)
       .text(`  ${model.bil.finnUrl}`, { link: model.bil.finnUrl, underline: false });
-    nextY = doc.y + 2;
+    nextY = doc.y + 1;
   }
 
   return nextY + SECTION_GAP;
@@ -179,6 +179,30 @@ function drawCommentBlock(doc, rowY, pad, label, text) {
       lineGap: 1.8
     });
   return rowY + commentBlockHeight(doc, text);
+}
+
+function measureSummaryGroupsHeight(groups, rowH) {
+  return (groups || []).reduce(function (sum, group) {
+    return sum + SUMMARY_GROUP_TITLE_H + Math.ceil((group.rows || []).length / 2) * rowH;
+  }, 0);
+}
+
+function drawSummaryCell(doc, x, y, width, rowH, row, pad) {
+  if (!row) return;
+  if (row.highlight) {
+    doc.rect(x, y, width, rowH).fill(C.surface);
+  }
+  const labelW = 78;
+  const valueY = y + Math.max(5, Math.round((rowH - (row.highlight ? 11 : 9)) / 2));
+  doc.font('PJ-M').fontSize(7.5).fillColor(C.muted)
+    .text(row.label, x + pad, valueY, { width: labelW });
+  doc.font(row.highlight ? 'PJ-B' : 'PJ-SB')
+    .fontSize(row.highlight ? 9.5 : 8.5)
+    .fillColor(C.ink)
+    .text(row.value, x + pad + labelW, valueY - (row.highlight ? 1 : 0), {
+      width: width - labelW - pad * 2,
+      align: 'right'
+    });
 }
 
 function drawSummaryTable(doc, y, rows, rowH, avtaleKommentar, innbytteKommentar) {
@@ -224,20 +248,62 @@ function drawSummaryTable(doc, y, rows, rowH, avtaleKommentar, innbytteKommentar
   return y + boxH;
 }
 
+function drawSummaryGroups(doc, y, groups, rowH, avtaleKommentar, innbytteKommentar) {
+  const pad = 10;
+  const colGap = 0;
+  const colW = PAGE.width / 2;
+  const commentBlockH = commentBlockHeight(doc, avtaleKommentar) + commentBlockHeight(doc, innbytteKommentar);
+  const gridH = measureSummaryGroupsHeight(groups, rowH);
+  const boxH = gridH + commentBlockH;
+
+  doc.rect(PAGE.left, y, PAGE.width, boxH).strokeColor(C.line).lineWidth(0.75).stroke();
+
+  let rowY = y;
+  (groups || []).forEach(function (group, groupIndex) {
+    if (groupIndex > 0) {
+      doc.moveTo(PAGE.left, rowY).lineTo(PAGE.right, rowY).strokeColor(C.lineSoft).lineWidth(0.35).stroke();
+    }
+    doc.rect(PAGE.left, rowY, PAGE.width, SUMMARY_GROUP_TITLE_H).fill(C.surface);
+    doc.font('PJ-SB').fontSize(6.5).fillColor(C.accentInk)
+      .text(String(group.title || '').toUpperCase(), PAGE.left + pad, rowY + 3.5, { characterSpacing: 0.65 });
+    rowY += SUMMARY_GROUP_TITLE_H;
+
+    for (let i = 0; i < group.rows.length; i += 2) {
+      if (i > 0 || groupIndex > 0) {
+        doc.moveTo(PAGE.left, rowY).lineTo(PAGE.right, rowY).strokeColor(C.lineSoft).lineWidth(0.35).stroke();
+      }
+      drawSummaryCell(doc, PAGE.left, rowY, colW, rowH, group.rows[i], pad);
+      doc.moveTo(PAGE.left + colW, rowY).lineTo(PAGE.left + colW, rowY + rowH)
+        .strokeColor(C.lineSoft).lineWidth(0.35).stroke();
+      drawSummaryCell(doc, PAGE.left + colW + colGap, rowY, colW - colGap, rowH, group.rows[i + 1], pad);
+      rowY += rowH;
+    }
+  });
+
+  if (avtaleKommentar) {
+    rowY = drawCommentBlock(doc, rowY, pad, 'AVTALTE FORHOLD', avtaleKommentar);
+  }
+  if (innbytteKommentar) {
+    drawCommentBlock(doc, rowY, pad, 'KOMMENTAR TIL INNBYTTEBIL', innbytteKommentar);
+  }
+
+  return y + boxH;
+}
+
 function drawPaymentBox(doc, y, payment, boxH) {
-  const pad = 14;
+  const pad = 12;
 
   doc.rect(PAGE.left, y, PAGE.width, 2).fill(C.accent);
   doc.rect(PAGE.left, y + 2, PAGE.width, boxH - 2).fill(C.white);
   doc.rect(PAGE.left, y, PAGE.width, boxH).strokeColor(C.line).lineWidth(0.75).stroke();
 
-  doc.font('PJ-SB').fontSize(9.5).fillColor(C.ink)
-    .text(payment.title, PAGE.left + pad, y + 12, { width: PAGE.width - pad * 2 });
-  let lineY = y + 28;
+  doc.font('PJ-SB').fontSize(8.5).fillColor(C.ink)
+    .text(payment.title, PAGE.left + pad, y + 9, { width: PAGE.width - pad * 2 });
+  let lineY = y + 22;
   payment.lines.forEach(function (line) {
-    doc.font('PJ').fontSize(9).fillColor(C.ink2)
-      .text(line, PAGE.left + pad, lineY, { width: PAGE.width - pad * 2, lineGap: 1.8 });
-    lineY = doc.y + 4;
+    doc.font('PJ').fontSize(8).fillColor(C.ink2)
+      .text(line, PAGE.left + pad, lineY, { width: PAGE.width - pad * 2, lineGap: 1.2 });
+    lineY = doc.y + 2;
   });
 
   return y + boxH;
@@ -358,15 +424,15 @@ function drawClosing(doc, y, model) {
 }
 
 function computeLayout(model, introEndY, doc) {
-  const summaryRows = model.summaryRows.length;
+  const summaryGroups = model.summaryGroups || [];
   const kundeRows = (model.kundeRows || []).length;
   const commentH = commentBlockHeight(doc, model.avtaleKommentar || '')
     + commentBlockHeight(doc, model.innbytte?.kommentar || '');
-  const minSummaryRowH = 19;
-  const maxSummaryRowH = 25;
-  const minPaymentH = 68;
-  const maxPaymentH = 80;
-  const minTwoColH = COL_HEADER_H + 84;
+  const minSummaryRowH = 17;
+  const maxSummaryRowH = 22;
+  const minPaymentH = 52;
+  const maxPaymentH = 64;
+  const minTwoColH = COL_HEADER_H + 96;
   const hasKundeSection = kundeRows > 0;
   const sectionCount = (model.skipPayment ? 2 : 3) + (hasKundeSection ? 1 : 0);
   const sectionTitles = sectionTitleHeight() * sectionCount;
@@ -378,13 +444,10 @@ function computeLayout(model, introEndY, doc) {
 
     for (let rowH = maxSummaryRowH; rowH >= minSummaryRowH; rowH -= 1) {
       for (let payH = skipPayment ? 0 : maxPaymentH; payH >= (skipPayment ? 0 : minPaymentH); payH -= skipPayment ? 999 : 2) {
-        for (let colH = 228; colH >= minTwoColH; colH -= 4) {
-          const kundeTableH = hasKundeSection ? kundeRows * rowH : 0;
-          const summaryH = summaryRows * rowH + commentH;
-          const used = sectionTitles + gaps + kundeTableH + summaryH + (skipPayment ? 0 : payH) + colH;
-          if (used <= available) {
-            return { summaryRowH: rowH, paymentH: skipPayment ? 0 : payH, twoColH: colH };
-          }
+        const summaryH = measureSummaryGroupsHeight(summaryGroups, rowH) + commentH;
+        const colH = available - sectionTitles - gaps - (hasKundeSection ? kundeRows * rowH : 0) - summaryH - (skipPayment ? 0 : payH);
+        if (colH >= minTwoColH) {
+          return { summaryRowH: rowH, paymentH: skipPayment ? 0 : payH, twoColH: colH };
         }
       }
     }
@@ -420,10 +483,10 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
     }
 
     y = drawSectionTitle(doc, y, 'Avtalen i korthet');
-    y = drawSummaryTable(
+    y = drawSummaryGroups(
       doc,
       y,
-      model.summaryRows,
+      model.summaryGroups || [],
       layout.summaryRowH,
       model.avtaleKommentar || '',
       model.innbytte?.kommentar || ''

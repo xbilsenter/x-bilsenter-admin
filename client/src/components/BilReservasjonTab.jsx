@@ -96,12 +96,21 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
 
         <div className="bil-reservasjon-preview__section">
           <h4>Avtalen i korthet</h4>
-          <div className="bil-reservasjon-preview__grid">
-            {model.summaryRows.map(function (row) {
+          <div className="bil-reservasjon-preview__grid bil-reservasjon-preview__grid--grouped">
+            {(model.summaryGroups || []).map(function (group) {
               return (
-                <div className={`bil-reservasjon-preview__cell${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
+                <div className="bil-reservasjon-preview__summary-group" key={group.title}>
+                  <div className="bil-reservasjon-preview__summary-group-title">{group.title}</div>
+                  <div className="bil-reservasjon-preview__summary-pairs">
+                    {group.rows.map(function (row) {
+                      return (
+                        <div className={`bil-reservasjon-preview__summary-item${row.highlight ? ' is-highlight' : ''}`} key={group.title + ':' + row.label}>
+                          <span>{row.label}</span>
+                          <strong>{row.value}</strong>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
@@ -111,22 +120,7 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
                 <p>{model.avtaleKommentar}</p>
               </div>
             ) : null}
-          </div>
-        </div>
-
-        {model.innbytte ? (
-          <div className="bil-reservasjon-preview__section">
-            <h4>Innbyttebil</h4>
-            <div className="bil-reservasjon-preview__grid">
-            {model.innbytteRows.map(function (row) {
-              return (
-                <div className={`bil-reservasjon-preview__cell${row.highlight ? ' is-highlight' : ''}`} key={row.label}>
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
-                </div>
-              );
-            })}
-            {model.innbytte.kommentar ? (
+            {model.innbytte?.kommentar ? (
               <div className="bil-reservasjon-preview__cell bil-reservasjon-preview__cell--comment">
                 <div className="bil-reservasjon-preview__innbytte-kommentar-label">Kommentar til innbyttebil</div>
                 <p>{model.innbytte.kommentar}</p>
@@ -134,7 +128,6 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
             ) : null}
           </div>
         </div>
-        ) : null}
 
         {!model.skipPayment ? (
           <div className="bil-reservasjon-preview__section">

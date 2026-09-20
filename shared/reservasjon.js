@@ -135,10 +135,59 @@ function buildInnbytteDocumentData(reservasjon) {
 function buildInnbytteSummaryRows(innbytte) {
   if (!innbytte) return [];
   return [
-    { label: 'Registreringsnr.', value: innbytte.reg },
-    { label: 'Kilometerstand', value: innbytte.kmTekst },
+    { label: 'Reg.nr.', value: innbytte.reg },
+    { label: 'Km', value: innbytte.kmTekst },
     { label: 'Innbyttepris', value: innbytte.prisTekst, highlight: true }
   ];
+}
+
+function buildSummaryGroups(bil, options) {
+  const {
+    bilNavn,
+    bilKmTekst,
+    kjopesumTekst,
+    erTilbud,
+    tilbudGyldigTilTekst,
+    depositumTekst,
+    depositumForfallTekst,
+    reservasjonTilTekst,
+    innbytte
+  } = options;
+
+  const bilRows = [
+    { label: 'Kjøretøy', value: bilNavn },
+    bil?.reg ? { label: 'Reg.nr.', value: String(bil.reg).toUpperCase() } : null,
+    bilKmTekst ? { label: 'Km', value: bilKmTekst } : null
+  ].filter(Boolean);
+
+  const avtaleRows = [
+    { label: erTilbud ? 'Tilbudspris' : 'Kjøpesum', value: kjopesumTekst, highlight: true }
+  ];
+
+  if (erTilbud) {
+    avtaleRows.push({ label: 'Gyldig til', value: tilbudGyldigTilTekst });
+  } else {
+    avtaleRows.push(
+      { label: 'Depositum', value: depositumTekst, highlight: true },
+      { label: 'Depositum frist', value: depositumForfallTekst },
+      { label: 'Reservert til', value: reservasjonTilTekst }
+    );
+  }
+
+  const groups = [
+    { title: 'Bilen', rows: bilRows },
+    { title: 'Avtalen', rows: avtaleRows }
+  ];
+
+  if (innbytte && !erTilbud) {
+    groups.push({ title: 'Innbytte', rows: buildInnbytteSummaryRows(innbytte) });
+  }
+
+  return groups;
+}
+
+function flattenSummaryGroups(groups) {
+  return (groups || []).flatMap(function (group) { return group.rows; });
 }
 
 function formatKundeAdresse(kunde) {
@@ -318,31 +367,19 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const kundeRows = buildKundeSummaryRows(kundeDok);
 
   const bilKmTekst = formatCaKm(bil?.km);
-  const summaryRows = [
-    { label: 'Kjøretøy', value: doc.bilNavn },
-    bil?.reg ? { label: 'Registreringsnr.', value: String(bil.reg).toUpperCase() } : null,
-    bilKmTekst ? { label: 'Kilometerstand', value: bilKmTekst } : null,
-    { label: erTilbud ? 'Tilbudspris' : 'Kjøpesum', value: doc.kjopesumTekst, highlight: true }
-  ].filter(Boolean);
-
-  if (erTilbud) {
-    summaryRows.push({ label: 'Tilbud gyldig til', value: tilbudGyldigTilTekst });
-  } else {
-    summaryRows.push(
-      { label: 'Depositum', value: doc.depositumTekst, highlight: true },
-      { label: 'Depositum senest', value: doc.depositumForfallTekst },
-      { label: 'Reservert til', value: doc.reservasjonTilTekst }
-    );
-  }
-
   const innbytte = buildInnbytteDocumentData(reservasjon);
-  if (innbytte && !erTilbud) {
-    summaryRows.push(
-      { label: 'Innbytte reg.nr.', value: innbytte.reg },
-      { label: 'Innbytte km', value: innbytte.kmTekst },
-      { label: 'Innbyttepris', value: innbytte.prisTekst, highlight: true }
-    );
-  }
+  const summaryGroups = buildSummaryGroups(bil, {
+    bilNavn: doc.bilNavn,
+    bilKmTekst,
+    kjopesumTekst: doc.kjopesumTekst,
+    erTilbud,
+    tilbudGyldigTilTekst,
+    depositumTekst: doc.depositumTekst,
+    depositumForfallTekst: doc.depositumForfallTekst,
+    reservasjonTilTekst: doc.reservasjonTilTekst,
+    innbytte
+  });
+  const summaryRows = flattenSummaryGroups(summaryGroups);
 
   const paymentLines = erTerminal
     ? [
@@ -385,6 +422,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       reg: bil?.reg ? String(bil.reg).toUpperCase() : '',
       finnUrl: doc.finnUrl || ''
     },
+    summaryGroups,
     summaryRows,
     avtaleKommentar,
     innbytte,
@@ -459,6 +497,8 @@ module.exports = {
   normalizeInnbytteFields,
   buildInnbytteDocumentData,
   buildInnbytteSummaryRows,
+  buildSummaryGroups,
+  flattenSummaryGroups,
   formatKm,
   formatCaKm,
   resolveKjopesum,

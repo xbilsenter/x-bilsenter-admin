@@ -1027,10 +1027,21 @@ select option{background:var(--s1);}
 .bil-reservasjon-preview__body{padding:18px 22px 14px;line-height:1.55;color:var(--t2);background:#fff;}
 .bil-reservasjon-preview__doc-title{font-size:18px;font-weight:700;color:var(--t1);letter-spacing:-.02em;margin-bottom:4px;}
 .bil-reservasjon-preview__doc-subtitle{font-size:7px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;}
-.bil-reservasjon-preview__section{margin-bottom:16px;}
+.bil-reservasjon-preview__section{margin-bottom:12px;}
 .bil-reservasjon-preview__section h4{margin:0 0 10px;font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--acc3);padding-bottom:6px;border-bottom:1px solid var(--b1);}
 .bil-reservasjon-preview__columns{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .bil-reservasjon-preview__grid{border:1px solid var(--b1);overflow:hidden;background:#fff;}
+.bil-reservasjon-preview__grid--grouped{display:block;}
+.bil-reservasjon-preview__summary-group{border-top:1px solid #e8f0e9;}
+.bil-reservasjon-preview__summary-group:first-child{border-top:0;}
+.bil-reservasjon-preview__summary-group-title{padding:7px 14px;background:var(--s3);font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--acc3);}
+.bil-reservasjon-preview__summary-pairs{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+.bil-reservasjon-preview__summary-item{display:grid;grid-template-columns:minmax(72px,92px) 1fr;gap:8px;padding:8px 12px;border-top:1px solid #eef3ee;align-items:center;min-height:34px;}
+.bil-reservasjon-preview__summary-item:nth-child(odd){border-right:1px solid #eef3ee;}
+.bil-reservasjon-preview__summary-item span{font-size:7.5px;color:var(--t3);font-weight:500;}
+.bil-reservasjon-preview__summary-item strong{font-size:8.5px;color:var(--t1);font-weight:600;text-align:right;line-height:1.35;}
+.bil-reservasjon-preview__summary-item.is-highlight{background:#f7faf7;}
+.bil-reservasjon-preview__summary-item.is-highlight strong{font-size:9.5px;font-weight:700;}
 .bil-reservasjon-preview__cell{display:grid;grid-template-columns:156px 1fr;gap:12px;padding:9px 14px;border-top:1px solid #e8f0e9;align-items:center;}
 .bil-reservasjon-preview__cell:first-child{border-top:0;}
 .bil-reservasjon-preview__cell:nth-child(even){background:#fcfdfc;}
@@ -1074,6 +1085,8 @@ select option{background:var(--s1);}
   .bil-reservasjon__layout{grid-template-columns:1fr;}
   .bil-reservasjon-preview__columns,.bil-reservasjon-preview__closing-row{grid-template-columns:1fr;}
   .bil-reservasjon-preview__cell{grid-template-columns:1fr;gap:1px;}
+  .bil-reservasjon-preview__summary-pairs{grid-template-columns:1fr;}
+  .bil-reservasjon-preview__summary-item:nth-child(odd){border-right:0;}
 }
 
 @media(max-width:520px){
