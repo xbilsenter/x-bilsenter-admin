@@ -331,8 +331,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     summaryRows.push(
       { label: 'Depositum', value: doc.depositumTekst, highlight: true },
       { label: 'Depositum senest', value: doc.depositumForfallTekst },
-      { label: 'Reservert til', value: doc.reservasjonTilTekst },
-      { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+      { label: 'Reservert til', value: doc.reservasjonTilTekst }
     );
   }
 

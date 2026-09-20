@@ -318,8 +318,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
     summaryRows.push(
       { label: 'Depositum', value: depositumTekst, highlight: true },
       { label: 'Depositum senest', value: depositumForfallTekst },
-      { label: 'Reservert til', value: reservasjonTilTekst },
-      { label: 'Betaling', value: erTerminal ? 'Bankterminal i butikk' : 'Bankoverføring' }
+      { label: 'Reservert til', value: reservasjonTilTekst }
     );
   }
 
