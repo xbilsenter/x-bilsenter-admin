@@ -419,7 +419,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
     vilkar: erTilbud
       ? buildTilbudVilkar()
       : [
-          'Depositum trekkes fra kjøpesum ved gjennomført handel.',
+          'Depositum trekkes fra kjøpesum / refunderes ved fullfinansiering ved gjennomført handel.',
           'Ved kansellering fra kundens side refunderes ikke depositum.',
           `Bilen holdes reservert til ${reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
           `Ved betaling av depositum etter forfallsdato forbeholder ${RESERVASJON_FIRMA.navn} seg retten til å kansellere avtalen og refundere depositum.`

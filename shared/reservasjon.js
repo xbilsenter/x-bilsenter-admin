@@ -402,7 +402,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const vilkar = erTilbud
     ? buildTilbudVilkar()
     : [
-        'Depositum trekkes fra kjøpesum ved gjennomført handel.',
+        'Depositum trekkes fra kjøpesum / refunderes ved fullfinansiering ved gjennomført handel.',
         'Ved kansellering fra kundens side refunderes ikke depositum.',
         `Bilen holdes reservert til ${doc.reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
         `Ved betaling av depositum etter forfallsdato forbeholder ${doc.firma.navn} seg retten til å kansellere avtalen og refundere depositum.`
