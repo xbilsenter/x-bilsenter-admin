@@ -370,7 +370,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
           'Depositum trekkes fra kjøpesum ved gjennomført handel.',
           'Ved kansellering fra kundens side refunderes ikke depositum.',
           `Bilen holdes reservert til ${reservasjonTilTekst}. Manglende oppgjør innen fristen anses som kansellering.`,
-          'Ved vesentlig forsinket depositum kan X Bilsenter AS kansellere avtalen.'
+          `Ved betaling av depositum etter forfallsdato forbeholder ${RESERVASJON_FIRMA.navn} seg retten til å kansellere avtalen og refundere depositum.`
         ],
     nesteSteg: erTilbud
       ? buildTilbudNesteSteg()
