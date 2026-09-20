@@ -141,9 +141,22 @@ function buildInnbytteSummaryRows(innbytte) {
   ];
 }
 
+function buildBilSummaryRows(bil, bilKmTekst) {
+  const merke = String(bil?.merke || '').trim() || '—';
+  const modell = String(bil?.modell || '').trim() || '—';
+  const kjoretoy = bil?.reg ? String(bil.reg).toUpperCase() : '—';
+  const km = bilKmTekst || '—';
+
+  return [
+    { label: 'Merke', value: merke },
+    { label: 'Kjøretøy', value: kjoretoy },
+    { label: 'Modell', value: modell },
+    { label: 'Km', value: km }
+  ];
+}
+
 function buildSummaryGroups(bil, options) {
   const {
-    bilNavn,
     bilKmTekst,
     kjopesumTekst,
     erTilbud,
@@ -154,11 +167,7 @@ function buildSummaryGroups(bil, options) {
     innbytte
   } = options;
 
-  const bilRows = [
-    { label: 'Kjøretøy', value: bilNavn },
-    bil?.reg ? { label: 'Reg.nr.', value: String(bil.reg).toUpperCase() } : null,
-    bilKmTekst ? { label: 'Km', value: bilKmTekst } : null
-  ].filter(Boolean);
+  const bilRows = buildBilSummaryRows(bil, bilKmTekst);
 
   const avtaleRows = [
     { label: erTilbud ? 'Tilbudspris' : 'Kjøpesum', value: kjopesumTekst, highlight: true }
@@ -369,7 +378,6 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   const bilKmTekst = formatCaKm(bil?.km);
   const innbytte = buildInnbytteDocumentData(reservasjon);
   const summaryGroups = buildSummaryGroups(bil, {
-    bilNavn: doc.bilNavn,
     bilKmTekst,
     kjopesumTekst: doc.kjopesumTekst,
     erTilbud,
@@ -497,6 +505,7 @@ module.exports = {
   normalizeInnbytteFields,
   buildInnbytteDocumentData,
   buildInnbytteSummaryRows,
+  buildBilSummaryRows,
   buildSummaryGroups,
   flattenSummaryGroups,
   formatKm,
