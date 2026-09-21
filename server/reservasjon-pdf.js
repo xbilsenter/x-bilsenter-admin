@@ -343,21 +343,19 @@ function measureListHeight(doc, items, width, fontSize, itemGap, lineGap, number
 }
 
 function resolveListFit(doc, items, width, maxHeight, numbered) {
-  const fontSize = LIST_FONT_SIZE;
-  const lineGap = LIST_LINE_GAP;
-  for (let itemGap = 6; itemGap >= 3; itemGap -= 1) {
-    const h = measureListHeight(doc, items, width, fontSize, itemGap, lineGap, numbered);
-    if (h <= maxHeight) {
-      return { fontSize, itemGap, lineGap };
+  for (let fontSize = LIST_FONT_SIZE; fontSize >= 6.5; fontSize -= 0.5) {
+    const lineGap = fontSize <= 7.5 ? 1 : LIST_LINE_GAP;
+    for (let itemGap = 6; itemGap >= 2; itemGap -= 1) {
+      const h = measureListHeight(doc, items, width, fontSize, itemGap, lineGap, numbered);
+      if (h <= maxHeight) {
+        return { fontSize, itemGap, lineGap };
+      }
     }
   }
-  return { fontSize, itemGap: 3, lineGap: 1 };
+  return { fontSize: 6.5, itemGap: 2, lineGap: 0.8 };
 }
 
-function drawListInBox(doc, x, y, width, maxHeight, items, numbered, fit) {
-  doc.save();
-  doc.rect(x, y, width, maxHeight).clip();
-
+function drawListInBox(doc, x, y, width, items, numbered, fit) {
   let cy = y;
 
   items.forEach(function (item, index) {
@@ -373,19 +371,32 @@ function drawListInBox(doc, x, y, width, maxHeight, items, numbered, fit) {
     cy = doc.y + (index < items.length - 1 ? fit.itemGap : 0);
   });
 
-  doc.restore();
-  return cy;
+  return Math.max(cy - y, fit.fontSize + 1);
 }
 
-function drawTwoColumnSections(doc, y, model, boxH, titleAlreadyDrawn) {
+function drawTwoColumnSections(doc, y, model, maxListH, titleAlreadyDrawn) {
   const gap = 14;
   const colW = (PAGE.width - gap) / 2;
   const leftX = PAGE.left;
   const rightX = PAGE.left + colW + gap;
   const pad = 11;
+  const listPad = 8;
 
   const ty = titleAlreadyDrawn ? y + sectionTitleHeight() : drawSectionTitle(doc, y, 'Vilkår og neste steg');
-  const listMaxH = boxH - COL_HEADER_H - pad - 4;
+  const listY = ty + COL_HEADER_H + listPad;
+  const innerW = colW - pad * 2;
+
+  doc.font('PJ').fontSize(LIST_FONT_SIZE);
+  const vilkarFit = resolveListFit(doc, model.vilkar, innerW, maxListH, false);
+  const stegFit = resolveListFit(doc, model.nesteSteg, innerW, maxListH, true);
+  const vilkarContentH = measureListHeight(
+    doc, model.vilkar, innerW, vilkarFit.fontSize, vilkarFit.itemGap, vilkarFit.lineGap, false
+  );
+  const stegContentH = measureListHeight(
+    doc, model.nesteSteg, innerW, stegFit.fontSize, stegFit.itemGap, stegFit.lineGap, true
+  );
+  const contentH = Math.max(vilkarContentH, stegContentH);
+  const boxH = COL_HEADER_H + listPad + contentH + listPad;
 
   [leftX, rightX].forEach(function (x) {
     doc.rect(x, ty, colW, COL_HEADER_H).fill(C.accentDark);
@@ -398,15 +409,8 @@ function drawTwoColumnSections(doc, y, model, boxH, titleAlreadyDrawn) {
   doc.font('PJ-SB').fontSize(7).fillColor(C.white)
     .text('NESTE STEG', rightX + pad, ty + 8, { characterSpacing: 0.7 });
 
-  const listY = ty + COL_HEADER_H + 8;
-  const innerW = colW - pad * 2;
-
-  doc.font('PJ').fontSize(LIST_FONT_SIZE);
-  const vilkarFit = resolveListFit(doc, model.vilkar, innerW, listMaxH, false);
-  const stegFit = resolveListFit(doc, model.nesteSteg, innerW, listMaxH, true);
-
-  drawListInBox(doc, leftX + pad, listY, innerW, listMaxH, model.vilkar, false, vilkarFit);
-  drawListInBox(doc, rightX + pad, listY, innerW, listMaxH, model.nesteSteg, true, stegFit);
+  drawListInBox(doc, leftX + pad, listY, innerW, model.vilkar, false, vilkarFit);
+  drawListInBox(doc, rightX + pad, listY, innerW, model.nesteSteg, true, stegFit);
 
   return ty + boxH;
 }
@@ -501,8 +505,9 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
 
     const twoColSectionY = y;
     y = drawSectionTitle(doc, y, 'Vilkår og neste steg');
-    const twoColH = Math.max(COL_HEADER_H + 84, CONTENT_BOTTOM - y - 2);
-    drawTwoColumnSections(doc, twoColSectionY, model, twoColH, true);
+    const listStartY = twoColSectionY + sectionTitleHeight() + COL_HEADER_H + 8;
+    const maxListH = Math.max(72, CONTENT_BOTTOM - listStartY - 8);
+    drawTwoColumnSections(doc, twoColSectionY, model, maxListH, true);
 
     drawClosing(doc, PAGE.footerY - FOOTER_H - CLOSING_H - 8, model);
     drawFooter(doc);
