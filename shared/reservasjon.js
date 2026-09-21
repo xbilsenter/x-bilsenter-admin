@@ -230,12 +230,41 @@ function buildKundeSummaryRows() {
   return [];
 }
 
+function normalizeAvtaleForholdPunkter(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(function (item) { return String(item ?? '').trim(); })
+    .filter(Boolean);
+}
+
+function splitAvtaleKommentarTilPunkter(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map(function (line) { return line.trim(); })
+    .filter(Boolean);
+}
+
+function formatAvtaleForholdForMelding(reservasjon) {
+  const punkter = normalizeAvtaleForholdPunkter(reservasjon?.avtaleForholdPunkter);
+  if (punkter.length) {
+    return '\n' + punkter.map(function (punkt) { return '• ' + punkt; }).join('\n') + '\n';
+  }
+  const tekst = String(reservasjon?.avtaleKommentar || '').trim();
+  return tekst ? `\n${tekst}\n` : '';
+}
+
 function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
+  const avtaleForholdPunkter = Array.isArray(o.avtaleForholdPunkter ?? base.avtaleForholdPunkter)
+    ? (o.avtaleForholdPunkter ?? base.avtaleForholdPunkter).map(function (item) {
+      return String(item ?? '');
+    })
+    : [];
   const normalized = {
     dokumentType: normalizeDokumentType(o.dokumentType ?? base.dokumentType),
     avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? ''),
+    avtaleForholdPunkter,
     tilbudGyldigTil: isoDateOnly(o.tilbudGyldigTil || base.tilbudGyldigTil || addDaysIso(new Date(), 7)),
     tilbudGyldigTilKlokkeslett: normalizeKlokkeslett(o.tilbudGyldigTilKlokkeslett ?? base.tilbudGyldigTilKlokkeslett ?? ''),
     kundeNavn: String(o.kundeNavn ?? base.kundeNavn ?? ''),
@@ -371,6 +400,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     reservasjon.tilbudGyldigTilKlokkeslett
   );
   const avtaleKommentar = String(reservasjon.avtaleKommentar || '').trim();
+  const avtaleForholdPunkter = normalizeAvtaleForholdPunkter(reservasjon.avtaleForholdPunkter);
   const kundeDok = resolveKundeForDokument(kunde, reservasjon);
   const kundeFornavn = extractKundeFornavn(kundeDok.navn);
   const kundeRows = buildKundeSummaryRows(kundeDok);
@@ -433,6 +463,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
     summaryGroups,
     summaryRows,
     avtaleKommentar,
+    avtaleForholdPunkter,
     innbytte,
     innbytteRows: buildInnbytteSummaryRows(innbytte),
     payment: {
@@ -524,5 +555,8 @@ module.exports = {
   resolveKundeForDokument,
   buildKundeSummaryRows,
   buildReservasjonPdfModel,
+  normalizeAvtaleForholdPunkter,
+  splitAvtaleKommentarTilPunkter,
+  formatAvtaleForholdForMelding,
   reservasjonSeksjoner
 };

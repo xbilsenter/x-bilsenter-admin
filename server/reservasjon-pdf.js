@@ -4,7 +4,8 @@ const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
 const {
   RESERVASJON_FIRMA,
-  buildReservasjonPdfModel
+  buildReservasjonPdfModel,
+  normalizeAvtaleForholdPunkter
 } = require('../shared/reservasjon');
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'logo.svg');
@@ -162,23 +163,52 @@ function drawSectionTitle(doc, y, title) {
   return y + sectionTitleHeight();
 }
 
-function commentBlockHeight(doc, text) {
+const COMMENT_LIST_FIT = { fontSize: 8.5, itemGap: 4, lineGap: 1.8 };
+
+function commentBlockHeight(doc, text, punkter) {
+  const items = normalizeAvtaleForholdPunkter(punkter);
+  if (items.length) {
+    doc.font('PJ').fontSize(COMMENT_LIST_FIT.fontSize);
+    const listH = measureListHeight(
+      doc,
+      items,
+      PAGE.width - 24,
+      COMMENT_LIST_FIT.fontSize,
+      COMMENT_LIST_FIT.itemGap,
+      COMMENT_LIST_FIT.lineGap,
+      false
+    );
+    return 10 + 14 + listH + 10;
+  }
   if (!text) return 0;
   doc.font('PJ').fontSize(8.5);
   const textH = doc.heightOfString(text, { width: PAGE.width - 24, lineGap: 1.8 });
   return 10 + 14 + textH + 10;
 }
 
-function drawCommentBlock(doc, rowY, pad, label, text) {
+function drawCommentBlock(doc, rowY, pad, label, text, punkter) {
   doc.moveTo(PAGE.left, rowY).lineTo(PAGE.right, rowY).strokeColor(C.line).lineWidth(0.5).stroke();
   doc.font('PJ-EB').fontSize(6.5).fillColor(C.accentInk)
     .text(label, PAGE.left + pad, rowY + 10, { characterSpacing: 0.7 });
-  doc.font('PJ').fontSize(8.5).fillColor(C.ink2)
-    .text(text, PAGE.left + pad, rowY + 22, {
-      width: PAGE.width - pad * 2,
-      lineGap: 1.8
-    });
-  return rowY + commentBlockHeight(doc, text);
+  const items = normalizeAvtaleForholdPunkter(punkter);
+  if (items.length) {
+    drawListInBox(
+      doc,
+      PAGE.left + pad,
+      rowY + 22,
+      PAGE.width - pad * 2,
+      items,
+      false,
+      COMMENT_LIST_FIT
+    );
+  } else {
+    doc.font('PJ').fontSize(8.5).fillColor(C.ink2)
+      .text(text, PAGE.left + pad, rowY + 22, {
+        width: PAGE.width - pad * 2,
+        lineGap: 1.8
+      });
+  }
+  return rowY + commentBlockHeight(doc, text, punkter);
 }
 
 function measureSummaryGroupsHeight(groups, rowH) {
@@ -205,10 +235,11 @@ function drawSummaryCell(doc, x, y, width, rowH, row, pad) {
     });
 }
 
-function drawSummaryTable(doc, y, rows, rowH, avtaleKommentar, innbytteKommentar) {
+function drawSummaryTable(doc, y, rows, rowH, avtaleKommentar, avtaleForholdPunkter, innbytteKommentar) {
   const labelW = 158;
   const pad = 12;
-  const commentBlockH = commentBlockHeight(doc, avtaleKommentar) + commentBlockHeight(doc, innbytteKommentar);
+  const commentBlockH = commentBlockHeight(doc, avtaleKommentar, avtaleForholdPunkter)
+    + commentBlockHeight(doc, innbytteKommentar);
   const rowsH = rows.length * rowH;
   const boxH = rowsH + commentBlockH;
 
@@ -238,8 +269,8 @@ function drawSummaryTable(doc, y, rows, rowH, avtaleKommentar, innbytteKommentar
     rowY += rowH;
   });
 
-  if (avtaleKommentar) {
-    rowY = drawCommentBlock(doc, rowY, pad, 'AVTALTE FORHOLD', avtaleKommentar);
+  if (avtaleKommentar || normalizeAvtaleForholdPunkter(avtaleForholdPunkter).length) {
+    rowY = drawCommentBlock(doc, rowY, pad, 'AVTALTE FORHOLD', avtaleKommentar, avtaleForholdPunkter);
   }
   if (innbytteKommentar) {
     drawCommentBlock(doc, rowY, pad, 'KOMMENTAR TIL INNBYTTEBIL', innbytteKommentar);
@@ -248,11 +279,12 @@ function drawSummaryTable(doc, y, rows, rowH, avtaleKommentar, innbytteKommentar
   return y + boxH;
 }
 
-function drawSummaryGroups(doc, y, groups, rowH, avtaleKommentar, innbytteKommentar) {
+function drawSummaryGroups(doc, y, groups, rowH, avtaleKommentar, avtaleForholdPunkter, innbytteKommentar) {
   const pad = 10;
   const colGap = 0;
   const colW = PAGE.width / 2;
-  const commentBlockH = commentBlockHeight(doc, avtaleKommentar) + commentBlockHeight(doc, innbytteKommentar);
+  const commentBlockH = commentBlockHeight(doc, avtaleKommentar, avtaleForholdPunkter)
+    + commentBlockHeight(doc, innbytteKommentar);
   const gridH = measureSummaryGroupsHeight(groups, rowH);
   const boxH = gridH + commentBlockH;
 
@@ -280,8 +312,8 @@ function drawSummaryGroups(doc, y, groups, rowH, avtaleKommentar, innbytteKommen
     }
   });
 
-  if (avtaleKommentar) {
-    rowY = drawCommentBlock(doc, rowY, pad, 'AVTALTE FORHOLD', avtaleKommentar);
+  if (avtaleKommentar || normalizeAvtaleForholdPunkter(avtaleForholdPunkter).length) {
+    rowY = drawCommentBlock(doc, rowY, pad, 'AVTALTE FORHOLD', avtaleKommentar, avtaleForholdPunkter);
   }
   if (innbytteKommentar) {
     drawCommentBlock(doc, rowY, pad, 'KOMMENTAR TIL INNBYTTEBIL', innbytteKommentar);
@@ -430,7 +462,7 @@ function drawClosing(doc, y, model) {
 function computeLayout(model, introEndY, doc) {
   const summaryGroups = model.summaryGroups || [];
   const kundeRows = (model.kundeRows || []).length;
-  const commentH = commentBlockHeight(doc, model.avtaleKommentar || '')
+  const commentH = commentBlockHeight(doc, model.avtaleKommentar || '', model.avtaleForholdPunkter)
     + commentBlockHeight(doc, model.innbytte?.kommentar || '');
   const minSummaryRowH = 17;
   const maxSummaryRowH = 22;
@@ -482,7 +514,7 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
 
     if (model.kundeRows?.length) {
       y = drawSectionTitle(doc, y, 'Kunde');
-      y = drawSummaryTable(doc, y, model.kundeRows, layout.summaryRowH, '', '');
+      y = drawSummaryTable(doc, y, model.kundeRows, layout.summaryRowH, '', [], '');
       y += SECTION_GAP;
     }
 
@@ -493,6 +525,7 @@ function buildReservasjonPdfBuffer(bil, kunde, reservasjonRaw) {
       model.summaryGroups || [],
       layout.summaryRowH,
       model.avtaleKommentar || '',
+      model.avtaleForholdPunkter || [],
       model.innbytte?.kommentar || ''
     );
     y += SECTION_GAP;

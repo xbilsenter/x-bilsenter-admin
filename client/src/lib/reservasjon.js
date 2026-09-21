@@ -230,6 +230,29 @@ export function buildKundeSummaryRows() {
   return [];
 }
 
+export function normalizeAvtaleForholdPunkter(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(function (item) { return String(item ?? '').trim(); })
+    .filter(Boolean);
+}
+
+export function splitAvtaleKommentarTilPunkter(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map(function (line) { return line.trim(); })
+    .filter(Boolean);
+}
+
+export function formatAvtaleForholdForMelding(reservasjon) {
+  const punkter = normalizeAvtaleForholdPunkter(reservasjon?.avtaleForholdPunkter);
+  if (punkter.length) {
+    return '\n' + punkter.map(function (punkt) { return '• ' + punkt; }).join('\n') + '\n';
+  }
+  const tekst = String(reservasjon?.avtaleKommentar || '').trim();
+  return tekst ? `\n${tekst}\n` : '';
+}
+
 export function patchKundeTilReservasjon(kunde) {
   if (!kunde) return {};
   return {
@@ -241,9 +264,15 @@ export function patchKundeTilReservasjon(kunde) {
 export function normalizeBilReservasjon(raw, defaults, bil) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const base = defaults && typeof defaults === 'object' ? defaults : {};
+  const avtaleForholdPunkter = Array.isArray(o.avtaleForholdPunkter ?? base.avtaleForholdPunkter)
+    ? (o.avtaleForholdPunkter ?? base.avtaleForholdPunkter).map(function (item) {
+      return String(item ?? '');
+    })
+    : [];
   const normalized = {
     dokumentType: normalizeDokumentType(o.dokumentType ?? base.dokumentType),
     avtaleKommentar: String(o.avtaleKommentar ?? base.avtaleKommentar ?? ''),
+    avtaleForholdPunkter,
     tilbudGyldigTil: isoDateOnly(o.tilbudGyldigTil || base.tilbudGyldigTil || addDaysIso(new Date(), 7)),
     tilbudGyldigTilKlokkeslett: normalizeKlokkeslett(o.tilbudGyldigTilKlokkeslett ?? base.tilbudGyldigTilKlokkeslett ?? ''),
     kundeNavn: String(o.kundeNavn ?? base.kundeNavn ?? ''),
@@ -413,6 +442,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
     summaryGroups,
     summaryRows,
     avtaleKommentar: String(reservasjon.avtaleKommentar || '').trim(),
+    avtaleForholdPunkter: normalizeAvtaleForholdPunkter(reservasjon.avtaleForholdPunkter),
     innbytte,
     innbytteRows: buildInnbytteSummaryRows(innbytte),
     payment,
@@ -445,7 +475,7 @@ export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
       hilsen,
       '',
       `Takk for interessen for vår ${bilNavn}. Som avtalt sender vi deg her tilbud på bilen.`,
-      reservasjon.avtaleKommentar ? `\n${String(reservasjon.avtaleKommentar).trim()}\n` : '',
+      formatAvtaleForholdForMelding(reservasjon),
       'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.',
       '',
       'Med vennlig hilsen',
@@ -459,7 +489,7 @@ export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
     `Takk for avtalen om kjøp av ${bilNavn}${bil?.reg ? ` (${String(bil.reg).toUpperCase()})` : ''}.`,
     '',
     'Vedlagt finner du reservasjonsbekreftelsen med avtalte vilkår og informasjon om depositum.',
-    reservasjon.avtaleKommentar ? `\n${String(reservasjon.avtaleKommentar).trim()}\n` : '',
+    formatAvtaleForholdForMelding(reservasjon),
     'Ta kontakt dersom du har spørsmål.',
     '',
     'Med vennlig hilsen',

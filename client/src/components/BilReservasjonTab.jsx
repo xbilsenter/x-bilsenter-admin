@@ -12,6 +12,8 @@ import {
   getRawReservasjonFromOkonomi,
   getReservasjonFromOkonomi,
   isoDateOnly,
+  normalizeAvtaleForholdPunkter,
+  splitAvtaleKommentarTilPunkter,
   resolveKundeForDokument,
   patchKundeTilReservasjon
 } from '../lib/reservasjon.js';
@@ -35,10 +37,128 @@ function readReservasjonTekst(okonomi) {
   const src = okonomi?.reservasjon && typeof okonomi.reservasjon === 'object' ? okonomi.reservasjon : {};
   return {
     avtaleKommentar: src.avtaleKommentar ?? '',
+    avtaleForholdPunkter: Array.isArray(src.avtaleForholdPunkter)
+      ? src.avtaleForholdPunkter.map(function (item) { return String(item ?? ''); })
+      : [],
     innbytteKommentar: src.innbytteKommentar ?? '',
     kundeNavn: src.kundeNavn ?? '',
     kundeEpost: src.kundeEpost ?? ''
   };
+}
+
+function AvtaleForholdEditor({ tekstDraft, oppdaterTekst }) {
+  const [skrivSomPunkter, setSkrivSomPunkter] = useState(function () {
+    return normalizeAvtaleForholdPunkter(tekstDraft.avtaleForholdPunkter).length > 0;
+  });
+  const punktInputs = skrivSomPunkter
+    ? (Array.isArray(tekstDraft.avtaleForholdPunkter) && tekstDraft.avtaleForholdPunkter.length
+      ? tekstDraft.avtaleForholdPunkter
+      : [''])
+    : [];
+
+  useEffect(function () {
+    if (normalizeAvtaleForholdPunkter(tekstDraft.avtaleForholdPunkter).length > 0) {
+      setSkrivSomPunkter(true);
+    }
+  }, [tekstDraft.avtaleForholdPunkter]);
+
+  function byttTilPunkter() {
+    const lines = splitAvtaleKommentarTilPunkter(tekstDraft.avtaleKommentar);
+    oppdaterTekst({
+      avtaleForholdPunkter: lines.length ? lines : [''],
+      avtaleKommentar: ''
+    });
+    setSkrivSomPunkter(true);
+  }
+
+  function byttTilFritekst() {
+    const joined = normalizeAvtaleForholdPunkter(tekstDraft.avtaleForholdPunkter).join('\n');
+    oppdaterTekst({
+      avtaleKommentar: joined,
+      avtaleForholdPunkter: []
+    });
+    setSkrivSomPunkter(false);
+  }
+
+  function oppdaterPunkt(index, value) {
+    const next = [...punktInputs];
+    next[index] = value;
+    oppdaterTekst({ avtaleForholdPunkter: next, avtaleKommentar: '' });
+  }
+
+  function leggTilPunkt() {
+    oppdaterTekst({
+      avtaleForholdPunkter: [...punktInputs, ''],
+      avtaleKommentar: ''
+    });
+  }
+
+  function fjernPunkt(index) {
+    const next = punktInputs.filter(function (_, i) { return i !== index; });
+    oppdaterTekst({
+      avtaleForholdPunkter: next.length ? next : [''],
+      avtaleKommentar: ''
+    });
+  }
+
+  return (
+    <div className="gap bil-reservasjon__forhold">
+      <div className="bil-reservasjon__forhold-head">
+        <div>
+          <div className="fl">Avtalte forhold</div>
+          <p className="bil-reservasjon__hint bil-reservasjon__hint--tight">Valgfritt. Vises i dokumentet under avtalen.</p>
+        </div>
+        <label className="bil-reservasjon__toggle">
+          <input
+            type="checkbox"
+            checked={skrivSomPunkter}
+            onChange={function (e) {
+              if (e.target.checked) byttTilPunkter();
+              else byttTilFritekst();
+            }}
+          />
+          <span>Skriv som punkter</span>
+        </label>
+      </div>
+
+      {skrivSomPunkter ? (
+        <div className="bil-reservasjon__forhold-punkter">
+          {punktInputs.map(function (punkt, index) {
+            return (
+              <div className="bil-reservasjon__forhold-punkt" key={'avtale-punkt-' + index}>
+                <span className="bil-reservasjon__forhold-punkt-mark" aria-hidden="true">•</span>
+                <input
+                  type="text"
+                  value={punkt}
+                  placeholder={'Punkt ' + (index + 1)}
+                  onChange={function (e) { oppdaterPunkt(index, e.target.value); }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-g btn-sm bil-reservasjon__forhold-punkt-remove"
+                  onClick={function () { fjernPunkt(index); }}
+                  aria-label={'Fjern punkt ' + (index + 1)}
+                  disabled={punktInputs.length <= 1}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          <button type="button" className="btn btn-g btn-sm bil-reservasjon__forhold-add" onClick={leggTilPunkt}>
+            + Legg til punkt
+          </button>
+        </div>
+      ) : (
+        <textarea
+          rows={3}
+          placeholder="F.eks. avtalte tillegg, forbehold, leveringsdato eller annet som skal med i dokumentet"
+          value={tekstDraft.avtaleKommentar}
+          onChange={function (e) { oppdaterTekst({ avtaleKommentar: e.target.value, avtaleForholdPunkter: [] }); }}
+        />
+      )}
+    </div>
+  );
 }
 
 function patchFromInnbytte(inn) {
@@ -114,10 +234,18 @@ function ReservasjonPreview({ bil, kunde, reservasjonVisning }) {
                 </div>
               );
             })}
-            {model.avtaleKommentar ? (
+            {(model.avtaleForholdPunkter?.length || model.avtaleKommentar) ? (
               <div className="bil-reservasjon-preview__cell bil-reservasjon-preview__cell--comment">
                 <div className="bil-reservasjon-preview__innbytte-kommentar-label">Avtalte forhold</div>
-                <p>{model.avtaleKommentar}</p>
+                {model.avtaleForholdPunkter?.length ? (
+                  <ul className="bil-reservasjon-preview__forhold-list">
+                    {model.avtaleForholdPunkter.map(function (punkt, index) {
+                      return <li key={'forhold-' + index}>{punkt}</li>;
+                    })}
+                  </ul>
+                ) : (
+                  <p>{model.avtaleKommentar}</p>
+                )}
               </div>
             ) : null}
             {model.innbytte?.kommentar ? (
@@ -507,15 +635,7 @@ export default function BilReservasjonTab({ bil, kunder, knyttetInnbytte, oppdat
             </>
           ) : null}
 
-          <div className="gap">
-            <div className="fl">Kommentar til avtalen</div>
-            <textarea
-              rows={3}
-              placeholder="F.eks. avtalte tillegg, forbehold, leveringsdato eller annet som skal med i dokumentet"
-              value={tekstDraft.avtaleKommentar}
-              onChange={function (e) { oppdaterTekst({ avtaleKommentar: e.target.value }); }}
-            />
-          </div>
+          <AvtaleForholdEditor tekstDraft={tekstDraft} oppdaterTekst={oppdaterTekst} />
 
           <div className="bil-reservasjon__innbytte">
             <div className="bil-reservasjon__innbytte-head">
