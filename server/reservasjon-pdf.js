@@ -190,7 +190,7 @@ function measureSummaryGroupsHeight(groups, rowH) {
 function drawSummaryCell(doc, x, y, width, rowH, row, pad) {
   if (!row) return;
   if (row.highlight) {
-    doc.rect(x, y, width, rowH).fill(C.surface);
+    doc.rect(x, y, width, rowH).fill(C.white);
   }
   const labelW = 78;
   const valueY = y + Math.max(5, Math.round((rowH - (row.highlight ? 11 : 9)) / 2));
@@ -220,7 +220,7 @@ function drawSummaryTable(doc, y, rows, rowH, avtaleKommentar, innbytteKommentar
       doc.moveTo(PAGE.left, rowY).lineTo(PAGE.right, rowY).strokeColor(C.lineSoft).lineWidth(0.35).stroke();
     }
     if (row.highlight) {
-      doc.rect(PAGE.left, rowY, PAGE.width, rowH).fill(C.surface);
+      doc.rect(PAGE.left, rowY, PAGE.width, rowH).fill(C.white);
     } else if (index % 2 === 1) {
       doc.rect(PAGE.left, rowY, PAGE.width, rowH).fill('#FCFDFC');
     }
