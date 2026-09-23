@@ -74,6 +74,7 @@ const {
   setBilKunder,
   nextBilSortOrder,
   reorderBiler,
+  applyBilSjekklisterMalToAllBiler,
   syncAllBilerSjekklisterFromMal,
   ensureSjekklisterForStatus,
   parseBilSjekklisterObject,
@@ -3484,11 +3485,10 @@ app.get('/api/innstillinger', requireAuth, requirePermission('innstillinger'), a
 app.patch('/api/innstillinger', requireAuth, requirePermission('innstillinger'), async function (req, res) {
   const body = req.body || {};
   const settings = await saveInnstillinger(body);
-  let biler = null;
-  if (body.bilSjekklister && typeof body.bilSjekklister === 'object') {
-    biler = await syncAllBilerSjekklisterFromMal(settings.bilSjekklister);
+  if (body.syncBilSjekklister === true && body.bilSjekklister && typeof body.bilSjekklister === 'object') {
+    await applyBilSjekklisterMalToAllBiler(settings.bilSjekklister);
   }
-  res.json({ ok: true, settings, biler });
+  res.json({ ok: true, settings });
 });
 
 app.get('/api/kjoretoy', requireAuth, async function (req, res) {
@@ -3677,7 +3677,7 @@ function startLocalServer() {
     console.log('[db] Database-init fullført.');
     try {
       const settings = await getInnstillinger();
-      await syncAllBilerSjekklisterFromMal(settings.bilSjekklister || {});
+      await applyBilSjekklisterMalToAllBiler(settings.bilSjekklister || {});
       console.log('[db] Sjekklister synkronisert mot innstillinger.');
     } catch (err) {
       console.warn('[db] Sjekkliste-sync ved oppstart feilet:', err.message);

@@ -1627,21 +1627,7 @@ export default function App() {
                 try {
                   const res = await patchInnstillinger(next);
                   if (res.settings) setInnstillinger(res.settings);
-                  if (res.biler?.length) {
-                    setBiler(res.biler.map(function (item) {
-                      return { ...item, id: normalizeBilId(item.id), sortOrder: Number(item.sortOrder ?? 0) };
-                    }));
-                    setModal(function (prev) {
-                      if (prev?.t !== 'visBil' || !prev.d?.id) return prev;
-                      const updated = res.biler.find(function (b) {
-                        return normalizeBilId(b.id) === normalizeBilId(prev.d.id);
-                      });
-                      return updated
-                        ? { ...prev, d: { ...updated, id: normalizeBilId(updated.id) } }
-                        : prev;
-                    });
-                    refreshStats();
-                  } else if (next.bilSjekklister) {
+                  if (next.syncBilSjekklister && next.bilSjekklister) {
                     const mal = res.settings?.bilSjekklister || next.bilSjekklister;
                     setBiler(function (prev) {
                       return prev.map(function (b) {
@@ -12036,6 +12022,7 @@ function KontoPassordSection({ currentUser, visTost }) {
 function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppsettChange, onVedlikeholdChange, onStatusChange, visTost }) {
   const [draft, setDraft] = useState(settings);
   const [section, setSection] = useState('konto');
+  const [lagrer, setLagrer] = useState(false);
   const bilerSnapshotRef = useRef(biler);
 
   useEffect(function () {
@@ -12115,16 +12102,55 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
     return res;
   };
 
-  const lagreLister = function () {
-    onSave({
-      ...draft,
+  const lagreInnstillingerSeksjon = async function (payload) {
+    if (lagrer) return;
+    setLagrer(true);
+    try {
+      await onSave(payload);
+    } finally {
+      setLagrer(false);
+    }
+  };
+
+  const finalizeBilSjekklister = function () {
+    return Object.fromEntries(
+      Object.entries(draft.bilSjekklister || {}).map(function ([status, rows]) {
+        return [status, finalizeSjekklisteMalItems(rows)];
+      })
+    );
+  };
+
+  const lagreListerSeksjon = function () {
+    lagreInnstillingerSeksjon({
+      ansatte: draft.ansatte,
+      merker: draft.merker,
       innkjopskilder: draft.innkjopskilder?.length ? draft.innkjopskilder : KALKYLE_KILDER,
-      bilSjekklister: Object.fromEntries(
-        Object.entries(draft.bilSjekklister || {}).map(function ([status, rows]) {
-          return [status, finalizeSjekklisteMalItems(rows)];
-        })
-      )
+      kalTyper: draft.kalTyper
     });
+  };
+
+  const lagreBilerSeksjon = function () {
+    lagreInnstillingerSeksjon({
+      bilStatuser: draft.bilStatuser,
+      bilStatusFarger: draft.bilStatusFarger,
+      bilSjekklister: finalizeBilSjekklister(),
+      syncBilSjekklister: true
+    });
+  };
+
+  const lagreStatuserSeksjon = function () {
+    lagreInnstillingerSeksjon({
+      henvStatuser: draft.henvStatuser,
+      henvStatusFarger: draft.henvStatusFarger,
+      innbytteStatuser: draft.innbytteStatuser,
+      innbytteStatusFarger: draft.innbytteStatusFarger
+    });
+  };
+
+  const lagreAktivSeksjon = function () {
+    if (section === 'lister') lagreListerSeksjon();
+    else if (section === 'biler') lagreBilerSeksjon();
+    else if (section === 'statuser') lagreStatuserSeksjon();
   };
 
   const showLagreLister = showInnstillinger && ['lister', 'biler', 'statuser'].includes(section);
@@ -12137,7 +12163,9 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
           <div className="ph-sub">{sectionSubtitles[section] || 'Systemoppsett'}</div>
         </div>
         {showLagreLister && (
-          <button type="button" className="btn btn-p" onClick={lagreLister}>Lagre endringer</button>
+          <button type="button" className="btn btn-p" onClick={lagreAktivSeksjon} disabled={lagrer}>
+            {lagrer ? 'Lagrer…' : 'Lagre endringer'}
+          </button>
         )}
       </div>
 

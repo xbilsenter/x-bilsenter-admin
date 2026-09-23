@@ -1715,8 +1715,10 @@ function getRoleTemplates() {
   return ROLE_TEMPLATES;
 }
 
-function syncAllBilerSjekklisterFromMal(malPerStatus) {
+function applyBilSjekklisterMalToAllBiler(malPerStatus) {
   const rows = db.prepare('SELECT id, status, sjekkliste, sjekklister FROM biler').all();
+  if (!rows.length) return;
+
   const updateStmt = db.prepare(`
     UPDATE biler SET sjekklister = @sjekklister, sjekkliste = @sjekkliste, updated_at = datetime('now')
     WHERE id = @id
@@ -1729,6 +1731,10 @@ function syncAllBilerSjekklisterFromMal(malPerStatus) {
       sjekkliste: JSON.stringify(synced.sjekkliste)
     });
   });
+}
+
+function syncAllBilerSjekklisterFromMal(malPerStatus) {
+  applyBilSjekklisterMalToAllBiler(malPerStatus);
   return db.prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all().map(mapBil);
 }
 
@@ -1750,6 +1756,7 @@ module.exports = {
   getInnstillinger,
   getLister,
   saveInnstillinger,
+  applyBilSjekklisterMalToAllBiler,
   syncAllBilerSjekklisterFromMal,
   getMailKontoer,
   getMailKontoById,

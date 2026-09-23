@@ -1770,8 +1770,10 @@ async function reorderBiler(updates, ansvarligNavn) {
   }).filter(Boolean);
 }
 
-async function syncAllBilerSjekklisterFromMal(malPerStatus) {
+async function applyBilSjekklisterMalToAllBiler(malPerStatus) {
   const rows = await prepare('SELECT id, status, sjekkliste, sjekklister FROM biler').all();
+  if (!rows.length) return;
+
   const updateStmt = prepare(`
     UPDATE biler SET sjekklister = @sjekklister, sjekkliste = @sjekkliste, updated_at = datetime('now')
     WHERE id = @id
@@ -1785,6 +1787,10 @@ async function syncAllBilerSjekklisterFromMal(malPerStatus) {
       sjekkliste: jsonStringify(synced.sjekkliste)
     });
   }));
+}
+
+async function syncAllBilerSjekklisterFromMal(malPerStatus) {
+  await applyBilSjekklisterMalToAllBiler(malPerStatus);
 
   const [allRows, kundeMap] = await Promise.all([
     prepare('SELECT * FROM biler ORDER BY sort_order ASC, id ASC').all(),
@@ -1870,6 +1876,7 @@ module.exports = {
   setBilKunder,
   nextBilSortOrder,
   reorderBiler,
+  applyBilSjekklisterMalToAllBiler,
   syncAllBilerSjekklisterFromMal,
   ensureSjekklisterForStatus,
   parseBilSjekklisterObject,
