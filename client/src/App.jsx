@@ -12051,7 +12051,11 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
           settings.bilStatuser
         )
       : settings.bilSjekklister;
-    setDraft({ ...settings, bilSjekklister: merged });
+    setDraft({
+      ...settings,
+      bilSjekklister: merged,
+      innkjopskilder: settings.innkjopskilder?.length ? settings.innkjopskilder : KALKYLE_KILDER
+    });
   }, [settings]);
 
   const setList = (key, value) => setDraft(prev => ({ ...prev, [key]: value }));
@@ -12114,6 +12118,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
   const lagreLister = function () {
     onSave({
       ...draft,
+      innkjopskilder: draft.innkjopskilder?.length ? draft.innkjopskilder : KALKYLE_KILDER,
       bilSjekklister: Object.fromEntries(
         Object.entries(draft.bilSjekklister || {}).map(function ([status, rows]) {
           return [status, finalizeSjekklisteMalItems(rows)];
