@@ -81,7 +81,19 @@ const {
   normalizeTilbudEpostMaler
 } = require('../shared/tilbud-epost-maler');
 
-const DEFAULT_INNKOBSKILDER = [
+// sortListeAlfabetisk is defined below DEFAULT_INNKOBSKILDER setup — exported at module bottom.
+
+function sortListeAlfabetisk(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(function (item) { return String(item || '').trim(); })
+    .filter(Boolean)
+    .sort(function (a, b) {
+      return a.localeCompare(b, 'nb', { sensitivity: 'base' });
+    });
+}
+
+const DEFAULT_INNKOBSKILDER = sortListeAlfabetisk([
   'Rebil',
   'AYVENS',
   'BCA',
@@ -94,7 +106,7 @@ const DEFAULT_INNKOBSKILDER = [
   'Stadssalg',
   'FINN.no',
   'Privat/Annet'
-];
+]);
 
 const DEFAULT_INNSTILLINGER = {
   ansatte: ['Waleed', 'Ahmed', 'Sara', 'Mikael', 'Lena'],
@@ -745,5 +757,6 @@ module.exports = {
   epostThreadKeySql,
   DEFAULT_TILBUD_EPOST_MALER,
   normalizeTilbudEpostMaler,
-  normalizeKmField
+  normalizeKmField,
+  sortListeAlfabetisk
 };

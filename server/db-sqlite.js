@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
-const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeMerkerList, syncBilSjekklisterFromMalServer, nyeInnkommendeEpostSince, epostThreadKeySql, normalizeKmField } = require('./db-shared');
+const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeMerkerList, syncBilSjekklisterFromMalServer, nyeInnkommendeEpostSince, epostThreadKeySql, normalizeKmField, sortListeAlfabetisk } = require('./db-shared');
 const { MERKER } = require('./merker');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
@@ -1138,7 +1138,7 @@ function getInnstillinger() {
     henvStatuser: parseJson(byKey.henv_statuser, DEFAULT_INNSTILLINGER.henvStatuser),
     innbytteStatuser: parseJson(byKey.innbytte_statuser, DEFAULT_INNSTILLINGER.innbytteStatuser),
     kalTyper: parseJson(byKey.kal_typer, DEFAULT_INNSTILLINGER.kalTyper),
-    innkjopskilder: parseJson(byKey.innkjopskilder, DEFAULT_INNSTILLINGER.innkjopskilder),
+    innkjopskilder: sortListeAlfabetisk(parseJson(byKey.innkjopskilder, DEFAULT_INNSTILLINGER.innkjopskilder)),
     modulOppsett: normalizeModulOppsett(parseJson(byKey.modul_oppsett, DEFAULT_INNSTILLINGER.modulOppsett))
   };
 }
@@ -1152,10 +1152,11 @@ function saveInnstillinger(partial) {
 
   Object.entries(SETTINGS_KEYS).forEach(function ([prop, key]) {
     if (!Array.isArray(partial[prop])) return;
-    const cleaned = partial[prop]
+    let cleaned = partial[prop]
       .map(function (item) { return String(item || '').trim(); })
       .filter(Boolean);
     if (!cleaned.length) return;
+    if (prop === 'innkjopskilder') cleaned = sortListeAlfabetisk(cleaned);
     update.run({ key, value: JSON.stringify(cleaned) });
   });
 

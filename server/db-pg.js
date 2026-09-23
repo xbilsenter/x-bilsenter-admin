@@ -45,7 +45,8 @@ const {
   normalizeMerkerList,
   nyeInnkommendeEpostSince,
   epostThreadKeySql,
-  normalizeKmField
+  normalizeKmField,
+  sortListeAlfabetisk
 } = require('./db-shared');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
@@ -849,7 +850,7 @@ async function getInnstillinger() {
       parseJson(byKey.innbytte_status_farger, DEFAULT_INNBYTTE_STATUS_FARGER)
     ),
     kalTyper: parseJson(byKey.kal_typer, DEFAULT_INNSTILLINGER.kalTyper),
-    innkjopskilder: parseJson(byKey.innkjopskilder, DEFAULT_INNSTILLINGER.innkjopskilder),
+    innkjopskilder: sortListeAlfabetisk(parseJson(byKey.innkjopskilder, DEFAULT_INNSTILLINGER.innkjopskilder)),
     modulOppsett: normalizeModulOppsett(parseJson(byKey.modul_oppsett, DEFAULT_INNSTILLINGER.modulOppsett)),
     tilbudEpostMaler: normalizeTilbudEpostMaler(parseJson(byKey.tilbud_epost_maler, DEFAULT_TILBUD_EPOST_MALER))
   };
@@ -879,10 +880,11 @@ async function saveInnstillinger(partial) {
 
   for (const [prop, key] of Object.entries(SETTINGS_KEYS)) {
     if (!Array.isArray(partial[prop])) continue;
-    const cleaned = partial[prop]
+    let cleaned = partial[prop]
       .map(function (item) { return String(item || '').trim(); })
       .filter(Boolean);
     if (!cleaned.length) continue;
+    if (prop === 'innkjopskilder') cleaned = sortListeAlfabetisk(cleaned);
     await upsertInnstilling(key, JSON.stringify(cleaned));
 
     if (prop === 'henvStatuser') {

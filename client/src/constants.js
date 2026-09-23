@@ -633,6 +633,16 @@ export function buildNyeHenvendelserItems(opts) {
   return sortItemsNyestFirst(items);
 }
 
+export function sortListeAlfabetisk(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(function (item) { return String(item || '').trim(); })
+    .filter(Boolean)
+    .sort(function (a, b) {
+      return a.localeCompare(b, 'nb', { sensitivity: 'base' });
+    });
+}
+
 export function sortItemsNyestFirst(items) {
   return (items || []).slice().sort(function (a, b) {
     const diff = itemSortTimestamp(b) - itemSortTimestamp(a);

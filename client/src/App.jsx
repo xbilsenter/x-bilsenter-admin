@@ -62,7 +62,8 @@ import {
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
   PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk,
   canViewVedlikehold, canToggleVedlikehold,
-  KALKYLE_KILDER
+  KALKYLE_KILDER,
+  sortListeAlfabetisk
 } from './constants.js';
 import {
   getToken, logout,
@@ -3545,11 +3546,13 @@ function mergeBilServerItem(prevBil, saved) {
 }
 
 function buildInnkjopskildeOptions(lists, current) {
-  const base = Array.isArray(lists?.innkjopskilder) && lists.innkjopskilder.length
-    ? lists.innkjopskilder
-    : KALKYLE_KILDER;
+  const base = sortListeAlfabetisk(
+    Array.isArray(lists?.innkjopskilder) && lists.innkjopskilder.length
+      ? lists.innkjopskilder
+      : KALKYLE_KILDER
+  );
   const cur = String(current || '').trim();
-  if (cur && !base.includes(cur)) return [...base, cur];
+  if (cur && !base.includes(cur)) return sortListeAlfabetisk([...base, cur]);
   return base;
 }
 
@@ -12041,7 +12044,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
     setDraft({
       ...settings,
       bilSjekklister: merged,
-      innkjopskilder: settings.innkjopskilder?.length ? settings.innkjopskilder : KALKYLE_KILDER
+      innkjopskilder: sortListeAlfabetisk(settings.innkjopskilder?.length ? settings.innkjopskilder : KALKYLE_KILDER)
     });
   }, [settings]);
 
@@ -12124,7 +12127,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
     lagreInnstillingerSeksjon({
       ansatte: draft.ansatte,
       merker: draft.merker,
-      innkjopskilder: draft.innkjopskilder?.length ? draft.innkjopskilder : KALKYLE_KILDER,
+      innkjopskilder: sortListeAlfabetisk(draft.innkjopskilder?.length ? draft.innkjopskilder : KALKYLE_KILDER),
       kalTyper: draft.kalTyper
     });
   };
@@ -12218,7 +12221,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
           <SelectListEditor
             title="Innkjøpskilder"
             desc="Vises i nedtrekkslisten «Kjøpt inn fra» på bilkort og ved ny bil."
-            items={draft.innkjopskilder || KALKYLE_KILDER}
+            items={sortListeAlfabetisk(draft.innkjopskilder || KALKYLE_KILDER)}
             onChange={v => setList('innkjopskilder', v)}
             placeholder="F.eks. Rebil"
             selectLabel="Velg kilde"
