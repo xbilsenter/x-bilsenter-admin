@@ -353,7 +353,8 @@ function migrateBilSchemaExtensions() {
     "ALTER TABLE biler ADD COLUMN sjekklister TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE biler ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE biler ADD COLUMN archived_at TEXT DEFAULT NULL",
-    "ALTER TABLE biler ADD COLUMN pipeline_nummer INTEGER DEFAULT NULL"
+    "ALTER TABLE biler ADD COLUMN pipeline_nummer INTEGER DEFAULT NULL",
+    "ALTER TABLE biler ADD COLUMN kjopt_inn_fra TEXT DEFAULT ''"
   ];
   columns.forEach(function (sql) {
     try { db.exec(sql); } catch { /* column exists */ }
@@ -1056,9 +1057,25 @@ function setMailKontoLastSync(id, iso) {
     .run({ id, last_sync: iso });
 }
 
+const DEFAULT_INNKOBSKILDER = [
+  'Rebil',
+  'AYVENS',
+  'BCA',
+  'DNB',
+  'Autoringen',
+  'Nettbil',
+  'Autoproff',
+  'Drivalia',
+  'Auksjonen.no',
+  'Stadssalg',
+  'FINN.no',
+  'Privat/Annet'
+];
+
 const DEFAULT_INNSTILLINGER = {
   ansatte: ['Waleed', 'Ahmed', 'Sara', 'Mikael', 'Lena'],
   merker: MERKER,
+  innkjopskilder: DEFAULT_INNKOBSKILDER,
   bilStatuser: [
     'Innkjøpt', 'Transport', 'Klargjøring', 'Lakkering',
     'Fotografering', 'Verksted', 'Tilstandsrapport',
@@ -1088,6 +1105,7 @@ const DEFAULT_INNSTILLINGER = {
 const SETTINGS_KEYS = {
   ansatte: 'ansatte',
   merker: 'merker',
+  innkjopskilder: 'innkjopskilder',
   bilStatuser: 'bil_statuser',
   henvStatuser: 'henv_statuser',
   innbytteStatuser: 'innbytte_statuser',
@@ -1120,6 +1138,7 @@ function getInnstillinger() {
     henvStatuser: parseJson(byKey.henv_statuser, DEFAULT_INNSTILLINGER.henvStatuser),
     innbytteStatuser: parseJson(byKey.innbytte_statuser, DEFAULT_INNSTILLINGER.innbytteStatuser),
     kalTyper: parseJson(byKey.kal_typer, DEFAULT_INNSTILLINGER.kalTyper),
+    innkjopskilder: parseJson(byKey.innkjopskilder, DEFAULT_INNSTILLINGER.innkjopskilder),
     modulOppsett: normalizeModulOppsett(parseJson(byKey.modul_oppsett, DEFAULT_INNSTILLINGER.modulOppsett))
   };
 }
@@ -1159,6 +1178,7 @@ function getLister() {
     henvStatuser: settings.henvStatuser,
     innbytteStatuser: settings.innbytteStatuser,
     kalTyper: settings.kalTyper,
+    innkjopskilder: settings.innkjopskilder,
     modulOppsett: settings.modulOppsett
   };
 }
@@ -1335,6 +1355,7 @@ function mapBil(row, kundeIds, malPerStatus) {
     aar: row.aar,
     km: normalizeKmField(row.km),
     innkjop: row.innkjop,
+    kjoptInnFra: row.kjopt_inn_fra || '',
     salg: row.salg,
     farge: formatSvvFargeNavn(row.farge) || '',
     status: row.status,

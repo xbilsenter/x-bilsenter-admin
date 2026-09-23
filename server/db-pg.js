@@ -201,7 +201,8 @@ async function ensureBilSchemaExtensions() {
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS okonomi JSONB NOT NULL DEFAULT '{}'::jsonb",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS tilstandsrapport JSONB NOT NULL DEFAULT '{\"medfolger\":false,\"nybilgaranti\":false,\"status\":\"ikke_utfort\"}'::jsonb",
     "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS arsprovekjennemerke JSONB NOT NULL DEFAULT '{\"skiltnummer\":\"\",\"fraDato\":\"\",\"tilDato\":\"\",\"status\":\"ingen\",\"notater\":\"\"}'::jsonb",
-    'ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS pipeline_nummer INTEGER DEFAULT NULL'
+    'ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS pipeline_nummer INTEGER DEFAULT NULL',
+    "ALTER TABLE public.biler ADD COLUMN IF NOT EXISTS kjopt_inn_fra TEXT DEFAULT ''"
   ];
   for (const sql of statements) {
     await execAsync(sql);
@@ -778,6 +779,7 @@ async function ensureInnstillingDefaults() {
   const defaults = {
     ansatte: DEFAULT_INNSTILLINGER.ansatte,
     merker: DEFAULT_INNSTILLINGER.merker,
+    innkjopskilder: DEFAULT_INNSTILLINGER.innkjopskilder,
     bil_statuser: DEFAULT_INNSTILLINGER.bilStatuser,
     bil_status_farger: DEFAULT_INNSTILLINGER.bilStatusFarger,
     bil_sjekklister: normalizeBilSjekklister(
@@ -847,6 +849,7 @@ async function getInnstillinger() {
       parseJson(byKey.innbytte_status_farger, DEFAULT_INNBYTTE_STATUS_FARGER)
     ),
     kalTyper: parseJson(byKey.kal_typer, DEFAULT_INNSTILLINGER.kalTyper),
+    innkjopskilder: parseJson(byKey.innkjopskilder, DEFAULT_INNSTILLINGER.innkjopskilder),
     modulOppsett: normalizeModulOppsett(parseJson(byKey.modul_oppsett, DEFAULT_INNSTILLINGER.modulOppsett)),
     tilbudEpostMaler: normalizeTilbudEpostMaler(parseJson(byKey.tilbud_epost_maler, DEFAULT_TILBUD_EPOST_MALER))
   };
@@ -1004,6 +1007,7 @@ async function getLister() {
     innbytteStatuser: settings.innbytteStatuser,
     innbytteStatusFarger: settings.innbytteStatusFarger,
     kalTyper: settings.kalTyper,
+    innkjopskilder: settings.innkjopskilder,
     modulOppsett: settings.modulOppsett
   };
 }
@@ -1147,6 +1151,7 @@ function mapBil(row, kundeIds, malPerStatus) {
     aar: row.aar,
     km: normalizeKmField(row.km),
     innkjop: row.innkjop,
+    kjoptInnFra: row.kjopt_inn_fra || '',
     salg: row.salg,
     farge: formatSvvFargeNavn(row.farge) || '',
     status: row.status,

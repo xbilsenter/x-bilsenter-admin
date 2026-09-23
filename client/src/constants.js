@@ -1970,6 +1970,7 @@ export const DEFAULT_INNSTILLINGER = {
   innbytteStatuser: INNBYTTE_STATUSER,
   innbytteStatusFarger: DEFAULT_INNBYTTE_STATUS_FARGER,
   kalTyper: KAL_TYPER,
+  innkjopskilder: KALKYLE_KILDER,
   modulOppsett: DEFAULT_MODUL_OPPSATT,
   tilbudEpostMaler: DEFAULT_TILBUD_EPOST_MALER
 };

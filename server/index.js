@@ -2348,7 +2348,7 @@ async function mapBilerForApi(rows, kundeMap) {
 }
 
 const BIL_LIST_COLUMNS = [
-  'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'sort_order', 'pipeline_nummer',
+  'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'kjopt_inn_fra', 'salg', 'farge', 'status', 'sort_order', 'pipeline_nummer',
   'ansvarlig', 'frist', 'notater', 'eu_kontroll', 'forsikring', 'finn_kode', 'chassisnr',
   'drivstoff', 'girkasse', 'utstyr', 'intern_info', 'sjekkliste', 'sjekklister', 'okonomi', 'kunde_id',
   'archived', 'archived_at', 'tilstandsrapport'
@@ -2441,6 +2441,7 @@ app.post('/api/biler', requireAuth, async function (req, res) {
       aar: Number(b.aar) || 0,
       km: Number(b.km) || 0,
       innkjop: Number(b.innkjop) || 0,
+      kjopt_inn_fra: String(b.kjoptInnFra || '').trim(),
       salg: Number(b.salg) || 0,
       farge: b.farge || '',
       status: status,
@@ -2461,8 +2462,8 @@ app.post('/api/biler', requireAuth, async function (req, res) {
     let info;
     try {
       info = await prepare(`
-        INSERT INTO biler (reg, merke, modell, aar, km, innkjop, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, tilstandsrapport, arsprovekjennemerke, sjekkliste, sjekklister, logg, svv_data)
-        VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @tilstandsrapport, @arsprovekjennemerke, @sjekkliste, @sjekklister, @logg, @svv_data)
+        INSERT INTO biler (reg, merke, modell, aar, km, innkjop, kjopt_inn_fra, salg, farge, status, sort_order, ansvarlig, frist, notater, eu_kontroll, forsikring, tilstandsrapport, arsprovekjennemerke, sjekkliste, sjekklister, logg, svv_data)
+        VALUES (@reg, @merke, @modell, @aar, @km, @innkjop, @kjopt_inn_fra, @salg, @farge, @status, @sortOrder, @ansvarlig, @frist, @notater, @eu_kontroll, @forsikring, @tilstandsrapport, @arsprovekjennemerke, @sjekkliste, @sjekklister, @logg, @svv_data)
       `).run(insertParams);
     } catch (err) {
       if (err.code === '23505' && String(err.constraint || '').includes('biler_pkey')) {
@@ -2585,6 +2586,7 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
       aar = COALESCE(@aar, aar),
       km = COALESCE(@km, km),
       innkjop = COALESCE(@innkjop, innkjop),
+      kjopt_inn_fra = COALESCE(@kjopt_inn_fra, kjopt_inn_fra),
       salg = COALESCE(@salg, salg),
       farge = COALESCE(@farge, farge),
       status = COALESCE(@status, status),
@@ -2622,6 +2624,7 @@ app.patch('/api/biler/:id', requireAuth, async function (req, res) {
     aar: b.aar != null ? Number(b.aar) : null,
     km: b.km != null ? Number(b.km) : null,
     innkjop: b.innkjop != null ? Number(b.innkjop) : null,
+    kjopt_inn_fra: b.kjoptInnFra != null ? String(b.kjoptInnFra).trim() : null,
     salg: b.salg != null ? Number(b.salg) : null,
     farge: b.farge ?? null,
     status: b.status ?? null,

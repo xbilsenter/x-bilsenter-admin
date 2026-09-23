@@ -81,9 +81,25 @@ const {
   normalizeTilbudEpostMaler
 } = require('../shared/tilbud-epost-maler');
 
+const DEFAULT_INNKOBSKILDER = [
+  'Rebil',
+  'AYVENS',
+  'BCA',
+  'DNB',
+  'Autoringen',
+  'Nettbil',
+  'Autoproff',
+  'Drivalia',
+  'Auksjonen.no',
+  'Stadssalg',
+  'FINN.no',
+  'Privat/Annet'
+];
+
 const DEFAULT_INNSTILLINGER = {
   ansatte: ['Waleed', 'Ahmed', 'Sara', 'Mikael', 'Lena'],
   merker: MERKER,
+  innkjopskilder: DEFAULT_INNKOBSKILDER,
   bilStatuser: [
     'Innkjøpt', 'Transport', 'Klargjøring', 'Lakkering',
     'Fotografering', 'Verksted', 'Tilstandsrapport',
@@ -122,6 +138,7 @@ const DEFAULT_INNSTILLINGER = {
 const SETTINGS_KEYS = {
   ansatte: 'ansatte',
   merker: 'merker',
+  innkjopskilder: 'innkjopskilder',
   bilStatuser: 'bil_statuser',
   henvStatuser: 'henv_statuser',
   innbytteStatuser: 'innbytte_statuser',

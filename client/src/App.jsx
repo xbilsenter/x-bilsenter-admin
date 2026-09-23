@@ -61,7 +61,8 @@ import {
   DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeBilArsprovekjennemerke,
   ARSPROVEKJENNEMERKE_STATUSER, arsprovekjennemerkeStatusLabel,
   PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk,
-  canViewVedlikehold, canToggleVedlikehold
+  canViewVedlikehold, canToggleVedlikehold,
+  KALKYLE_KILDER
 } from './constants.js';
 import {
   getToken, logout,
@@ -3557,8 +3558,29 @@ function mergeBilServerItem(prevBil, saved) {
   return mergeBilAfterAutosysSave(prevBil, next);
 }
 
+function buildInnkjopskildeOptions(lists, current) {
+  const base = Array.isArray(lists?.innkjopskilder) && lists.innkjopskilder.length
+    ? lists.innkjopskilder
+    : KALKYLE_KILDER;
+  const cur = String(current || '').trim();
+  if (cur && !base.includes(cur)) return [...base, cur];
+  return base;
+}
+
+function InnkjopskildeSelect({ value, onChange, lists }) {
+  const options = buildInnkjopskildeOptions(lists, value);
+  return (
+    <select value={value || ''} onChange={function (e) { onChange(e.target.value); }}>
+      <option value="">Velg kilde…</option>
+      {options.map(function (item) {
+        return <option key={item} value={item}>{item}</option>;
+      })}
+    </select>
+  );
+}
+
 const BIL_HYDRATE_PRESERVE_FIELDS = [
-  'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'salg', 'farge', 'status', 'pipelineNummer',
+  'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'kjoptInnFra', 'salg', 'farge', 'status', 'pipelineNummer',
   'ansvarlig', 'frist', 'notater', 'euKontroll', 'forsikring', 'finnKode', 'chassisnr',
   'drivstoff', 'girkasse', 'utstyr', 'internInfo', 'okonomi', 'tilstandsrapport',
   'arsprovekjennemerke', 'sjekkliste', 'sjekklister'
@@ -4361,6 +4383,16 @@ function BilModal({ data, onClose, updateBil, applyBilPatchLocal, deleteBil, hyd
                 </div>
               </div>
               <div className="gap">
+                <div className="fl">Kjøpt inn fra</div>
+                <InnkjopskildeSelect
+                  lists={lists}
+                  value={bil.kjoptInnFra || ''}
+                  onChange={function (v) {
+                    oppdater('kjoptInnFra', v, v ? 'Innkjøpskilde oppdatert ✓' : 'Innkjøpskilde fjernet ✓');
+                  }}
+                />
+              </div>
+              <div className="gap">
                 <div className="bil-modal__eu-head">
                   <div className="fl" style={{ marginBottom: 0 }}>Frist neste EU-kontroll</div>
                   <button
@@ -4844,7 +4876,7 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
   const [f, setF] = useState(function () {
     const status = lists.bilStatuser[0] || 'Innkjøpt';
     return {
-      reg: '', merke: initialMerkeOptions.includes('Annet') ? 'Annet' : (initialMerkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: '', innkjop: 0, salg: 0,
+      reg: '', merke: initialMerkeOptions.includes('Annet') ? 'Annet' : (initialMerkeOptions[0] || 'Annet'), modell: '', aar: 2022, km: '', innkjop: 0, kjoptInnFra: '', salg: 0,
       farge: '', status, ansvarlig: lists.ansatte[0] || '', frist: '', notater: '',
       euKontroll: '', tilstandsrapport: { ...DEFAULT_BIL_TILSTANDSRAPPORT }, svvData: null,
       ...initBilSjekklister(status, lists.bilSjekklister)
@@ -5004,6 +5036,10 @@ function NyBilModal({ onClose, onSave, lists, biler, visTost }) {
         <div className="form-row gap">
           <div><div className="fl">Innkjøpspris (kr)</div><input type="number" value={numberInputDisplay(f.innkjop)} onChange={e => s('innkjop', parseNumberInput(e.target.value))} /></div>
           <div><div className="fl">Salgspris (kr)</div><input type="number" value={numberInputDisplay(f.salg)} onChange={e => s('salg', parseNumberInput(e.target.value))} /></div>
+        </div>
+        <div className="gap">
+          <div className="fl">Kjøpt inn fra</div>
+          <InnkjopskildeSelect lists={lists} value={f.kjoptInnFra || ''} onChange={function (v) { s('kjoptInnFra', v); }} />
         </div>
         <div className="gap">
           <div className="fl">Frist neste EU-kontroll</div>
@@ -12048,7 +12084,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
     konto: showVedlikehold
       ? 'Passord og nettside vedlikehold'
       : 'Endre passord for din bruker',
-    lister: 'Ansvarlige, bilmerker og kalendertyper',
+    lister: 'Ansvarlige, bilmerker, innkjøpskilder og kalendertyper',
     biler: 'Pipeline-statuser og sjekklister per stasjon',
     statuser: 'Statuser og farger for kontaktskjema og innbytte',
     moduler: 'Menyoppsett og moduler i CRM',
@@ -12145,6 +12181,14 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
             onChange={v => setList('merker', v)}
             placeholder="F.eks. Porsche"
             selectLabel="Velg merke"
+          />
+          <SelectListEditor
+            title="Innkjøpskilder"
+            desc="Vises i nedtrekkslisten «Kjøpt inn fra» på bilkort og ved ny bil."
+            items={draft.innkjopskilder || KALKYLE_KILDER}
+            onChange={v => setList('innkjopskilder', v)}
+            placeholder="F.eks. Rebil"
+            selectLabel="Velg kilde"
           />
           <ListEditor
             title="Kalendertyper"
