@@ -634,15 +634,17 @@ export default function TimeregistreringView({ currentUser, visTost }) {
             <div className="timereg-week-label">{fmtMaaned(maanedAr, maanedNum)}</div>
           </div>
           <div className="timereg-week-nav">
-            <button
-              type="button"
-              className="btn btn-g btn-sm"
-              onClick={function () {
-                setUtskrift({ modus: 'maaned', dato: idag() >= maanedRange.fra && idag() <= maanedRange.til ? idag() : maanedRange.fra });
-              }}
-            >
-              Skriv ut
-            </button>
+            {kanSeAlle ? (
+              <button
+                type="button"
+                className="btn btn-g btn-sm"
+                onClick={function () {
+                  setUtskrift({ modus: 'maaned', dato: idag() >= maanedRange.fra && idag() <= maanedRange.til ? idag() : maanedRange.fra });
+                }}
+              >
+                Skriv ut
+              </button>
+            ) : null}
             <button type="button" className="btn btn-g btn-sm" onClick={function () { byttMaaned(-1); }}>
               ←
             </button>
@@ -967,7 +969,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         </TimeregSheet>
       )}
 
-      {utskrift ? (
+      {kanSeAlle && utskrift ? (
         <div className="ov" onClick={function () { setUtskrift(null); }}>
           <div className="modal timereg-print-modal" onClick={function (e) { e.stopPropagation(); }}>
             <div className="timereg-sheet-hd">
