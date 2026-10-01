@@ -312,8 +312,8 @@ function kanbanStatuses(lists, biler) {
 function sortBilerListe(a, b) {
   const progA = calcSjekklisteFremdrift(getAktivSjekkliste(a));
   const progB = calcSjekklisteFremdrift(getAktivSjekkliste(b));
-  if (progA.pst !== progB.pst) return progB.pst - progA.pst;
-  if (progA.f !== progB.f) return progB.f - progA.f;
+  if (progA.pst !== progB.pst) return progA.pst - progB.pst;
+  if (progA.f !== progB.f) return progA.f - progB.f;
 
   const aNum = a.pipelineNummer;
   const bNum = b.pipelineNummer;
@@ -2908,7 +2908,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <div className="ph-sub">
             {section === 'arkiv'
               ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
-              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · sortert etter sjekkliste-progresjon i hver stasjon · ${view === 'kanban' ? 'dra bil mellom kolonner' : 'dra bil mellom stasjoner'}`}
+              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · minst sjekkliste-progresjon øverst i hver stasjon · ${view === 'kanban' ? 'dra bil mellom kolonner' : 'dra bil mellom stasjoner'}`}
           </div>
         </div>
       </div>
