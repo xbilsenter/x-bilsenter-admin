@@ -551,6 +551,9 @@ select option{background:var(--s1);}
   border-radius:var(--radius-sm);color:var(--t1);font-family:inherit;font-size:12px;font-weight:700;
 }
 .settings-item__actions{display:flex;gap:4px;flex-shrink:0;}
+.settings-item__count{font-size:10px;font-weight:700;color:var(--t4);white-space:nowrap;}
+.settings-slett-panel{flex:1 1 100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:4px;font-size:11px;color:var(--t2);}
+.settings-slett-panel select{min-width:140px;}
 .settings-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
 .settings-add input{flex:1 1 140px;min-width:0;}
 .sjekkliste-mal-list{gap:6px;}

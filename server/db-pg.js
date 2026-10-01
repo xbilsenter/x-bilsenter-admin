@@ -875,17 +875,21 @@ async function saveInnstillinger(partial) {
 
   if (Array.isArray(partial.bilStatuser)) {
     const newStatuser = normalizeStatusNavnListe(partial.bilStatuser);
+    const mapMoves = function (list) {
+      return (Array.isArray(list) ? list : [])
+        .map(function (pair) {
+          return {
+            from: String(pair?.from || '').trim(),
+            to: String(pair?.to || '').trim()
+          };
+        })
+        .filter(function (pair) { return pair.from && pair.to && pair.from !== pair.to; });
+    };
     const renames = Array.isArray(partial.bilStatusRenames) && partial.bilStatusRenames.length
-      ? partial.bilStatusRenames
-          .map(function (pair) {
-            return {
-              from: String(pair?.from || '').trim(),
-              to: String(pair?.to || '').trim()
-            };
-          })
-          .filter(function (pair) { return pair.from && pair.to && pair.from !== pair.to; })
+      ? mapMoves(partial.bilStatusRenames)
       : computeBilStatusRenamePairs(current.bilStatuser, newStatuser);
     await applyBilStatusRenames(renames);
+    await applyBilStatusRenames(mapMoves(partial.bilStatusFlytt));
   }
 
   for (const [prop, key] of Object.entries(SETTINGS_KEYS)) {

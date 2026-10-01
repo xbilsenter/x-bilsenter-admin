@@ -11496,8 +11496,9 @@ function ModulOppsettSection({ modulOppsett, onChange, onSave, visTost }) {
   );
 }
 
-function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder, defaultColors, normalizeColors }) {
+function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder, defaultColors, normalizeColors, antallPerStatus, onFjernet }) {
   const [ny, setNy] = useState('');
+  const [pendingSlett, setPendingSlett] = useState(null);
   const colorDefaults = defaultColors || DEFAULT_HENV_STATUS_FARGER;
   const normalize = normalizeColors || normalizeHenvStatusFarger;
 
@@ -11535,12 +11536,27 @@ function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder
     setNy('');
   };
 
-  const fjern = (idx) => {
+  const fjern = (idx, flyttTil) => {
     if (statuser.length <= 1) return;
+    const navn = statuser[idx];
     const nextStatuser = statuser.filter((_, i) => i !== idx);
     const nextFarger = { ...farger };
-    delete nextFarger[statuser[idx]];
+    delete nextFarger[navn];
     onChange(nextStatuser, normalize(nextStatuser, nextFarger));
+    if (onFjernet && flyttTil && flyttTil !== navn) onFjernet(navn, flyttTil);
+    setPendingSlett(null);
+  };
+
+  const startSlett = (idx) => {
+    if (statuser.length <= 1) return;
+    const navn = statuser[idx];
+    const antall = Number(antallPerStatus?.[navn] || 0);
+    if (antall > 0) {
+      const dest = statuser.find(function (_, i) { return i !== idx; }) || '';
+      setPendingSlett({ idx: idx, flyttTil: dest });
+      return;
+    }
+    fjern(idx);
   };
 
   const flytt = (idx, dir) => {
@@ -11559,6 +11575,8 @@ function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder
         <div className="settings-list">
           {statuser.map(function (item, idx) {
             const color = farger[item] || '#6B7280';
+            const antall = Number(antallPerStatus?.[item] || 0);
+            const viserSlett = pendingSlett && pendingSlett.idx === idx;
             return (
               <div className="settings-item settings-item--status" key={'status-row-' + idx}>
                 <label className="status-color-picker" title="Velg farge">
@@ -11575,11 +11593,34 @@ function StatusListEditor({ title, desc, statuser, farger, onChange, placeholder
                   onChange={(e) => endreNavn(idx, e.target.value)}
                 />
                 <Badge s={item} colors={farger} />
+                {antallPerStatus ? (
+                  <span className="settings-item__count">{antall} {antall === 1 ? 'bil' : 'biler'}</span>
+                ) : null}
                 <div className="settings-item__actions">
                   <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, -1)} disabled={idx === 0}>↑</button>
                   <button type="button" className="btn btn-g btn-sm" onClick={() => flytt(idx, 1)} disabled={idx === statuser.length - 1}>↓</button>
-                  <button type="button" className="btn btn-g btn-sm" onClick={() => fjern(idx)} disabled={statuser.length <= 1}>✕</button>
+                  <button type="button" className="btn btn-g btn-sm" onClick={() => startSlett(idx)} disabled={statuser.length <= 1}>Slett</button>
                 </div>
+                {viserSlett ? (
+                  <div className="settings-slett-panel">
+                    <span>{antall} {antall === 1 ? 'bil' : 'biler'} flyttes til</span>
+                    <select
+                      value={pendingSlett.flyttTil}
+                      onChange={function (e) { setPendingSlett({ idx: idx, flyttTil: e.target.value }); }}
+                    >
+                      {statuser.map(function (status, statusIdx) {
+                        if (statusIdx === idx) return null;
+                        return <option key={status} value={status}>{status}</option>;
+                      })}
+                    </select>
+                    <button type="button" className="btn btn-p btn-sm" onClick={function () { fjern(idx, pendingSlett.flyttTil); }}>
+                      Slett stasjon
+                    </button>
+                    <button type="button" className="btn btn-g btn-sm" onClick={function () { setPendingSlett(null); }}>
+                      Avbryt
+                    </button>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -12151,6 +12192,7 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
       bilStatuser: draft.bilStatuser,
       bilStatusFarger: draft.bilStatusFarger,
       bilStatusRenames: renames,
+      bilStatusFlytt: draft.bilStatusFlytt || [],
       bilSjekklister: Object.fromEntries(
         Object.entries(sjekklister || {}).map(function ([status, rows]) {
           return [status, finalizeSjekklisteMalItems(rows)];
@@ -12259,9 +12301,23 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
           <div className="settings-grid">
             <StatusListEditor
               title="Bilstatuser og farger"
-              desc="Pipeline-stasjoner for biler på lager. Rekkefølge styrer kanban og listevisning."
+              desc="Pipeline-stasjoner for biler på lager. Rekkefølge styrer kanban og listevisning. Slett fjerner stasjonen. Har stasjonen biler, velger du hvor de skal flyttes."
               statuser={draft.bilStatuser}
               farger={draft.bilStatusFarger || DEFAULT_BIL_STATUS_FARGER}
+              antallPerStatus={(biler || []).reduce(function (acc, bil) {
+                const status = String(bil?.status || '').trim();
+                if (!status) return acc;
+                acc[status] = (acc[status] || 0) + 1;
+                return acc;
+              }, {})}
+              onFjernet={function (from, to) {
+                setDraft(function (prev) {
+                  return {
+                    ...prev,
+                    bilStatusFlytt: [...(prev.bilStatusFlytt || []), { from: from, to: to }]
+                  };
+                });
+              }}
               onChange={(statuser, farger) => setDraft(prev => ({
                 ...prev,
                 bilStatuser: statuser,

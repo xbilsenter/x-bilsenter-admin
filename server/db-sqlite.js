@@ -1179,17 +1179,21 @@ function saveInnstillinger(partial) {
 
   if (Array.isArray(partial.bilStatuser)) {
     const newStatuser = normalizeStatusNavnListe(partial.bilStatuser);
+    const mapMoves = function (list) {
+      return (Array.isArray(list) ? list : [])
+        .map(function (pair) {
+          return {
+            from: String(pair?.from || '').trim(),
+            to: String(pair?.to || '').trim()
+          };
+        })
+        .filter(function (pair) { return pair.from && pair.to && pair.from !== pair.to; });
+    };
     const renames = Array.isArray(partial.bilStatusRenames) && partial.bilStatusRenames.length
-      ? partial.bilStatusRenames
-          .map(function (pair) {
-            return {
-              from: String(pair?.from || '').trim(),
-              to: String(pair?.to || '').trim()
-            };
-          })
-          .filter(function (pair) { return pair.from && pair.to && pair.from !== pair.to; })
+      ? mapMoves(partial.bilStatusRenames)
       : computeBilStatusRenamePairs(current.bilStatuser, newStatuser);
     applyBilStatusRenames(renames);
+    applyBilStatusRenames(mapMoves(partial.bilStatusFlytt));
   }
 
   if (partial.bilSjekklister && typeof partial.bilSjekklister === 'object') {
