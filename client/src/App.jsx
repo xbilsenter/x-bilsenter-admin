@@ -310,11 +310,6 @@ function kanbanStatuses(lists, biler) {
 }
 
 function sortBilerListe(a, b) {
-  const progA = calcSjekklisteFremdrift(getAktivSjekkliste(a));
-  const progB = calcSjekklisteFremdrift(getAktivSjekkliste(b));
-  if (progA.pst !== progB.pst) return progA.pst - progB.pst;
-  if (progA.f !== progB.f) return progA.f - progB.f;
-
   const aNum = a.pipelineNummer;
   const bNum = b.pipelineNummer;
   const aHas = aNum != null && Number.isFinite(Number(aNum));
@@ -322,6 +317,11 @@ function sortBilerListe(a, b) {
   if (aHas && bHas && Number(aNum) !== Number(bNum)) return Number(aNum) - Number(bNum);
   if (aHas && !bHas) return -1;
   if (!aHas && bHas) return 1;
+
+  const progA = calcSjekklisteFremdrift(getAktivSjekkliste(a));
+  const progB = calcSjekklisteFremdrift(getAktivSjekkliste(b));
+  if (progA.pst !== progB.pst) return progA.pst - progB.pst;
+  if (progA.f !== progB.f) return progA.f - progB.f;
   return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || normalizeBilId(a.id) - normalizeBilId(b.id);
 }
 
@@ -2908,7 +2908,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <div className="ph-sub">
             {section === 'arkiv'
               ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
-              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · minst sjekkliste-progresjon øverst i hver stasjon · ${view === 'kanban' ? 'dra bil mellom kolonner' : 'dra bil mellom stasjoner'}`}
+              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · nummererte biler først, ellers minst sjekkliste-progresjon øverst · ${view === 'kanban' ? 'dra bil mellom kolonner' : 'dra bil mellom stasjoner'}`}
           </div>
         </div>
       </div>
