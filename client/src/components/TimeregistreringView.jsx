@@ -124,6 +124,79 @@ function pauseSummary(item) {
   }).join(', ');
 }
 
+function fmtTimerFraMin(min) {
+  const timer = Math.round((Number(min || 0) / 60) * 10) / 10;
+  return `${String(timer).replace('.', ',')} t`;
+}
+
+function skrivUtTimereg() {
+  document.body.classList.add('timereg-printing');
+  const done = function () {
+    document.body.classList.remove('timereg-printing');
+    window.removeEventListener('afterprint', done);
+  };
+  window.addEventListener('afterprint', done);
+  window.print();
+}
+
+function TimeregUtskrift({ ansattNavn, periodeLabel, poster }) {
+  const nettoMin = poster.reduce(function (sum, item) { return sum + (item.stats?.nettoMin || 0); }, 0);
+  const pauseMin = poster.reduce(function (sum, item) { return sum + (item.stats?.pauseMin || 0); }, 0);
+  const sortert = poster.slice().sort(function (a, b) {
+    return String(a.dato).localeCompare(String(b.dato)) || String(a.startTid || '').localeCompare(String(b.startTid || ''));
+  });
+
+  return (
+    <div className="timereg-print">
+      <div className="timereg-print__brand">X Bilsenter AS</div>
+      <h1 className="timereg-print__title">Timeregistrering</h1>
+      <div className="timereg-print__meta">
+        <div><span>Ansatt</span><strong>{ansattNavn}</strong></div>
+        <div><span>Periode</span><strong>{periodeLabel}</strong></div>
+        <div><span>Utskriftsdato</span><strong>{fmtDato(idag())}</strong></div>
+      </div>
+      {sortert.length === 0 ? (
+        <p className="timereg-print__empty">Ingen registreringer i valgt periode.</p>
+      ) : (
+        <table className="timereg-print__table">
+          <thead>
+            <tr>
+              <th>Dato</th>
+              <th>Inn</th>
+              <th>Ut</th>
+              <th>Pause</th>
+              <th>Timer</th>
+              <th>Notat</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortert.map(function (item) {
+              return (
+                <tr key={item.id}>
+                  <td>{fmtDato(item.dato)}</td>
+                  <td>{item.startTid || '—'}</td>
+                  <td>{item.sluttTid || '—'}</td>
+                  <td>{pauseSummary(item)}</td>
+                  <td>{item.stats?.display || '—'}</td>
+                  <td>{item.notat || '—'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={3}>Sum · {sortert.length} registrering{sortert.length === 1 ? '' : 'er'}</td>
+              <td>{fmtTimerFraMin(pauseMin)}</td>
+              <td>{fmtTimerFraMin(nettoMin)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function pauseTypeLabel(type) {
   if (type === 'lunsj') return 'Lunsj';
   if (type === 'annet') return 'Annet';
@@ -288,6 +361,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const [valgtUserId, setValgtUserId] = useState(null);
   const [maanedData, setMaanedData] = useState(null);
   const [maanedLoading, setMaanedLoading] = useState(false);
+  const [utskrift, setUtskrift] = useState(null);
 
   const kanSeAlle = !!(currentUser?.isAdmin || (currentUser?.permissions || []).includes('brukere'));
   const kanGodkjenne = !!currentUser?.isAdmin;
@@ -463,6 +537,19 @@ export default function TimeregistreringView({ currentUser, visTost }) {
     });
   };
 
+  const ansattNavn = kanSeAlle && valgtUserId
+    ? ((brukere.find(function (b) { return Number(b.id) === Number(valgtUserId); }) || {}).name || 'Ansatt')
+    : (currentUser?.name || 'Ansatt');
+  const utskriftDato = utskrift?.dato && utskrift.dato >= maanedRange.fra && utskrift.dato <= maanedRange.til
+    ? utskrift.dato
+    : (idag() >= maanedRange.fra && idag() <= maanedRange.til ? idag() : maanedRange.fra);
+  const utskriftPoster = utskrift?.modus === 'dag'
+    ? items.filter(function (item) { return item.dato === utskriftDato; })
+    : items;
+  const utskriftPeriode = utskrift?.modus === 'dag'
+    ? fmtDato(utskriftDato)
+    : fmtMaaned(maanedAr, maanedNum);
+
   const visLonn = kanSeAlle && (oppsummering?.lonnKr > 0 || items.some(function (item) { return item.stats?.lonnKr > 0; }));
   const visLonnMaaned = kanSeAlle && (maanedData?.totalt?.lonnKr > 0 || maanedData?.ansatte?.some(function (row) { return row.lonnKr > 0; }));
   const maanedAnsatte = maanedData?.ansatte || [];
@@ -547,6 +634,15 @@ export default function TimeregistreringView({ currentUser, visTost }) {
             <div className="timereg-week-label">{fmtMaaned(maanedAr, maanedNum)}</div>
           </div>
           <div className="timereg-week-nav">
+            <button
+              type="button"
+              className="btn btn-g btn-sm"
+              onClick={function () {
+                setUtskrift({ modus: 'maaned', dato: idag() >= maanedRange.fra && idag() <= maanedRange.til ? idag() : maanedRange.fra });
+              }}
+            >
+              Skriv ut
+            </button>
             <button type="button" className="btn btn-g btn-sm" onClick={function () { byttMaaned(-1); }}>
               ←
             </button>
@@ -870,6 +966,62 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           </div>
         </TimeregSheet>
       )}
+
+      {utskrift ? (
+        <div className="ov" onClick={function () { setUtskrift(null); }}>
+          <div className="modal timereg-print-modal" onClick={function (e) { e.stopPropagation(); }}>
+            <div className="timereg-sheet-hd">
+              <div>
+                <div className="modal-title">Skriv ut timeregistrering</div>
+                <div className="timereg-sheet-sub">{ansattNavn}</div>
+              </div>
+              <button type="button" className="modal-close" onClick={function () { setUtskrift(null); }} aria-label="Lukk">×</button>
+            </div>
+            <div className="timereg-print-controls">
+              <div className="timereg-print-mode">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${utskrift.modus === 'dag' ? 'btn-p' : 'btn-g'}`}
+                  onClick={function () { setUtskrift(function (prev) { return { ...prev, modus: 'dag', dato: utskriftDato }; }); }}
+                >
+                  Dag
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${utskrift.modus === 'maaned' ? 'btn-p' : 'btn-g'}`}
+                  onClick={function () { setUtskrift(function (prev) { return { ...prev, modus: 'maaned' }; }); }}
+                >
+                  Måned
+                </button>
+              </div>
+              {utskrift.modus === 'dag' ? (
+                <label className="timereg-field">
+                  <span className="timereg-field-label">Dato</span>
+                  <input
+                    type="date"
+                    min={maanedRange.fra}
+                    max={maanedRange.til}
+                    value={utskriftDato}
+                    onChange={function (e) { setUtskrift(function (prev) { return { ...prev, dato: e.target.value }; }); }}
+                  />
+                </label>
+              ) : (
+                <div className="timereg-sheet-sub">{fmtMaaned(maanedAr, maanedNum)}</div>
+              )}
+              <p className="timereg-print-hint">
+                {kanSeAlle && !valgtUserId
+                  ? 'Velg ansatt i listen øverst hvis utskriften skal gjelde noen andre enn deg.'
+                  : 'Utskriften kan gis til den ansatte.'}
+              </p>
+            </div>
+            <TimeregUtskrift ansattNavn={ansattNavn} periodeLabel={utskriftPeriode} poster={utskriftPoster} />
+            <div className="modal-footer">
+              <button type="button" className="btn btn-g" onClick={function () { setUtskrift(null); }}>Lukk</button>
+              <button type="button" className="btn btn-p" onClick={skrivUtTimereg}>Skriv ut</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
