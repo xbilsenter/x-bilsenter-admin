@@ -46,7 +46,10 @@ const {
   nyeInnkommendeEpostSince,
   epostThreadKeySql,
   normalizeKmField,
-  sortListeAlfabetisk
+  sortListeAlfabetisk,
+  normalizeStatusNavnListe,
+  computeBilStatusRenamePairs,
+  migrateSjekklisterForStatusRenames
 } = require('./db-shared');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
@@ -856,16 +859,14 @@ async function getInnstillinger() {
   };
 }
 
-async function migrateBilStatusNavn(oldStatuser, newStatuser) {
-  if (!Array.isArray(oldStatuser) || !Array.isArray(newStatuser)) return;
-  if (oldStatuser.length !== newStatuser.length) return;
-  for (let i = 0; i < oldStatuser.length; i += 1) {
-    const oldName = oldStatuser[i];
-    const newName = newStatuser[i];
-    if (newName && oldName !== newName) {
-      await prepare('UPDATE biler SET status = ?, updated_at = datetime(\'now\') WHERE status = ?')
-        .run(newName, oldName);
-    }
+async function applyBilStatusRenames(renames) {
+  if (!Array.isArray(renames) || !renames.length) return;
+  const stmt = prepare('UPDATE biler SET status = ?, updated_at = datetime(\'now\') WHERE status = ?');
+  for (const pair of renames) {
+    const from = String(pair?.from || '').trim();
+    const to = String(pair?.to || '').trim();
+    if (!from || !to || from === to) continue;
+    await stmt.run(to, from);
   }
 }
 
@@ -873,9 +874,18 @@ async function saveInnstillinger(partial) {
   const current = await getInnstillinger();
 
   if (Array.isArray(partial.bilStatuser)) {
-    await migrateBilStatusNavn(current.bilStatuser, partial.bilStatuser
-      .map(function (item) { return String(item || '').trim(); })
-      .filter(Boolean));
+    const newStatuser = normalizeStatusNavnListe(partial.bilStatuser);
+    const renames = Array.isArray(partial.bilStatusRenames) && partial.bilStatusRenames.length
+      ? partial.bilStatusRenames
+          .map(function (pair) {
+            return {
+              from: String(pair?.from || '').trim(),
+              to: String(pair?.to || '').trim()
+            };
+          })
+          .filter(function (pair) { return pair.from && pair.to && pair.from !== pair.to; })
+      : computeBilStatusRenamePairs(current.bilStatuser, newStatuser);
+    await applyBilStatusRenames(renames);
   }
 
   for (const [prop, key] of Object.entries(SETTINGS_KEYS)) {
@@ -950,13 +960,17 @@ async function saveInnstillinger(partial) {
 
   if (partial.bilSjekklister && typeof partial.bilSjekklister === 'object') {
     const statuser = Array.isArray(partial.bilStatuser)
-      ? partial.bilStatuser
+      ? normalizeStatusNavnListe(partial.bilStatuser)
       : current.bilStatuser;
+    const renames = Array.isArray(partial.bilStatusRenames) && partial.bilStatusRenames.length
+      ? partial.bilStatusRenames
+      : computeBilStatusRenamePairs(current.bilStatuser, statuser);
+    const sjekklister = migrateSjekklisterForStatusRenames(partial.bilSjekklister, renames);
     await upsertInnstilling(
       'bil_sjekklister',
       JSON.stringify(normalizeBilSjekklister(
         statuser,
-        partial.bilSjekklister,
+        sjekklister,
         partial.sjekklisteMal || current.sjekklisteMal
       ))
     );

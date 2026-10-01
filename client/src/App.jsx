@@ -63,7 +63,9 @@ import {
   PROVASKILT_SETT, normalizeProvaskiltId, finnBilMedProvaskilt, erArsprovekjennemerkeIbruk,
   canViewVedlikehold, canToggleVedlikehold,
   KALKYLE_KILDER,
-  sortListeAlfabetisk
+  sortListeAlfabetisk,
+  computeBilStatusRenamePairs,
+  migrateSjekklisterForStatusRenames
 } from './constants.js';
 import {
   getToken, logout,
@@ -1628,7 +1630,17 @@ export default function App() {
                 try {
                   const res = await patchInnstillinger(next);
                   if (res.settings) setInnstillinger(res.settings);
-                  if (next.syncBilSjekklister && next.bilSjekklister) {
+                  if (next.bilStatuser || next.bilStatusRenames?.length) {
+                    const items = await refreshBiler();
+                    setModal(function (prev) {
+                      if (prev?.t !== 'visBil' || !prev.d?.id) return prev;
+                      const updated = items.find(function (b) {
+                        return normalizeBilId(b.id) === normalizeBilId(prev.d.id);
+                      });
+                      return updated ? { ...prev, d: updated } : prev;
+                    });
+                    refreshStats();
+                  } else if (next.syncBilSjekklister && next.bilSjekklister) {
                     const mal = res.settings?.bilSjekklister || next.bilSjekklister;
                     setBiler(function (prev) {
                       return prev.map(function (b) {
@@ -12133,10 +12145,17 @@ function InnstillingerView({ settings, biler, currentUser, onSave, onModulOppset
   };
 
   const lagreBilerSeksjon = function () {
+    const renames = computeBilStatusRenamePairs(settings.bilStatuser, draft.bilStatuser);
+    const sjekklister = migrateSjekklisterForStatusRenames(draft.bilSjekklister, renames);
     lagreInnstillingerSeksjon({
       bilStatuser: draft.bilStatuser,
       bilStatusFarger: draft.bilStatusFarger,
-      bilSjekklister: finalizeBilSjekklister(),
+      bilStatusRenames: renames,
+      bilSjekklister: Object.fromEntries(
+        Object.entries(sjekklister || {}).map(function ([status, rows]) {
+          return [status, finalizeSjekklisteMalItems(rows)];
+        })
+      ),
       syncBilSjekklister: true
     });
   };

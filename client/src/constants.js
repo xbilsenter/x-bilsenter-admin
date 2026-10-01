@@ -633,6 +633,66 @@ export function buildNyeHenvendelserItems(opts) {
   return sortItemsNyestFirst(items);
 }
 
+export function normalizeStatusNavnListe(statuser) {
+  return (statuser || [])
+    .map(function (item) { return String(item || '').trim(); })
+    .filter(Boolean);
+}
+
+function isBilStatusRenameAtIndex(oldStatuser, newStatuser, index) {
+  const oldName = oldStatuser[index];
+  const newName = newStatuser[index];
+  if (!oldName || !newName || oldName === newName) return false;
+  const oldIdxInNew = newStatuser.indexOf(oldName);
+  if (oldIdxInNew !== -1 && oldIdxInNew !== index) return false;
+  const newIdxInOld = oldStatuser.indexOf(newName);
+  if (newIdxInOld !== -1 && newIdxInOld !== index) return false;
+  return true;
+}
+
+export function computeBilStatusRenamePairs(oldStatuser, newStatuser) {
+  const oldList = normalizeStatusNavnListe(oldStatuser);
+  const newList = normalizeStatusNavnListe(newStatuser);
+  const pairs = [];
+  const seen = new Set();
+
+  if (oldList.length === newList.length) {
+    for (let i = 0; i < oldList.length; i += 1) {
+      if (!isBilStatusRenameAtIndex(oldList, newList, i)) continue;
+      const from = oldList[i];
+      const to = newList[i];
+      const key = from + '→' + to;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({ from: from, to: to });
+    }
+    return pairs;
+  }
+
+  const oldSet = new Set(oldList);
+  const newSet = new Set(newList);
+  const removed = oldList.filter(function (name) { return !newSet.has(name); });
+  const added = newList.filter(function (name) { return !oldSet.has(name); });
+  if (removed.length === 1 && added.length === 1) {
+    pairs.push({ from: removed[0], to: added[0] });
+  }
+  return pairs;
+}
+
+export function migrateSjekklisterForStatusRenames(sjekklister, pairs) {
+  const src = sjekklister && typeof sjekklister === 'object' && !Array.isArray(sjekklister)
+    ? { ...sjekklister }
+    : {};
+  (pairs || []).forEach(function (pair) {
+    if (!pair?.from || !pair?.to || pair.from === pair.to) return;
+    if (Array.isArray(src[pair.from]) && !Array.isArray(src[pair.to])) {
+      src[pair.to] = src[pair.from];
+      delete src[pair.from];
+    }
+  });
+  return src;
+}
+
 export function sortListeAlfabetisk(items) {
   if (!Array.isArray(items)) return [];
   return items

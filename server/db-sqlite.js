@@ -3,7 +3,22 @@
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
-const { normalizeBilTilstandsrapport, DEFAULT_BIL_TILSTANDSRAPPORT, normalizeBilArsprovekjennemerke, DEFAULT_BIL_ARSPROVEKJENNEMERKE, normalizeMerkerList, syncBilSjekklisterFromMalServer, nyeInnkommendeEpostSince, epostThreadKeySql, normalizeKmField, sortListeAlfabetisk } = require('./db-shared');
+const {
+  normalizeBilTilstandsrapport,
+  DEFAULT_BIL_TILSTANDSRAPPORT,
+  normalizeBilArsprovekjennemerke,
+  DEFAULT_BIL_ARSPROVEKJENNEMERKE,
+  normalizeMerkerList,
+  syncBilSjekklisterFromMalServer,
+  nyeInnkommendeEpostSince,
+  epostThreadKeySql,
+  normalizeKmField,
+  sortListeAlfabetisk,
+  normalizeStatusNavnListe,
+  computeBilStatusRenamePairs,
+  migrateSjekklisterForStatusRenames,
+  normalizeBilSjekklister
+} = require('./db-shared');
 const { MERKER } = require('./merker');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
@@ -1143,12 +1158,57 @@ function getInnstillinger() {
   };
 }
 
+function applyBilStatusRenames(renames) {
+  if (!Array.isArray(renames) || !renames.length) return;
+  const stmt = db.prepare('UPDATE biler SET status = ?, updated_at = datetime(\'now\') WHERE status = ?');
+  renames.forEach(function (pair) {
+    const from = String(pair?.from || '').trim();
+    const to = String(pair?.to || '').trim();
+    if (!from || !to || from === to) return;
+    stmt.run(to, from);
+  });
+}
+
 function saveInnstillinger(partial) {
+  const current = getInnstillinger();
   const update = db.prepare(`
     UPDATE innstillinger
     SET value = @value, updated_at = datetime('now')
     WHERE key = @key
   `);
+
+  if (Array.isArray(partial.bilStatuser)) {
+    const newStatuser = normalizeStatusNavnListe(partial.bilStatuser);
+    const renames = Array.isArray(partial.bilStatusRenames) && partial.bilStatusRenames.length
+      ? partial.bilStatusRenames
+          .map(function (pair) {
+            return {
+              from: String(pair?.from || '').trim(),
+              to: String(pair?.to || '').trim()
+            };
+          })
+          .filter(function (pair) { return pair.from && pair.to && pair.from !== pair.to; })
+      : computeBilStatusRenamePairs(current.bilStatuser, newStatuser);
+    applyBilStatusRenames(renames);
+  }
+
+  if (partial.bilSjekklister && typeof partial.bilSjekklister === 'object') {
+    const statuser = Array.isArray(partial.bilStatuser)
+      ? normalizeStatusNavnListe(partial.bilStatuser)
+      : current.bilStatuser;
+    const renames = Array.isArray(partial.bilStatusRenames) && partial.bilStatusRenames.length
+      ? partial.bilStatusRenames
+      : computeBilStatusRenamePairs(current.bilStatuser, statuser);
+    const sjekklister = migrateSjekklisterForStatusRenames(partial.bilSjekklister, renames);
+    update.run({
+      key: 'bil_sjekklister',
+      value: JSON.stringify(normalizeBilSjekklister(
+        statuser,
+        sjekklister,
+        partial.sjekklisteMal || current.sjekklisteMal
+      ))
+    });
+  }
 
   Object.entries(SETTINGS_KEYS).forEach(function ([prop, key]) {
     if (!Array.isArray(partial[prop])) return;
