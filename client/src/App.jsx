@@ -322,6 +322,8 @@ function sortBilerListe(a, b) {
   const progB = calcSjekklisteFremdrift(getAktivSjekkliste(b));
   if (progA.pst !== progB.pst) return progA.pst - progB.pst;
   if (progA.f !== progB.f) return progA.f - progB.f;
+  if (progA.frivPst !== progB.frivPst) return progA.frivPst - progB.frivPst;
+  if (progA.frivF !== progB.frivF) return progA.frivF - progB.frivF;
   return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || normalizeBilId(a.id) - normalizeBilId(b.id);
 }
 

@@ -137,10 +137,14 @@ export function normalizeSjekklisteItems(items) {
 export function calcSjekklisteFremdrift(list) {
   const items = normalizeSjekklisteItems(list);
   const oblig = items.filter(function (s) { return s.obligatorisk; });
+  const friv = items.filter(function (s) { return !s.obligatorisk; });
   const f = oblig.filter(function (s) { return s.f; }).length;
   const t = oblig.length;
+  const frivF = friv.filter(function (s) { return s.f; }).length;
+  const frivT = friv.length;
   const pst = t ? Math.round(f / t * 100) : (items.length ? 100 : 0);
-  return { f: f, t: t, pst: pst, total: items.length };
+  const frivPst = frivT ? Math.round(frivF / frivT * 100) : 0;
+  return { f: f, t: t, pst: pst, total: items.length, frivF: frivF, frivT: frivT, frivPst: frivPst };
 }
 
 export function harApneObligatoriskeOppgaver(list) {
