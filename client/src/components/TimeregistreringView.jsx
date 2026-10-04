@@ -130,9 +130,20 @@ function fmtTimerFraMin(min) {
 }
 
 function skrivUtTimereg() {
+  const node = document.querySelector('.timereg-print');
+  if (!node || !node.parentNode) return;
+  const parent = node.parentNode;
+  const placeholder = document.createComment('timereg-print');
+  parent.insertBefore(placeholder, node);
+  document.body.appendChild(node);
   document.body.classList.add('timereg-printing');
+  let ferdig = false;
   const done = function () {
+    if (ferdig) return;
+    ferdig = true;
     document.body.classList.remove('timereg-printing');
+    if (placeholder.parentNode) placeholder.parentNode.insertBefore(node, placeholder);
+    placeholder.remove();
     window.removeEventListener('afterprint', done);
   };
   window.addEventListener('afterprint', done);

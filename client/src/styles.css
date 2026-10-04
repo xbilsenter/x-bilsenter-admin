@@ -1205,15 +1205,23 @@ select option{background:var(--s1);}
 .timereg-print__table th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#444;}
 .timereg-print__table tfoot td{font-weight:800;border-top:2px solid #111;border-bottom:none;}
 @media print {
-  body.timereg-printing *{visibility:hidden;}
-  body.timereg-printing .timereg-print,
-  body.timereg-printing .timereg-print *{visibility:visible;}
-  body.timereg-printing .timereg-print{
-    position:absolute;left:0;top:0;width:100%;margin:0;padding:0;border:none;
+  body.timereg-printing > *:not(.timereg-print){display:none !important;}
+  body.timereg-printing > .timereg-print{
+    display:block !important;
+    position:static !important;
+    left:auto !important;
+    top:auto !important;
+    width:100% !important;
+    margin:0 !important;
+    padding:0 !important;
+    border:none !important;
+    border-radius:0 !important;
+    background:#fff !important;
+    color:#111 !important;
+    visibility:visible !important;
   }
-  body.timereg-printing .modal-footer,
-  body.timereg-printing .timereg-print-controls,
-  body.timereg-printing .timereg-sheet-hd{display:none !important;}
+  body.timereg-printing .timereg-print__table tr{break-inside:avoid;}
+  body.timereg-printing .timereg-print__table tfoot{display:table-row-group;}
 }
 .timereg-week-current{min-width:96px;}
 .timereg-table-wrap{overflow:auto;}
