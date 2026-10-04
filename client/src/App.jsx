@@ -34,7 +34,7 @@ import {
   getAktivSjekkliste, withSjekklisteUpdate, withStatusChange,
   initBilSjekklister, normalizeBilSjekklister, syncBilSjekklisterFromMal,
   mergeOrphanSjekklisteItemsIntoMal,
-  calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, getSisteKryssedeSjekklisteItem, normalizeSjekklisteMalItems,
+  calcSjekklisteFremdrift, harApneObligatoriskeOppgaver, getSisteKryssedeSjekklisteItem, getSisteKryssedeSjekklisteIndeks, normalizeSjekklisteMalItems,
   finalizeSjekklisteMalItems, trimSjekklisteMalTekst, coerceSjekklisteMalRows,
   statusBadgeStyle, statusCardStyle, resolveListStatus,
   getSavedTab, saveActiveTab, clearActiveTab, getSavedBilerView, saveBilerView,
@@ -318,12 +318,16 @@ function sortBilerListe(a, b) {
   if (aHas && !bHas) return -1;
   if (!aHas && bHas) return 1;
 
-  const progA = calcSjekklisteFremdrift(getAktivSjekkliste(a));
-  const progB = calcSjekklisteFremdrift(getAktivSjekkliste(b));
+  const listA = getAktivSjekkliste(a);
+  const listB = getAktivSjekkliste(b);
+  const posA = getSisteKryssedeSjekklisteIndeks(listA);
+  const posB = getSisteKryssedeSjekklisteIndeks(listB);
+  if (posA !== posB) return posA - posB;
+
+  const progA = calcSjekklisteFremdrift(listA);
+  const progB = calcSjekklisteFremdrift(listB);
   if (progA.pst !== progB.pst) return progA.pst - progB.pst;
   if (progA.f !== progB.f) return progA.f - progB.f;
-  if (progA.frivPst !== progB.frivPst) return progA.frivPst - progB.frivPst;
-  if (progA.frivF !== progB.frivF) return progA.frivF - progB.frivF;
   return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || normalizeBilId(a.id) - normalizeBilId(b.id);
 }
 
@@ -2910,7 +2914,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <div className="ph-sub">
             {section === 'arkiv'
               ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
-              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · nummererte biler først, ellers minst sjekkliste-progresjon øverst · ${view === 'kanban' ? 'dra bil mellom kolonner' : 'dra bil mellom stasjoner'}`}
+              : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · nummererte biler først, ellers etter sjekklistens rekkefølge med minst progresjon øverst · ${view === 'kanban' ? 'dra bil mellom kolonner' : 'dra bil mellom stasjoner'}`}
           </div>
         </div>
       </div>

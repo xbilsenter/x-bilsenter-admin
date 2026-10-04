@@ -162,6 +162,16 @@ export function getSisteKryssedeSjekklisteItem(items) {
   return siste || null;
 }
 
+/** Indeks i sjekklisten for siste kryssede punkt. -1 når ingenting er krysset. */
+export function getSisteKryssedeSjekklisteIndeks(items) {
+  const list = normalizeSjekklisteItems(items);
+  let siste = -1;
+  list.forEach(function (item, idx) {
+    if (item.f && item.t) siste = idx;
+  });
+  return siste;
+}
+
 export function normalizeBilSjekklister(statuser, sjekklister, legacyMal) {
   const src = sjekklister && typeof sjekklister === 'object' && !Array.isArray(sjekklister)
     ? sjekklister
