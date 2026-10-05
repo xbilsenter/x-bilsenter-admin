@@ -75,6 +75,12 @@ function fmtTimerDesimal(min) {
   return `${n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t`;
 }
 
+function fmtGrenseTimer(min, fallbackMin) {
+  const raw = Number(min);
+  const hours = (Number.isFinite(raw) && raw > 0 ? raw : fallbackMin) / 60;
+  return Number.isInteger(hours) ? String(hours) : String(hours).replace('.', ',');
+}
+
 function krysserMidnatt(startTid, sluttTid) {
   if (!startTid || !sluttTid) return false;
   return String(sluttTid) < String(startTid);
@@ -658,6 +664,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           <div className="timereg-stat card">
             <div className="timereg-stat-label">Overtid</div>
             <div className="timereg-stat-value">{oppsummering ? fmtTimerDesimal(oppsummering.overtidMin) : '—'}</div>
+            <div className="timereg-stat-sub">
+              Over {fmtGrenseTimer(posterSortert[0]?.stats?.dagligGrenseMin, 540)} timer/dag og {fmtGrenseTimer(posterSortert[0]?.stats?.ukentligGrenseMin, 2400)} timer/uke
+            </div>
           </div>
           {visLonn && (
             <div className="timereg-stat card">
