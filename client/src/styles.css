@@ -713,28 +713,17 @@ select option{background:var(--s1);}
 .sig-editor__preview{padding:12px 16px 16px;border-top:1px solid var(--b1);background:var(--s2);}
 /* Layout utilities */
 .dash-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;margin-bottom:16px;}
-.oppgaver-sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
-.oppgaver-sum div{display:flex;flex-direction:column;gap:2px;min-width:120px;padding:12px 14px;border:1px solid var(--b1);border-radius:12px;background:var(--s1);}
-.oppgaver-sum span{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--t4);}
-.oppgaver-sum strong{font-size:20px;color:var(--t1);}
-.oppgaver-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
+.oppgaver-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
 .oppgaver-bar input,.oppgaver-bar select{padding:10px 12px;border:1px solid var(--b2);border-radius:10px;background:var(--s1);font:inherit;font-size:13px;color:var(--t1);}
-.oppgaver-bar input{flex:1;min-width:180px;}
-.oppgaver-gruppe{margin-bottom:18px;}
-.oppgaver-gruppe__hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:8px;}
-.oppgaver-gruppe__hd h2{margin:0;font-size:13px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--t3);}
-.oppgaver-gruppe__hd span{font-size:12px;color:var(--t4);}
-.oppgaver-rad{border:1px solid var(--b1);border-radius:12px;background:var(--s1);margin-bottom:8px;overflow:hidden;}
-.oppgaver-rad__main{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(180px,1.8fr) auto auto auto;gap:12px 16px;align-items:center;width:100%;padding:12px 14px;border:0;background:transparent;text-align:left;font:inherit;color:inherit;cursor:pointer;}
-.oppgaver-rad__main:hover{background:var(--s2);}
-.oppgaver-rad__reg{font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--acc2);}
-.oppgaver-rad__bil{font-size:14px;font-weight:800;color:var(--t1);}
-.oppgaver-rad__neste{font-size:13px;font-weight:700;color:var(--t1);}
-.oppgaver-rad__neste span{display:block;margin-bottom:2px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--t4);}
-.oppgaver-rad__meta{font-size:12px;color:var(--t3);white-space:nowrap;}
-.oppgaver-rad__meta--sent{color:#b91c1c;font-weight:700;}
-.oppgaver-panel{padding:4px 14px 10px;border-top:1px solid var(--b1);}
-.oppgaver-panel__sub{margin-top:8px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--t4);}
+.oppgaver-bar input{flex:1;min-width:200px;}
+.oppgaver-card{overflow:auto;}
+.oppgaver-table{min-width:720px;}
+.oppgaver-table td:first-child,.oppgaver-table th:first-child{width:42px;padding-right:0;}
+.oppgaver-table .chk-box{display:inline-flex;padding:0;line-height:0;}
+.oppgaver-oppgave{font-size:13px;font-weight:700;color:var(--t1);}
+.oppgaver-table td strong{display:block;color:var(--t1);font-size:12px;}
+.oppgaver-table td span{display:block;margin-top:2px;color:var(--t3);font-size:12px;}
+.oppgaver-frist--sent{color:#b91c1c;font-weight:700;}
 .svv-fields-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
 .search-row{display:flex;gap:8px;align-items:center;margin-bottom:14px;}
 .search-row input{flex:1;min-width:0;max-width:none;}
@@ -774,8 +763,21 @@ select option{background:var(--s1);}
 
 @media(max-width:900px){
   .dash-grid{grid-template-columns:1fr;}
-  .oppgaver-rad__main{grid-template-columns:1fr 1fr;align-items:start;}
-  .oppgaver-rad__neste{grid-column:1 / -1;}
+  .oppgaver-bar{flex-direction:column;}
+  .oppgaver-bar input,.oppgaver-bar select{width:100%;}
+  .oppgaver-table{min-width:0;}
+  .oppgaver-table thead{display:none;}
+  .oppgaver-table tbody tr{display:grid;grid-template-columns:34px 1fr auto;gap:2px 10px;padding:12px 14px;border-bottom:1px solid var(--b1);}
+  .oppgaver-table tbody tr:hover td{background:transparent;}
+  .oppgaver-table td{border:0;padding:0;}
+  .oppgaver-table td:first-child{grid-row:1 / span 4;align-self:start;padding-top:2px;}
+  .oppgaver-table td:nth-child(2){grid-column:2;grid-row:1;}
+  .oppgaver-table td:nth-child(3){grid-column:2;grid-row:2;}
+  .oppgaver-table td:nth-child(4),
+  .oppgaver-table td:nth-child(5){grid-column:2;color:var(--t4);font-size:12px;}
+  .oppgaver-table td:nth-child(4){grid-row:3;}
+  .oppgaver-table td:nth-child(5){grid-row:4;}
+  .oppgaver-table td:nth-child(6){grid-column:3;grid-row:1;align-self:center;text-align:right;}
   .svv-fields-grid{grid-template-columns:repeat(2,1fr);}
   .search-row{flex-direction:column;align-items:stretch;}
   .lookup-row{flex-direction:column;align-items:stretch;}

@@ -9908,9 +9908,8 @@ function fmtOppgaveFrist(iso) {
 
 function OppgaverView({ biler, updateBil }) {
   const [sok, setSok] = useState('');
-  const [statusFilter, setStatusFilter] = useState('Alle');
-  const [ansvarligFilter, setAnsvarligFilter] = useState('Alle');
-  const [apenId, setApenId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [ansvarligFilter, setAnsvarligFilter] = useState('');
 
   const toggle = function (bilId, idx) {
     const bil = biler.find(function (b) { return b.id === bilId; });
@@ -9921,154 +9920,117 @@ function OppgaverView({ biler, updateBil }) {
     updateBil(bilId, { sjekklister: next.sjekklister, sjekkliste: next.sjekkliste }, 'Oppdatert ✓');
   };
 
-  const rader = useMemo(function () {
-    return biler
-      .filter(function (b) { return isBilAktiv(b) && harApneObligatoriskeOppgaver(getAktivSjekkliste(b)); })
-      .map(function (bil) {
-        const list = getAktivSjekkliste(bil).map(function (s, i) { return { ...s, i: i }; });
-        const prog = calcSjekklisteFremdrift(list);
-        const apne = list.filter(function (s) { return s.obligatorisk && !s.f; });
-        const frivillige = list.filter(function (s) { return !s.obligatorisk && !s.f; });
-        const ferdige = list.filter(function (s) { return s.f; });
-        return {
+  const oppgaver = useMemo(function () {
+    const rows = [];
+    biler.forEach(function (bil) {
+      if (!isBilAktiv(bil)) return;
+      const list = getAktivSjekkliste(bil);
+      if (!harApneObligatoriskeOppgaver(list)) return;
+      list.forEach(function (s, i) {
+        if (!s.obligatorisk || s.f) return;
+        rows.push({
+          key: `${bil.id}-${i}`,
           bil: bil,
-          apne: apne,
-          frivillige: frivillige,
-          ferdige: ferdige,
-          neste: apne[0] || null,
-          prog: prog,
-          hasFrist: !!(bil.frist && String(bil.frist).slice(0, 10) < IDAG),
-          indeks: getSisteKryssedeSjekklisteIndeks(list)
-        };
-      })
-      .sort(function (a, b) {
-        const statusA = BIL_STATUSER.indexOf(a.bil.status);
-        const statusB = BIL_STATUSER.indexOf(b.bil.status);
-        const sa = statusA < 0 ? 99 : statusA;
-        const sb = statusB < 0 ? 99 : statusB;
-        if (sa !== sb) return sa - sb;
-        if (a.hasFrist !== b.hasFrist) return a.hasFrist ? -1 : 1;
-        if (a.indeks !== b.indeks) return a.indeks - b.indeks;
-        const frist = String(a.bil.frist || '9999').localeCompare(String(b.bil.frist || '9999'));
-        if (frist) return frist;
-        return String(a.bil.reg || '').localeCompare(String(b.bil.reg || ''), 'nb');
+          idx: i,
+          tekst: s.t,
+          hasFrist: !!(bil.frist && String(bil.frist).slice(0, 10) < IDAG)
+        });
       });
+    });
+    rows.sort(function (a, b) {
+      if (a.hasFrist !== b.hasFrist) return a.hasFrist ? -1 : 1;
+      const frist = String(a.bil.frist || '9999').localeCompare(String(b.bil.frist || '9999'));
+      if (frist) return frist;
+      const sa = BIL_STATUSER.indexOf(a.bil.status);
+      const sb = BIL_STATUSER.indexOf(b.bil.status);
+      if (sa !== sb) return (sa < 0 ? 99 : sa) - (sb < 0 ? 99 : sb);
+      const reg = String(a.bil.reg || '').localeCompare(String(b.bil.reg || ''), 'nb');
+      if (reg) return reg;
+      return a.idx - b.idx;
+    });
+    return rows;
   }, [biler]);
 
   const q = sok.trim().toLowerCase();
-  const synlige = rader.filter(function (rad) {
-    if (statusFilter !== 'Alle' && rad.bil.status !== statusFilter) return false;
-    if (ansvarligFilter !== 'Alle' && (rad.bil.ansvarlig || 'Ikke tildelt') !== ansvarligFilter) return false;
+  const synlige = oppgaver.filter(function (rad) {
+    if (statusFilter && rad.bil.status !== statusFilter) return false;
+    if (ansvarligFilter && (rad.bil.ansvarlig || 'Ikke tildelt') !== ansvarligFilter) return false;
     if (!q) return true;
-    const hay = [rad.bil.reg, rad.bil.merke, rad.bil.modell, rad.bil.ansvarlig, rad.bil.status, rad.neste && rad.neste.t]
+    return [rad.tekst, rad.bil.reg, rad.bil.merke, rad.bil.modell, rad.bil.status, rad.bil.ansvarlig]
       .join(' ')
-      .toLowerCase();
-    return hay.includes(q);
+      .toLowerCase()
+      .includes(q);
   });
   const statuser = BIL_STATUSER.filter(function (status) {
-    return rader.some(function (rad) { return rad.bil.status === status; });
+    return oppgaver.some(function (rad) { return rad.bil.status === status; });
   });
-  const ansvarlige = Array.from(new Set(rader.map(function (rad) { return rad.bil.ansvarlig || 'Ikke tildelt'; }))).sort(function (a, b) {
-    return a.localeCompare(b, 'nb');
-  });
-  const apneAntall = rader.reduce(function (sum, rad) { return sum + rad.apne.length; }, 0);
-  const forsinket = rader.filter(function (rad) { return rad.hasFrist; }).length;
-  const grupper = [];
-  synlige.forEach(function (rad) {
-    const siste = grupper[grupper.length - 1];
-    if (!siste || siste.status !== rad.bil.status) grupper.push({ status: rad.bil.status, rader: [rad] });
-    else siste.rader.push(rad);
-  });
+  const ansvarlige = Array.from(new Set(oppgaver.map(function (rad) {
+    return rad.bil.ansvarlig || 'Ikke tildelt';
+  }))).sort(function (a, b) { return a.localeCompare(b, 'nb'); });
 
   return (
     <div className="oppgaver">
       <div className="ph">
         <div>
           <div className="ph-title">Oppgaver</div>
-          <div className="ph-sub">Åpne oppgaver per bil, sortert etter stasjon</div>
+          <div className="ph-sub">{oppgaver.length} åpne oppgaver</div>
         </div>
-      </div>
-      <div className="oppgaver-sum">
-        <div><span>Biler</span><strong>{rader.length}</strong></div>
-        <div><span>Åpne oppgaver</span><strong>{apneAntall}</strong></div>
-        <div><span>Frist passert</span><strong>{forsinket}</strong></div>
       </div>
       <div className="oppgaver-bar">
         <input
           type="search"
           value={sok}
-          placeholder="Søk reg.nr, bil eller oppgave"
+          placeholder="Søk oppgave, reg.nr eller bil"
           onChange={function (e) { setSok(e.target.value); }}
         />
         <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value); }}>
-          <option>Alle</option>
-          {statuser.map(function (status) { return <option key={status}>{status}</option>; })}
+          <option value="">Alle stasjoner</option>
+          {statuser.map(function (status) { return <option key={status} value={status}>{status}</option>; })}
         </select>
         <select value={ansvarligFilter} onChange={function (e) { setAnsvarligFilter(e.target.value); }}>
-          <option>Alle</option>
-          {ansvarlige.map(function (navn) { return <option key={navn}>{navn}</option>; })}
+          <option value="">Alle ansvarlige</option>
+          {ansvarlige.map(function (navn) { return <option key={navn} value={navn}>{navn}</option>; })}
         </select>
       </div>
-      {rader.length === 0 ? (
+      {oppgaver.length === 0 ? (
         <div className="inbox-empty">Alle oppgaver er fullført.</div>
       ) : synlige.length === 0 ? (
         <div className="inbox-empty">Ingen oppgaver treffer filteret.</div>
-      ) : grupper.map(function (gruppe) {
-        return (
-          <section key={gruppe.status} className="oppgaver-gruppe">
-            <header className="oppgaver-gruppe__hd">
-              <h2>{gruppe.status}</h2>
-              <span>{gruppe.rader.length} bil{gruppe.rader.length === 1 ? '' : 'er'}</span>
-            </header>
-            {gruppe.rader.map(function (rad) {
-              const apen = apenId === rad.bil.id;
-              return (
-                <article key={rad.bil.id} className="oppgaver-rad">
-                  <button type="button" className="oppgaver-rad__main" onClick={function () { setApenId(apen ? null : rad.bil.id); }}>
-                    <div>
-                      <div className="oppgaver-rad__reg">{rad.bil.reg}</div>
-                      <div className="oppgaver-rad__bil">{rad.bil.merke} {rad.bil.modell}</div>
-                    </div>
-                    <div className="oppgaver-rad__neste">
-                      <span>Neste</span>
-                      {rad.neste ? rad.neste.t : '—'}
-                    </div>
-                    <div className="oppgaver-rad__meta">{rad.apne.length} åpne · {rad.prog.pst} %</div>
-                    <div className={`oppgaver-rad__meta${rad.hasFrist ? ' oppgaver-rad__meta--sent' : ''}`}>{fmtOppgaveFrist(rad.bil.frist)}</div>
-                    <div className="oppgaver-rad__meta">{rad.bil.ansvarlig || 'Ikke tildelt'}</div>
-                  </button>
-                  {apen ? (
-                    <div className="oppgaver-panel">
-                      {rad.apne.map(function (s) {
-                        return (
-                          <div className="chk-item" key={s.i}>
-                            <div className="chk-box" onClick={function () { toggle(rad.bil.id, s.i); }} />
-                            <span className="chk-txt">{s.t}</span>
-                          </div>
-                        );
-                      })}
-                      {rad.frivillige.length ? (
-                        <div className="oppgaver-panel__sub">Frivillig</div>
-                      ) : null}
-                      {rad.frivillige.map(function (s) {
-                        return (
-                          <div className="chk-item" key={s.i}>
-                            <div className="chk-box" onClick={function () { toggle(rad.bil.id, s.i); }} />
-                            <span className="chk-txt">{s.t}</span>
-                          </div>
-                        );
-                      })}
-                      {rad.ferdige.length ? (
-                        <div className="oppgaver-panel__sub">{rad.ferdige.length} fullført</div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
-          </section>
-        );
-      })}
+      ) : (
+        <div className="card oppgaver-card">
+          <table className="oppgaver-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Oppgave</th>
+                <th>Bil</th>
+                <th>Stasjon</th>
+                <th>Ansvarlig</th>
+                <th>Frist</th>
+              </tr>
+            </thead>
+            <tbody>
+              {synlige.map(function (rad) {
+                return (
+                  <tr key={rad.key}>
+                    <td>
+                      <button type="button" className="chk-box" aria-label="Merk som utført" onClick={function () { toggle(rad.bil.id, rad.idx); }} />
+                    </td>
+                    <td className="oppgaver-oppgave">{rad.tekst}</td>
+                    <td>
+                      <strong>{rad.bil.reg}</strong>
+                      <span>{rad.bil.merke} {rad.bil.modell}</span>
+                    </td>
+                    <td>{rad.bil.status || '—'}</td>
+                    <td>{rad.bil.ansvarlig || 'Ikke tildelt'}</td>
+                    <td className={rad.hasFrist ? 'oppgaver-frist--sent' : ''}>{fmtOppgaveFrist(rad.bil.frist)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
