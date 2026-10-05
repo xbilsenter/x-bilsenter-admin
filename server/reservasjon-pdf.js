@@ -322,6 +322,18 @@ function drawSummaryGroups(doc, y, groups, rowH, avtaleKommentar, avtaleForholdP
   return y + boxH;
 }
 
+function measurePaymentHeight(doc, payment) {
+  const lines = payment?.lines || [];
+  if (!lines.length) return 0;
+  const width = PAGE.width - 24;
+  let h = 22;
+  doc.font('PJ').fontSize(8);
+  lines.forEach(function (line) {
+    h += doc.heightOfString(String(line), { width: width, lineGap: 1.2 }) + 2;
+  });
+  return Math.ceil(h + 8);
+}
+
 function drawPaymentBox(doc, y, payment, boxH) {
   const pad = 12;
 
@@ -466,29 +478,26 @@ function computeLayout(model, introEndY, doc) {
     + commentBlockHeight(doc, model.innbytte?.kommentar || '');
   const minSummaryRowH = 17;
   const maxSummaryRowH = 22;
-  const minPaymentH = 72;
-  const maxPaymentH = 86;
   const minTwoColH = COL_HEADER_H + 96;
   const hasKundeSection = kundeRows > 0;
-  const sectionCount = (model.skipPayment ? 2 : 3) + (hasKundeSection ? 1 : 0);
+  const skipPayment = !!model.skipPayment;
+  const paymentH = skipPayment ? 0 : measurePaymentHeight(doc, model.payment);
+  const sectionCount = (skipPayment ? 2 : 3) + (hasKundeSection ? 1 : 0);
   const sectionTitles = sectionTitleHeight() * sectionCount;
   const gaps = SECTION_GAP * (sectionCount - 1);
-  const skipPayment = !!model.skipPayment;
 
   return function pick() {
     const available = CONTENT_BOTTOM - introEndY;
 
     for (let rowH = maxSummaryRowH; rowH >= minSummaryRowH; rowH -= 1) {
-      for (let payH = skipPayment ? 0 : maxPaymentH; payH >= (skipPayment ? 0 : minPaymentH); payH -= skipPayment ? 999 : 2) {
-        const summaryH = measureSummaryGroupsHeight(summaryGroups, rowH) + commentH;
-        const colH = available - sectionTitles - gaps - (hasKundeSection ? kundeRows * rowH : 0) - summaryH - (skipPayment ? 0 : payH);
-        if (colH >= minTwoColH) {
-          return { summaryRowH: rowH, paymentH: skipPayment ? 0 : payH, twoColH: colH };
-        }
+      const summaryH = measureSummaryGroupsHeight(summaryGroups, rowH) + commentH;
+      const colH = available - sectionTitles - gaps - (hasKundeSection ? kundeRows * rowH : 0) - summaryH - paymentH;
+      if (colH >= minTwoColH) {
+        return { summaryRowH: rowH, paymentH: paymentH, twoColH: colH };
       }
     }
 
-    return { summaryRowH: minSummaryRowH, paymentH: skipPayment ? 0 : minPaymentH, twoColH: minTwoColH };
+    return { summaryRowH: minSummaryRowH, paymentH: paymentH, twoColH: minTwoColH };
   };
 }
 
