@@ -479,8 +479,8 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
         ? `Hei ${kundeFornavn}, takk for interessen for vår ${doc.bilNavn}.`
         : `Hei, takk for interessen for vår ${doc.bilNavn}.`)
       : (kundeFornavn
-        ? `Hei ${kundeFornavn}, takk for avtalen om kjøp av ${doc.bilNavn}.`
-        : `Hei, takk for avtalen om kjøp av ${doc.bilNavn}.`),
+        ? `Hei ${kundeFornavn}, takk for en hyggelig avtale vedr. kjøp av ${doc.bilNavn}.`
+        : `Hei, takk for en hyggelig avtale vedr. kjøp av ${doc.bilNavn}.`),
     avslutning: erTilbud
       ? 'Ta gjerne kontakt dersom du har spørsmål eller ønsker å avtale videre.'
       : 'Vi ser frem til å fullføre handelen sammen med deg.'
@@ -489,16 +489,15 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
 
 function reservasjonSeksjoner(data) {
   const doc = enrichReservasjonDocumentData(data);
-  const finnDel = doc.finnUrl ? ` (${doc.finnUrl})` : '';
   const kundeFornavn = extractKundeFornavn(doc.kundeNavn);
 
   return [
     {
       title: null,
       body: [
-        kundeFornavn ? `Hei ${kundeFornavn}` : 'Hei',
-        '',
-        `Takk for en hyggelig avtale vedr. kjøp av vår ${doc.bilNavn}${finnDel}.`
+        kundeFornavn
+          ? `Hei ${kundeFornavn}, takk for en hyggelig avtale vedr. kjøp av ${doc.bilNavn}.`
+          : `Hei, takk for en hyggelig avtale vedr. kjøp av ${doc.bilNavn}.`
       ].join('\n')
     },
     {

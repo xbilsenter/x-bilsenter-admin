@@ -438,8 +438,8 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
         ? `Hei ${kundeFornavn}, takk for interessen for vår ${bilNavn}.`
         : `Hei, takk for interessen for vår ${bilNavn}.`)
       : (kundeFornavn
-        ? `Hei ${kundeFornavn}, takk for avtalen om kjøp av ${bilNavn}.`
-        : `Hei, takk for avtalen om kjøp av ${bilNavn}.`),
+        ? `Hei ${kundeFornavn}, takk for en hyggelig avtale vedr. kjøp av ${bilNavn}.`
+        : `Hei, takk for en hyggelig avtale vedr. kjøp av ${bilNavn}.`),
     finnUrl,
     summaryGroups,
     summaryRows,
@@ -471,6 +471,9 @@ export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
   const fornavn = extractKundeFornavn(kundeDok.navn);
   const erTilbud = reservasjon?.dokumentType === DOKUMENT_TYPE_TILBUD;
   const hilsen = fornavn ? `Hei ${fornavn},` : 'Hei,';
+  const hilsenReservasjon = fornavn
+    ? `Hei ${fornavn}, takk for en hyggelig avtale vedr. kjøp av ${bilNavn}.`
+    : `Hei, takk for en hyggelig avtale vedr. kjøp av ${bilNavn}.`;
 
   if (erTilbud) {
     return [
@@ -486,9 +489,7 @@ export function buildReservasjonEpostMelding(bil, kunde, reservasjon) {
   }
 
   return [
-    hilsen,
-    '',
-    `Takk for avtalen om kjøp av ${bilNavn}${bil?.reg ? ` (${String(bil.reg).toUpperCase()})` : ''}.`,
+    hilsenReservasjon,
     '',
     'Vedlagt finner du reservasjonsbekreftelsen med avtalte vilkår og informasjon om depositum.',
     formatAvtaleForholdForMelding(reservasjon),
