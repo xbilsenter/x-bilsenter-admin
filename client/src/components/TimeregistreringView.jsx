@@ -184,67 +184,164 @@ function skrivUtTimereg() {
   window.print();
 }
 
+function fmtDatoUtskrift(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T12:00:00');
+  const ukedag = d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', '');
+  const parts = String(iso).split('-');
+  return `${ukedag} ${parts[2]}.${parts[1]}.${parts[0]}`;
+}
+
+function enTallverdi(map) {
+  const keys = Object.keys(map);
+  if (keys.length !== 1) return null;
+  return Number(keys[0]);
+}
+
+function summerTimeregPoster(poster) {
+  return poster.reduce(function (acc, item) {
+    const s = item.stats || {};
+    acc.nettoMin += s.nettoMin || 0;
+    acc.pauseMin += s.pauseMin || 0;
+    acc.overtidMin += s.overtidMin || 0;
+    acc.ordinærLonnOre += s.ordinærLonnOre || 0;
+    acc.overtidsbelopOre += s.overtidsbelopOre || 0;
+    acc.lonnOre += s.lonnOre || 0;
+    const sats = Number(s.timesats || item.timelonn) || 0;
+    if (sats > 0) acc.satser[sats] = true;
+    const pst = Number(s.overtidsprosent || item.overtidsprosent) || 0;
+    if (pst > 0) acc.prosenter[pst] = true;
+    return acc;
+  }, {
+    nettoMin: 0,
+    pauseMin: 0,
+    overtidMin: 0,
+    ordinærLonnOre: 0,
+    overtidsbelopOre: 0,
+    lonnOre: 0,
+    satser: {},
+    prosenter: {}
+  });
+}
+
 function TimeregUtskrift({ ansattNavn, periodeLabel, poster }) {
-  const nettoMin = poster.reduce(function (sum, item) { return sum + (item.stats?.nettoMin || 0); }, 0);
-  const pauseMin = poster.reduce(function (sum, item) { return sum + (item.stats?.pauseMin || 0); }, 0);
-  const ordinarMin = poster.reduce(function (sum, item) { return sum + (item.stats?.ordinarMin || 0); }, 0);
-  const overtidMin = poster.reduce(function (sum, item) { return sum + (item.stats?.overtidMin || 0); }, 0);
   const sortert = poster.slice().sort(function (a, b) {
     return String(a.dato).localeCompare(String(b.dato)) || String(a.startTid || '').localeCompare(String(b.startTid || ''));
   });
+  const dager = [];
+  sortert.forEach(function (item) {
+    let dag = dager[dager.length - 1];
+    if (!dag || dag.dato !== item.dato) {
+      dag = { dato: item.dato, poster: [] };
+      dager.push(dag);
+    }
+    dag.poster.push(item);
+  });
+  const total = summerTimeregPoster(sortert);
+  const timesats = enTallverdi(total.satser);
+  const prosent = enTallverdi(total.prosenter);
+  const harLonn = Object.keys(total.satser).length > 0;
 
   return (
     <div className="timereg-print">
-      <div className="timereg-print__brand">X Bilsenter AS</div>
-      <h1 className="timereg-print__title">Timeregistrering</h1>
-      <div className="timereg-print__meta">
-        <div><span>Ansatt</span><strong>{ansattNavn}</strong></div>
-        <div><span>Periode</span><strong>{periodeLabel}</strong></div>
-        <div><span>Utskriftsdato</span><strong>{fmtDato(idag())}</strong></div>
+      <div className="timereg-print__accent" />
+      <header className="timereg-print__head">
+        <img className="timereg-print__logo" src="/assets/logo.svg" alt="X Bilsenter AS" />
+        <div className="timereg-print__firm">
+          <strong>X Bilsenter AS</strong>
+          <span>Postboks 1730 Vika, 0121 Oslo</span>
+          <span>920 50 990 · post@xbilsenter.no</span>
+        </div>
+      </header>
+      <div className="timereg-print__intro">
+        <div>
+          <h1 className="timereg-print__title">Timeliste</h1>
+          <p className="timereg-print__lead">Lønnsgrunnlag med ordinær lønn og overtidstillegg</p>
+        </div>
+        <dl className="timereg-print__meta">
+          <div><dt>Ansatt</dt><dd>{ansattNavn}</dd></div>
+          <div><dt>Periode</dt><dd>{periodeLabel}</dd></div>
+          <div><dt>Utskriftsdato</dt><dd>{fmtDatoUtskrift(idag())}</dd></div>
+          <div><dt>Timesats</dt><dd>{timesats ? nokOre(timesats * 100) : (harLonn ? 'Ulik' : '—')}</dd></div>
+          <div><dt>Overtid</dt><dd>{prosent ? `${prosent} %` : (harLonn ? 'Ulik' : '—')}</dd></div>
+        </dl>
       </div>
-      {sortert.length === 0 ? (
+      {dager.length === 0 ? (
         <p className="timereg-print__empty">Ingen registreringer i valgt periode.</p>
       ) : (
-        <table className="timereg-print__table">
-          <thead>
-            <tr>
-              <th>Dato</th>
-              <th>Inn</th>
-              <th>Ut</th>
-              <th>Pause</th>
-              <th>Faktisk</th>
-              <th>Ordinær</th>
-              <th>Overtid</th>
-              <th>Notat</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortert.map(function (item) {
-              return (
-                <tr key={item.id}>
-                  <td>{fmtDato(item.dato)}</td>
-                  <td>{item.startTid || '—'}</td>
-                  <td>{item.sluttTid || '—'}</td>
-                  <td>{pauseSummary(item)}</td>
-                  <td>{item.stats?.display || '—'}</td>
-                  <td>{fmtTimerFraMin(item.stats?.ordinarMin)}</td>
-                  <td>{item.stats?.overtidMin ? fmtTimerFraMin(item.stats.overtidMin) : '—'}</td>
-                  <td>{item.notat || '—'}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={3}>Sum · {sortert.length} registrering{sortert.length === 1 ? '' : 'er'}</td>
-              <td>{fmtTimerFraMin(pauseMin)}</td>
-              <td>{fmtTimerFraMin(nettoMin)}</td>
-              <td>{fmtTimerFraMin(ordinarMin)}</td>
-              <td>{overtidMin ? fmtTimerFraMin(overtidMin) : '—'}</td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
+        <>
+          <table className="timereg-print__table">
+            <thead>
+              <tr>
+                <th>Dato</th>
+                <th>Inn / ut</th>
+                <th>Pause</th>
+                <th className="timereg-print__num">Arbeidstid</th>
+                <th className="timereg-print__num">Overtid</th>
+                <th className="timereg-print__num">Ordinær lønn</th>
+                <th className="timereg-print__num">Tillegg</th>
+                <th className="timereg-print__num">Sum</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dager.map(function (dag) {
+                const sum = summerTimeregPoster(dag.poster);
+                const dagHarLonn = Object.keys(sum.satser).length > 0;
+                return (
+                  <tr key={dag.dato}>
+                    <td>
+                      <strong>{fmtDatoUtskrift(dag.dato)}</strong>
+                      {dag.poster.some(function (item) { return item.notat; }) ? (
+                        <span className="timereg-print__note">
+                          {dag.poster.map(function (item) { return item.notat; }).filter(Boolean).join(' · ')}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td>
+                      {dag.poster.map(function (item) {
+                        const ut = item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—');
+                        return <span key={item.id} className="timereg-print__line">{item.startTid || '—'}–{ut}</span>;
+                      })}
+                    </td>
+                    <td>
+                      {dag.poster.map(function (item) {
+                        return <span key={item.id} className="timereg-print__line">{pauseSummary(item)}</span>;
+                      })}
+                    </td>
+                    <td className="timereg-print__num">{fmtMinutter(sum.nettoMin)}</td>
+                    <td className="timereg-print__num">{sum.overtidMin ? fmtMinutter(sum.overtidMin) : '—'}</td>
+                    <td className="timereg-print__num">{dagHarLonn ? nokOre(sum.ordinærLonnOre) : '—'}</td>
+                    <td className="timereg-print__num">{dagHarLonn ? nokOre(sum.overtidsbelopOre) : '—'}</td>
+                    <td className="timereg-print__num"><strong>{dagHarLonn ? nokOre(sum.lonnOre) : '—'}</strong></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={3}>Totalt · {dager.length} dag{dager.length === 1 ? '' : 'er'}</td>
+                <td className="timereg-print__num">{fmtMinutter(total.nettoMin)}</td>
+                <td className="timereg-print__num">{total.overtidMin ? fmtMinutter(total.overtidMin) : '—'}</td>
+                <td className="timereg-print__num">{harLonn ? nokOre(total.ordinærLonnOre) : '—'}</td>
+                <td className="timereg-print__num">{harLonn ? nokOre(total.overtidsbelopOre) : '—'}</td>
+                <td className="timereg-print__num">{harLonn ? nokOre(total.lonnOre) : '—'}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <section className="timereg-print__sum">
+            <h2>Oppsummering</h2>
+            <dl>
+              <div><dt>Arbeidstimer</dt><dd>{fmtTimerDesimal(total.nettoMin)}</dd></div>
+              <div><dt>Overtid</dt><dd>{fmtTimerDesimal(total.overtidMin)}</dd></div>
+              <div><dt>Timesats</dt><dd>{timesats ? nokOre(timesats * 100) : (harLonn ? 'Ulik' : '—')}</dd></div>
+              <div><dt>Overtidsprosent</dt><dd>{prosent ? `${prosent} %` : (harLonn ? 'Ulik' : '—')}</dd></div>
+              <div><dt>Ordinær lønn</dt><dd>{harLonn ? nokOre(total.ordinærLonnOre) : '—'}</dd></div>
+              <div><dt>Overtidstillegg</dt><dd>{harLonn ? nokOre(total.overtidsbelopOre) : '—'}</dd></div>
+              <div className="timereg-print__sum-total"><dt>Totalt lønnsgrunnlag</dt><dd>{harLonn ? nokOre(total.lonnOre) : '—'}</dd></div>
+            </dl>
+            <p>Ordinær lønn er alle arbeidstimer ganger timesats. Overtidstillegg kommer i tillegg og telles ikke dobbelt.</p>
+          </section>
+        </>
       )}
     </div>
   );
@@ -1108,9 +1205,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                 <div className="timereg-sheet-sub">{fmtMaaned(maanedAr, maanedNum)}</div>
               )}
               <p className="timereg-print-hint">
-                {kanSeAlle && !valgtUserId
-                  ? 'Velg ansatt i listen øverst hvis utskriften skal gjelde noen andre enn deg.'
-                  : 'Utskriften kan gis til den ansatte.'}
+                Utskriften viser timer, overtid og lønn per dag, med totalsum for perioden.
+                {kanSeAlle && !valgtUserId ? ' Velg ansatt i listen øverst hvis arket skal gjelde noen andre enn deg.' : ''}
               </p>
             </div>
             <TimeregUtskrift ansattNavn={ansattNavn} periodeLabel={utskriftPeriode} poster={utskriftPoster} />
