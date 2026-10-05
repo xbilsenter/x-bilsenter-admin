@@ -86,6 +86,81 @@ function krysserMidnatt(startTid, sluttTid) {
   return String(sluttTid) < String(startTid);
 }
 
+function tidTilMinutter(value) {
+  const parts = String(value || '').split(':');
+  const h = Number(parts[0]) || 0;
+  const m = Number(parts[1]) || 0;
+  return h * 60 + m;
+}
+
+function datoTilDagNr(iso) {
+  const d = new Date(String(iso) + 'T12:00:00Z');
+  return Math.floor(d.getTime() / 86400000);
+}
+
+function vaktIntervallSkjema(dato, startTid, sluttTid) {
+  const day = datoTilDagNr(dato) * 1440;
+  const start = day + tidTilMinutter(startTid);
+  let end = day + tidTilMinutter(sluttTid);
+  const krysser = end < start;
+  if (krysser) end += 1440;
+  return { day: day, start: start, end: end, krysser: krysser };
+}
+
+function validerTimeregSkjema(post, andre) {
+  const feil = [];
+  if (!post || !post.dato || !post.startTid || !post.sluttTid) {
+    return ['Dato, start og slutt er påkrevd.'];
+  }
+  const startMin = tidTilMinutter(post.startTid);
+  const sluttMin = tidTilMinutter(post.sluttTid);
+  if (sluttMin === startMin) feil.push('Ut-tid kan ikke være lik inn-tid.');
+  if (sluttMin < startMin && !post.overMidnatt) {
+    feil.push('Ut-tid er før inn-tid. Bekreft at vakten går over midnatt.');
+  }
+  const vakt = vaktIntervallSkjema(post.dato, post.startTid, post.sluttTid);
+  const pauser = Array.isArray(post.pauser) ? post.pauser : [];
+  const pInts = [];
+  pauser.forEach(function (p, idx) {
+    const label = 'Pause ' + (idx + 1);
+    if (!p || !p.start || !p.slutt) {
+      feil.push(label + ' må ha både fra og til.');
+      return;
+    }
+    let ps = vakt.day + tidTilMinutter(p.start);
+    let pe = vakt.day + tidTilMinutter(p.slutt);
+    if (vakt.krysser && ps < vakt.start) ps += 1440;
+    if (vakt.krysser && pe < vakt.start) pe += 1440;
+    if (pe <= ps) {
+      feil.push(label + ' kan ikke være negativ eller uten varighet.');
+      return;
+    }
+    if (ps < vakt.start || pe > vakt.end) {
+      feil.push('Pause kan ikke ligge utenfor registrert arbeidstid.');
+      return;
+    }
+    pInts.push({ ps: ps, pe: pe });
+  });
+  pInts.sort(function (a, b) { return a.ps - b.ps; });
+  for (let i = 1; i < pInts.length; i += 1) {
+    if (pInts[i].ps < pInts[i - 1].pe) {
+      feil.push('Pauser kan ikke overlappe hverandre.');
+      break;
+    }
+  }
+  let overlapp = false;
+  (andre || []).forEach(function (annen) {
+    if (overlapp || !annen) return;
+    if (post.id != null && Number(annen.id) === Number(post.id)) return;
+    if (!annen.dato || !annen.startTid || !annen.sluttTid) return;
+    if (annen.status === 'aktiv' || annen.status === 'pause') return;
+    const b = vaktIntervallSkjema(annen.dato, annen.startTid, annen.sluttTid);
+    if (vakt.start < b.end && b.start < vakt.end) overlapp = true;
+  });
+  if (overlapp) feil.push('Arbeidspass kan ikke overlappe en annen registrering.');
+  return Array.from(new Set(feil));
+}
+
 function kreverTimeregNotat(notat) {
   return !!String(notat || '').trim();
 }
@@ -363,7 +438,8 @@ function TimeregField({ label, hint, children }) {
   );
 }
 
-function TimeregSheet({ title, subtitle, onClose, onSave, saveLabel, busy, children }) {
+function TimeregSheet({ title, subtitle, onClose, onSave, saveLabel, busy, feil, children }) {
+  const blokkert = Array.isArray(feil) && feil.length > 0;
   return (
     <div className="ov" onClick={function () { if (!busy) onClose(); }}>
       <div className="modal timereg-sheet" onClick={function (e) { e.stopPropagation(); }}>
@@ -375,9 +451,14 @@ function TimeregSheet({ title, subtitle, onClose, onSave, saveLabel, busy, child
           <button type="button" className="modal-close" onClick={onClose} aria-label="Lukk">×</button>
         </div>
         <div className="timereg-sheet-body">{children}</div>
+        {blokkert ? (
+          <div className="timereg-form-feil" role="alert">
+            {feil.map(function (msg) { return <p key={msg}>{msg}</p>; })}
+          </div>
+        ) : null}
         <div className="modal-footer timereg-sheet-footer">
           <button type="button" className="btn btn-g" onClick={onClose} disabled={busy}>Avbryt</button>
-          <button type="button" className="btn btn-p" onClick={onSave} disabled={busy}>
+          <button type="button" className="btn btn-p" onClick={onSave} disabled={busy || blokkert}>
             {busy ? 'Lagrer…' : (saveLabel || 'Lagre')}
           </button>
         </div>
@@ -508,6 +589,21 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState(null);
   const [editItem, setEditItem] = useState(null);
+  const [serverFeil, setServerFeil] = useState([]);
+  const aktivSkjema = manual || editItem;
+  const skjemaNokkel = aktivSkjema
+    ? [
+      aktivSkjema.id || '',
+      aktivSkjema.dato,
+      aktivSkjema.startTid,
+      aktivSkjema.sluttTid,
+      aktivSkjema.overMidnatt ? 1 : 0,
+      JSON.stringify(aktivSkjema.pauser || [])
+    ].join('|')
+    : '';
+  useEffect(function () {
+    setServerFeil([]);
+  }, [skjemaNokkel]);
   const [brukere, setBrukere] = useState([]);
   const [valgtUserId, setValgtUserId] = useState(null);
   const [maanedData, setMaanedData] = useState(null);
@@ -600,6 +696,11 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
   const lagreManual = async function () {
     if (!manual) return;
+    const feil = validerTimeregSkjema(manual, items);
+    if (feil.length) {
+      setServerFeil(feil);
+      return;
+    }
     if (!kreverTimeregNotat(manual.notat)) {
       visTost('Notat er påkrevd ved timeregistrering ✗');
       return;
@@ -620,7 +721,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       await reload();
       if (kanSeAlle) await reloadMaaned();
     } catch (err) {
-      visTost(err.message || 'Kunne ikke lagre ✗');
+      const meldinger = String(err.message || 'Kunne ikke lagre').split('\n').filter(Boolean);
+      setServerFeil(meldinger);
+      visTost(meldinger[0] || 'Kunne ikke lagre ✗');
     } finally {
       setBusy(false);
     }
@@ -628,6 +731,11 @@ export default function TimeregistreringView({ currentUser, visTost }) {
 
   const lagreEdit = async function () {
     if (!editItem) return;
+    const feil = validerTimeregSkjema(editItem, items);
+    if (feil.length) {
+      setServerFeil(feil);
+      return;
+    }
     if (!kreverTimeregNotat(editItem.notat)) {
       visTost('Notat er påkrevd ved timeregistrering ✗');
       return;
@@ -648,7 +756,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
       await reload();
       if (kanSeAlle) await reloadMaaned();
     } catch (err) {
-      visTost(err.message || 'Kunne ikke oppdatere ✗');
+      const meldinger = String(err.message || 'Kunne ikke oppdatere').split('\n').filter(Boolean);
+      setServerFeil(meldinger);
+      visTost(meldinger[0] || 'Kunne ikke oppdatere ✗');
     } finally {
       setBusy(false);
     }
@@ -708,6 +818,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const visLonnMaaned = kanSeAlle && (maanedData?.totalt?.lonnKr > 0 || maanedData?.ansatte?.some(function (row) { return row.lonnKr > 0; }));
   const maanedAnsatte = maanedData?.ansatte || [];
   const maanedTotalt = maanedData?.totalt || null;
+
+  const skjemaFeil = aktivSkjema ? validerTimeregSkjema(aktivSkjema, items) : [];
+  const vistFeil = Array.from(new Set(skjemaFeil.concat(serverFeil)));
 
   const kanRedigere = function (item) {
     if (item.laast) return false;
@@ -1054,6 +1167,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           title="Registrer timer"
           subtitle="Legg inn dato, arbeidstid og eventuelle pauser."
           busy={busy}
+          feil={vistFeil}
           onClose={function () { setManual(null); }}
           onSave={lagreManual}
           saveLabel="Lagre registrering"
@@ -1111,6 +1225,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           title="Rediger registrering"
           subtitle={`${fmtDato(editItem.dato)} · ${editItem.startTid || '—'}–${editItem.sluttTid || '—'}`}
           busy={busy}
+          feil={vistFeil}
           onClose={function () { setEditItem(null); }}
           onSave={lagreEdit}
           saveLabel="Lagre endringer"

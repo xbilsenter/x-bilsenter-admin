@@ -374,7 +374,8 @@ function validerTimeregPost(post, andre) {
   }
   let overlapp = false;
   (andre || []).forEach(function (annen) {
-    if (overlapp || !annen || annen.id === post.id) return;
+    if (overlapp || !annen) return;
+    if (post.id != null && Number(annen.id) === Number(post.id)) return;
     if (!annen.dato || !annen.startTid || !annen.sluttTid) return;
     if (annen.status === 'aktiv' || annen.status === 'pause') return;
     const b = vaktIntervall(annen.dato, annen.startTid, annen.sluttTid);

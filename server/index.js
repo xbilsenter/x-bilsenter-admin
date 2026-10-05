@@ -3438,7 +3438,7 @@ app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistreri
     pauser,
     overMidnatt
   }, eksisterende.map(mapTimeregistreringRow));
-  if (feil.length) return res.status(400).json({ ok: false, error: feil[0], feil });
+  if (feil.length) return res.status(400).json({ ok: false, error: feil.join('\n'), feil });
 
   const info = await prepare(`
     INSERT INTO timeregistrering (
@@ -3567,7 +3567,7 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
       pauser,
       overMidnatt: body.overMidnatt === true || body.over_midnatt === true
     }, naboer.map(mapTimeregistreringRow));
-    if (feil.length) return res.status(400).json({ ok: false, error: feil[0], feil });
+    if (feil.length) return res.status(400).json({ ok: false, error: feil.join('\n'), feil });
   }
 
   await prepare(`

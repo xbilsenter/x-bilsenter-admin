@@ -1288,6 +1288,9 @@ select option{background:var(--s1);}
 .timereg-sheet-sub{font-size:12px;color:var(--t4);line-height:1.5;margin-top:4px;}
 .timereg-sheet-body{flex:1;min-height:0;overflow-y:auto;padding:16px 20px 8px;-webkit-overflow-scrolling:touch;}
 .timereg-sheet-footer{margin-top:0;padding:14px 20px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--b1);flex-shrink:0;background:var(--s1);}
+.timereg-form-feil{margin:0 20px 12px;padding:12px 14px;border:1px solid rgba(185,28,28,.35);border-radius:10px;background:rgba(185,28,28,.08);color:#b91c1c;}
+.timereg-form-feil p{margin:0;font-size:13px;font-weight:700;line-height:1.45;}
+.timereg-form-feil p+p{margin-top:4px;}
 .timereg-form-section{margin-bottom:18px;}
 .timereg-form-section:last-child{margin-bottom:0;}
 .timereg-form-grid{align-items:end;}
