@@ -56,8 +56,28 @@ function fmtMaaned(ar, maaned) {
   return d.toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' });
 }
 
-function nok(v) {
-  return `kr ${Number(v || 0).toLocaleString('nb-NO')}`;
+function nokOre(ore) {
+  const kr = (Number(ore) || 0) / 100;
+  return `kr ${kr.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fmtMinutter(total) {
+  const min = Math.max(0, Math.round(Number(total) || 0));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (!h) return `${m} min`;
+  if (!m) return `${h} t`;
+  return `${h} t ${m} min`;
+}
+
+function fmtTimerDesimal(min) {
+  const n = Math.max(0, Number(min) || 0) / 60;
+  return `${n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t`;
+}
+
+function krysserMidnatt(startTid, sluttTid) {
+  if (!startTid || !sluttTid) return false;
+  return String(sluttTid) < String(startTid);
 }
 
 function kreverTimeregNotat(notat) {
@@ -89,7 +109,8 @@ const EMPTY_MANUAL = {
   startTid: '08:00',
   sluttTid: '16:00',
   notat: '',
-  pauser: []
+  pauser: [],
+  overMidnatt: false
 };
 
 function newPause() {
@@ -487,6 +508,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         sluttTid: manual.sluttTid,
         notat: manual.notat,
         pauser: manual.pauser,
+        overMidnatt: !!manual.overMidnatt,
         userId: kanSeAlle && valgtUserId ? valgtUserId : undefined
       });
       visTost('Timeregistrering lagt til ✓');
@@ -513,7 +535,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         startTid: editItem.startTid,
         sluttTid: editItem.sluttTid,
         notat: editItem.notat,
-        pauser: editItem.pauser
+        pauser: editItem.pauser,
+        overMidnatt: !!editItem.overMidnatt
       };
       await patchTimeregistrering(editItem.id, body);
       visTost('Registrering oppdatert ✓');
@@ -559,7 +582,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
   const openEdit = function (item) {
     setEditItem({
       ...item,
-      pauser: normalizePauserList(item.pauser)
+      pauser: normalizePauserList(item.pauser),
+      overMidnatt: krysserMidnatt(item.startTid, item.sluttTid)
     });
   };
 
@@ -637,9 +661,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           {visLonn && (
             <div className="timereg-stat card timereg-stat--accent">
               <div className="timereg-stat-label">Estimert lønn</div>
-              <div className="timereg-stat-value">{nok(oppsummering?.lonnKr)}</div>
+              <div className="timereg-stat-value">{nokOre(oppsummering?.lonnOre)}</div>
               <div className="timereg-stat-sub">
-                Inkludert overtidstillegg{oppsummering?.overtidsbelop ? ` ${nok(oppsummering.overtidsbelop)}` : ''}
+                Inkludert overtidstillegg{oppsummering?.overtidsbelopOre ? ` ${nokOre(oppsummering.overtidsbelopOre)}` : ''}
               </div>
             </div>
           )}
@@ -659,6 +683,25 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           </div>
         </div>
       </div>
+
+      {oppsummering ? (
+        <div className="card timereg-payroll">
+          <div className="card-h"><span className="card-ht">Månedsoppsummering</span></div>
+          <dl className="timereg-payroll__grid">
+            <div><dt>Arbeidstimer</dt><dd>{fmtTimerDesimal(oppsummering.nettoMin)}</dd></div>
+            <div><dt>Ordinære arbeidstimer</dt><dd>{fmtTimerDesimal(oppsummering.ordinarMin)}</dd></div>
+            <div><dt>Timer med overtidstillegg</dt><dd>{fmtTimerDesimal(oppsummering.overtidMin)}</dd></div>
+            {visLonn ? <div><dt>Overtidsprosent</dt><dd>{oppsummering.overtidsprosent || 40} %</dd></div> : null}
+            {visLonn ? <div><dt>Timesats</dt><dd>{oppsummering.timesats ? nokOre(oppsummering.timesats * 100) : '—'}</dd></div> : null}
+            {visLonn ? <div><dt>Ordinær lønn</dt><dd>{nokOre(oppsummering.ordinærLonnOre)}</dd></div> : null}
+            {visLonn ? <div><dt>Overtidstillegg</dt><dd>{nokOre(oppsummering.overtidsbelopOre)}</dd></div> : null}
+            {visLonn ? <div><dt>Totalt lønnsgrunnlag</dt><dd>{nokOre(oppsummering.lonnOre)}</dd></div> : null}
+          </dl>
+          {visLonn ? (
+            <p className="timereg-payroll__note">Ordinær lønn er alle arbeidstimer ganger timesats. Overtid kommer i tillegg som prosent av timesatsen.</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="card timereg-list-card">
         <div className="card-h timereg-list-hd">
@@ -694,108 +737,71 @@ export default function TimeregistreringView({ currentUser, visTost }) {
           <div className="inbox-empty">Laster timeregistrering…</div>
         ) : items.length === 0 ? (
           <div className="inbox-empty">Ingen registreringer denne måneden.</div>
-        ) : isMobile ? (
-          <div className="timereg-entry-list">
-            {items.map(function (item) {
-              const pauserTxt = pauseSummary(item);
-              const itemStatus = visTimeregStatus(item, kanGodkjenne);
+        ) : (
+          <div className="timereg-day-list">
+            {Object.keys(items.reduce(function (acc, item) {
+              acc[item.dato] = true;
+              return acc;
+            }, {})).sort(function (a, b) { return b.localeCompare(a); }).map(function (dato) {
+              const poster = items.filter(function (item) { return item.dato === dato; });
+              const arbeidMin = poster.reduce(function (sum, item) { return sum + (item.stats?.nettoMin || 0); }, 0);
+              const dagOt = poster.reduce(function (sum, item) { return sum + (item.stats?.overtidDagMin || 0); }, 0);
+              const ukeOt = poster.reduce(function (sum, item) { return sum + (item.stats?.overtidUkeMin || 0); }, 0);
+              const otMin = dagOt + ukeOt;
+              const grense = poster[0]?.stats?.dagligGrenseMin || poster[0]?.dagligGrenseMin || 540;
+              const prosent = poster[0]?.stats?.overtidsprosent || poster[0]?.overtidsprosent || 40;
+              const tilleggOre = poster.reduce(function (sum, item) { return sum + (item.stats?.overtidsbelopOre || 0); }, 0);
+              const avvik = poster.reduce(function (list, item) {
+                return list.concat(item.avvik || []);
+              }, []).filter(function (msg, idx, all) { return all.indexOf(msg) === idx; });
               return (
-                <article key={item.id} className="timereg-entry-card">
-                  <div className="timereg-entry-card-top">
-                    <div>
-                      <div className="timereg-entry-date">{fmtDato(item.dato)}</div>
-                      <span className={`timereg-status-pill ${statusClass(itemStatus, kanGodkjenne)}`}>{statusLabel(itemStatus, kanGodkjenne)}</span>
-                    </div>
-                    <div className="timereg-entry-hours">{item.stats?.display || '—'}</div>
-                  </div>
-                  <div className="timereg-entry-meta">
-                    <div><span>Inn</span><strong>{item.startTid || '—'}</strong></div>
-                    <div><span>Ut</span><strong>{item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—')}</strong></div>
-                    <div><span>Pause</span><strong>{pauserTxt}</strong></div>
-                    <div><span>Ordinær</span><strong>{fmtTimerFraMin(item.stats?.ordinarMin)}</strong></div>
-                    <div title={overtidTittel(item.stats)}><span>Overtid</span><strong>{item.stats?.overtidMin ? fmtTimerFraMin(item.stats.overtidMin) : '—'}</strong></div>
-                    {visLonn && (
-                      <div><span>Timesats</span><strong>{item.stats?.timesats ? `${item.stats.timesats} kr` : '—'}</strong></div>
-                    )}
-                    {visLonn && (
-                      <div><span>Overtid {item.stats?.overtidsprosent || 40} %</span><strong>{item.stats?.overtidsbelop ? nok(item.stats.overtidsbelop) : '—'}</strong></div>
-                    )}
-                    {visLonn && (
-                      <div><span>Lønn</span><strong>{item.stats?.lonnKr ? nok(item.stats.lonnKr) : '—'}</strong></div>
-                    )}
-                  </div>
-                  {item.notat ? <div className="timereg-entry-notat">{item.notat}</div> : null}
-                  <TimeregEntryActions
-                    item={item}
-                    busy={busy}
-                    kanSeAlle={kanSeAlle}
-                    kanGodkjenne={kanGodkjenne}
-                    kanRedigere={kanRedigere}
-                    onEdit={openEdit}
-                    onDelete={slett}
-                    onGodkjenn={function (id) { endreGodkjenning(id, 'godkjent'); }}
-                    onAngreGodkjenning={function (id) { endreGodkjenning(id, 'fullfort'); }}
-                  />
+                <article key={dato} className={`timereg-day${otMin ? ' timereg-day--overtid' : ''}${avvik.length ? ' timereg-day--avvik' : ''}`}>
+                  <header className="timereg-day__hd">
+                    <strong>{fmtDato(dato)}</strong>
+                    {otMin ? <span className="timereg-ot-chip">Overtid</span> : null}
+                  </header>
+                  {poster.map(function (item) {
+                    const itemStatus = visTimeregStatus(item, kanGodkjenne);
+                    return (
+                      <div key={item.id} className="timereg-day__shift">
+                        <div className="timereg-day__shift-top">
+                          <span className={`timereg-status-pill ${statusClass(itemStatus, kanGodkjenne)}`}>{statusLabel(itemStatus, kanGodkjenne)}</span>
+                          <TimeregEntryActions
+                            item={item}
+                            busy={busy}
+                            kanSeAlle={kanSeAlle}
+                            kanGodkjenne={kanGodkjenne}
+                            kanRedigere={kanRedigere}
+                            onEdit={openEdit}
+                            onDelete={slett}
+                            onGodkjenn={function (id) { endreGodkjenning(id, 'godkjent'); }}
+                            onAngreGodkjenning={function (id) { endreGodkjenning(id, 'fullfort'); }}
+                          />
+                        </div>
+                        <div className="timereg-day__facts">
+                          <div><span>Inn</span><strong>{item.startTid || '—'}</strong></div>
+                          <div><span>Ut</span><strong>{item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—')}</strong></div>
+                          <div><span>Pause</span><strong>{pauseSummary(item)}</strong></div>
+                        </div>
+                        {item.notat ? <div className="timereg-entry-notat">{item.notat}</div> : null}
+                      </div>
+                    );
+                  })}
+                  <dl className="timereg-day__sum">
+                    <div><dt>Arbeidstid</dt><dd>{fmtMinutter(arbeidMin)}</dd></div>
+                    <div><dt>Daglig overtidsgrense</dt><dd>{fmtMinutter(grense)}</dd></div>
+                    <div><dt>Overtid</dt><dd>{otMin ? fmtMinutter(otMin) : '0 min'}</dd></div>
+                    {ukeOt ? <div><dt>Herav ekstra ukeovertid</dt><dd>{fmtMinutter(ukeOt)}</dd></div> : null}
+                    {dagOt ? <div><dt>Herav daglig overtid</dt><dd>{fmtMinutter(dagOt)}</dd></div> : null}
+                    {visLonn ? <div><dt>Overtidstillegg</dt><dd>{prosent} %</dd></div> : null}
+                    {visLonn && otMin ? <div><dt>Tilleggsbeløp</dt><dd>{nokOre(tilleggOre)}</dd></div> : null}
+                  </dl>
+                  {avvik.map(function (msg) {
+                    return <p key={msg} className="timereg-avvik">{msg}</p>;
+                  })}
                 </article>
               );
             })}
-          </div>
-        ) : (
-          <div className="timereg-table-wrap">
-            <table className="timereg-table">
-              <thead>
-                <tr>
-                  <th>Dato</th>
-                  <th>Status</th>
-                  <th>Inn</th>
-                  <th>Ut</th>
-                  <th>Pause</th>
-                  <th>Faktisk</th>
-                  <th>Ordinær</th>
-                  <th>Overtid</th>
-                  {visLonn && <th>Timesats</th>}
-                  {visLonn && <th>Tillegg</th>}
-                  {visLonn && <th>Lønn</th>}
-                  <th>Notat</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(function (item) {
-                  const pauserTxt = pauseSummary(item);
-                  const itemStatus = visTimeregStatus(item, kanGodkjenne);
-                  return (
-                    <tr key={item.id}>
-                      <td>{fmtDato(item.dato)}</td>
-                      <td><span className={`timereg-status-pill ${statusClass(itemStatus, kanGodkjenne)}`}>{statusLabel(itemStatus, kanGodkjenne)}</span></td>
-                      <td>{item.startTid || '—'}</td>
-                      <td>{item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—')}</td>
-                      <td className="timereg-notat" title={pauserTxt}>{pauserTxt}</td>
-                      <td><strong>{item.stats?.display || '—'}</strong></td>
-                      <td>{fmtTimerFraMin(item.stats?.ordinarMin)}</td>
-                      <td title={overtidTittel(item.stats)}>{item.stats?.overtidMin ? fmtTimerFraMin(item.stats.overtidMin) : '—'}</td>
-                      {visLonn && <td>{item.stats?.timesats ? `${item.stats.timesats} kr` : '—'}</td>}
-                      {visLonn && <td>{item.stats?.overtidsbelop ? nok(item.stats.overtidsbelop) : '—'}</td>}
-                      {visLonn && <td>{item.stats?.lonnKr ? nok(item.stats.lonnKr) : '—'}</td>}
-                      <td className="timereg-notat">{item.notat || '—'}</td>
-                      <td className="timereg-row-actions">
-                        <TimeregEntryActions
-                          item={item}
-                          busy={busy}
-                          kanSeAlle={kanSeAlle}
-                          kanGodkjenne={kanGodkjenne}
-                          kanRedigere={kanRedigere}
-                          onEdit={openEdit}
-                          onDelete={slett}
-                          onGodkjenn={function (id) { endreGodkjenning(id, 'godkjent'); }}
-                          onAngreGodkjenning={function (id) { endreGodkjenning(id, 'fullfort'); }}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
           </div>
         )}
       </div>
@@ -844,7 +850,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                       <div><span>Pause</span><strong>{row.pauseTimer} t</strong></div>
                       <div><span>Overtid</span><strong>{row.overtidTimer || 0} t</strong></div>
                       {visLonnMaaned && (
-                        <div><span>Lønn</span><strong>{row.lonnKr ? nok(row.lonnKr) : '—'}</strong></div>
+                        <div><span>Lønn</span><strong>{row.lonnOre ? nokOre(row.lonnOre) : '—'}</strong></div>
                       )}
                     </div>
                     <div className="timereg-entry-actions">
@@ -866,7 +872,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                   </div>
                   {visLonnMaaned && maanedTotalt.lonnKr > 0 ? (
                     <div className="timereg-entry-meta">
-                      <div><span>Estimert lønn</span><strong>{nok(maanedTotalt.lonnKr)}</strong></div>
+                      <div><span>Estimert lønn</span><strong>{nokOre(maanedTotalt.lonnOre)}</strong></div>
                     </div>
                   ) : null}
                 </article>
@@ -899,8 +905,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                         <td><strong>{row.timer} t</strong></td>
                         <td>{row.overtidTimer || 0} t</td>
                         <td>{row.pauseTimer} t</td>
-                        {visLonnMaaned && <td>{row.overtidsbelop ? nok(row.overtidsbelop) : '—'}</td>}
-                        {visLonnMaaned && <td>{row.lonnKr ? nok(row.lonnKr) : '—'}</td>}
+                        {visLonnMaaned && <td>{row.overtidsbelopOre ? nokOre(row.overtidsbelopOre) : '—'}</td>}
+                        {visLonnMaaned && <td>{row.lonnOre ? nokOre(row.lonnOre) : '—'}</td>}
                         <td className="timereg-row-actions">
                           <button type="button" className="btn btn-g btn-xs" onClick={function () { velgAnsattFraMaaned(row.userId); }}>
                             Vis poster
@@ -919,8 +925,8 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                       <td><strong>{maanedTotalt.timer} t</strong></td>
                       <td>{maanedTotalt.overtidTimer || 0} t</td>
                       <td>{maanedTotalt.pauseTimer} t</td>
-                      {visLonnMaaned && <td>{maanedTotalt.overtidsbelop ? nok(maanedTotalt.overtidsbelop) : '—'}</td>}
-                      {visLonnMaaned && <td>{maanedTotalt.lonnKr ? nok(maanedTotalt.lonnKr) : '—'}</td>}
+                      {visLonnMaaned && <td>{maanedTotalt.overtidsbelopOre ? nokOre(maanedTotalt.overtidsbelopOre) : '—'}</td>}
+                      {visLonnMaaned && <td>{maanedTotalt.lonnOre ? nokOre(maanedTotalt.lonnOre) : '—'}</td>}
                       <td></td>
                     </tr>
                   </tfoot>
@@ -953,6 +959,16 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                 <input type="time" value={manual.sluttTid} onChange={function (e) { setManual({ ...manual, sluttTid: e.target.value }); }} />
               </TimeregField>
             </div>
+            {krysserMidnatt(manual.startTid, manual.sluttTid) ? (
+              <label className="timereg-midnight">
+                <input
+                  type="checkbox"
+                  checked={!!manual.overMidnatt}
+                  onChange={function (e) { setManual({ ...manual, overMidnatt: e.target.checked }); }}
+                />
+                Ut-tid er før inn-tid. Bekreft at vakten går over midnatt.
+              </label>
+            ) : null}
           </div>
 
           <div className="timereg-form-section">
@@ -1000,6 +1016,16 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                 <input type="time" value={editItem.sluttTid || ''} onChange={function (e) { setEditItem({ ...editItem, sluttTid: e.target.value }); }} />
               </TimeregField>
             </div>
+            {krysserMidnatt(editItem.startTid, editItem.sluttTid) ? (
+              <label className="timereg-midnight">
+                <input
+                  type="checkbox"
+                  checked={!!editItem.overMidnatt}
+                  onChange={function (e) { setEditItem({ ...editItem, overMidnatt: e.target.checked }); }}
+                />
+                Ut-tid er før inn-tid. Bekreft at vakten går over midnatt.
+              </label>
+            ) : null}
           </div>
 
           <div className="timereg-form-section">

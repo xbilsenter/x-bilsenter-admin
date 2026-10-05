@@ -20,6 +20,12 @@ const {
   normalizeBilSjekklister
 } = require('./db-shared');
 const { MERKER } = require('./merker');
+const {
+  normalizeOvertidsprosent,
+  lesDagligGrenseMin,
+  lesUentligGrenseMin,
+  normalizeUkeStart
+} = require('./timeregistrering-shared');
 const { formatSvvFargeNavn, normalizeSvvDataFarge } = require('./farge');
 
 const DATA_DIR = path.join(__dirname, 'data');
@@ -271,13 +277,24 @@ function migrateTimeregistrering() {
   } catch {
     /* column exists */
   }
+  [
+    'ALTER TABLE users ADD COLUMN daglig_overtid_min INTEGER NOT NULL DEFAULT 540',
+    'ALTER TABLE users ADD COLUMN ukentlig_overtid_min INTEGER NOT NULL DEFAULT 2400',
+    "ALTER TABLE users ADD COLUMN uke_start TEXT NOT NULL DEFAULT 'monday'",
+    'ALTER TABLE timeregistrering ADD COLUMN worked_minutes INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE timeregistrering ADD COLUMN daily_overtime_minutes INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE timeregistrering ADD COLUMN weekly_overtime_minutes INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE timeregistrering ADD COLUMN total_overtime_minutes INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE timeregistrering ADD COLUMN overtime_amount_ore INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE timeregistrering ADD COLUMN ordinary_amount_ore INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE timeregistrering ADD COLUMN daily_threshold_minutes INTEGER NOT NULL DEFAULT 540',
+    'ALTER TABLE timeregistrering ADD COLUMN weekly_threshold_minutes INTEGER NOT NULL DEFAULT 2400',
+    "ALTER TABLE timeregistrering ADD COLUMN uke_start TEXT NOT NULL DEFAULT 'monday'"
+  ].forEach(function (sql) {
+    try { db.exec(sql); } catch { /* column exists */ }
+  });
 }
 
-function clampOvertidsprosent(value) {
-  const n = Math.round(Number(value));
-  if (!Number.isFinite(n) || n < 40) return 40;
-  return n;
-}
 
 function normalizeModulOppsett(list) {
   const defaults = DEFAULT_INNSTILLINGER.modulOppsett;
@@ -1639,7 +1656,10 @@ function mapUser(row, includeHash) {
     aktiv: !!row.aktiv,
     isAdmin: !!row.is_admin,
     timelonn: Number(row.timelonn) || 0,
-    overtidsprosent: clampOvertidsprosent(row.overtidsprosent),
+    overtidsprosent: normalizeOvertidsprosent(row.overtidsprosent),
+    dagligOvertidMin: lesDagligGrenseMin(row),
+    ukentligOvertidMin: lesUentligGrenseMin(row),
+    ukeStart: normalizeUkeStart(row.uke_start),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1662,7 +1682,7 @@ function getUserByUsername(username, includeHash) {
 
 function getUsers() {
   return db.prepare(`
-    SELECT id, username, name, email, role, permissions, aktiv, is_admin, timelonn, overtidsprosent, created_at, updated_at
+    SELECT id, username, name, email, role, permissions, aktiv, is_admin, timelonn, overtidsprosent, daglig_overtid_min, ukentlig_overtid_min, uke_start, created_at, updated_at
     FROM users
     ORDER BY name COLLATE NOCASE ASC, id ASC
   `).all().map(function (row) { return mapUser(row); }).filter(Boolean);
@@ -1694,8 +1714,8 @@ function createUser(data, passwordHash) {
   const isAdmin = resolveRoleKey(role) === 'Daglig leder' ? true : !!data.isAdmin;
 
   const info = db.prepare(`
-    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin, timelonn, overtidsprosent)
-    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin, @timelonn, @overtidsprosent)
+    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin, timelonn, overtidsprosent, daglig_overtid_min, ukentlig_overtid_min, uke_start)
+    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin, @timelonn, @overtidsprosent, @daglig_overtid_min, @ukentlig_overtid_min, @uke_start)
   `).run({
     username,
     password_hash: passwordHash,
@@ -1706,7 +1726,10 @@ function createUser(data, passwordHash) {
     aktiv: data.aktiv === false ? 0 : 1,
     is_admin: isAdmin ? 1 : 0,
     timelonn: Math.max(0, Math.round(Number(data.timelonn) || 0)),
-    overtidsprosent: clampOvertidsprosent(data.overtidsprosent)
+    overtidsprosent: normalizeOvertidsprosent(data.overtidsprosent),
+    daglig_overtid_min: lesDagligGrenseMin(data),
+    ukentlig_overtid_min: lesUentligGrenseMin(data),
+    uke_start: normalizeUkeStart(data.ukeStart || data.uke_start)
   });
 
   return getUserById(info.lastInsertRowid);
@@ -1757,6 +1780,9 @@ function updateUser(id, data, passwordHash) {
       is_admin = COALESCE(@is_admin, is_admin),
       timelonn = COALESCE(@timelonn, timelonn),
       overtidsprosent = COALESCE(@overtidsprosent, overtidsprosent),
+      daglig_overtid_min = COALESCE(@daglig_overtid_min, daglig_overtid_min),
+      ukentlig_overtid_min = COALESCE(@ukentlig_overtid_min, ukentlig_overtid_min),
+      uke_start = COALESCE(@uke_start, uke_start),
       updated_at = datetime('now')
     WHERE id = @id
   `).run({
@@ -1770,7 +1796,14 @@ function updateUser(id, data, passwordHash) {
     aktiv: data.aktiv == null ? null : (data.aktiv ? 1 : 0),
     is_admin: isAdminValue,
     timelonn: data.timelonn == null ? null : Math.max(0, Math.round(Number(data.timelonn) || 0)),
-    overtidsprosent: data.overtidsprosent == null ? null : clampOvertidsprosent(data.overtidsprosent)
+    overtidsprosent: data.overtidsprosent == null ? null : normalizeOvertidsprosent(data.overtidsprosent),
+    daglig_overtid_min: data.dagligOvertidMin == null && data.dagligOvertidTimer == null && data.daglig_overtid_min == null
+      ? null
+      : lesDagligGrenseMin(data),
+    ukentlig_overtid_min: data.ukentligOvertidMin == null && data.ukentligOvertidTimer == null && data.ukentlig_overtid_min == null
+      ? null
+      : lesUentligGrenseMin(data),
+    uke_start: data.ukeStart == null && data.uke_start == null ? null : normalizeUkeStart(data.ukeStart || data.uke_start)
   });
 
   return getUserById(id);

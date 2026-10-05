@@ -95,6 +95,10 @@ const {
   calcTimeregStats,
   beregnOvertidForPoster,
   normalizeOvertidsprosent,
+  normalizeUkeStart,
+  lesDagligGrenseMin,
+  lesUentligGrenseMin,
+  validerTimeregPost,
   mapTimeregistreringRow,
   weekStartIso,
   addDaysIso,
@@ -459,7 +463,12 @@ function formatUserResponse(user) {
     isAdmin: !!user.isAdmin,
     aktiv: user.aktiv !== false,
     timelonn: Number(user.timelonn) || 0,
-    overtidsprosent: normalizeOvertidsprosent(user.overtidsprosent)
+    overtidsprosent: normalizeOvertidsprosent(user.overtidsprosent),
+    dagligOvertidMin: lesDagligGrenseMin(user),
+    ukentligOvertidMin: lesUentligGrenseMin(user),
+    dagligOvertidTimer: lesDagligGrenseMin(user) / 60,
+    ukentligOvertidTimer: lesUentligGrenseMin(user) / 60,
+    ukeStart: normalizeUkeStart(user.ukeStart)
   };
 }
 
@@ -475,17 +484,82 @@ function mapTimeregLive(row, viewer) {
   return item;
 }
 
-function mapTimeregPoster(rows, viewer) {
+function brukAvtalePaPost(item, user) {
+  if (!item || !user || item.status === 'godkjent') return item;
+  item.dagligGrenseMin = lesDagligGrenseMin(user);
+  item.ukentligGrenseMin = lesUentligGrenseMin(user);
+  item.ukeStart = normalizeUkeStart(user.ukeStart);
+  item.overtidsprosent = normalizeOvertidsprosent(user.overtidsprosent);
+  if (!(Number(item.timelonn) > 0) && Number(user.timelonn) > 0) {
+    item.timelonn = Number(user.timelonn) || 0;
+  }
+  item.stats = calcTimeregStats(item, item.status === 'aktiv' || item.status === 'pause' ? nowOsloTime() : undefined);
+  return item;
+}
+
+function mapTimeregRader(rows, usersById) {
   const items = (Array.isArray(rows) ? rows : []).map(function (row) {
     const item = mapTimeregistreringRow(row);
     if (!item) return null;
-    if (item.status === 'aktiv' || item.status === 'pause') {
+    const user = usersById && usersById[item.userId];
+    if (user) brukAvtalePaPost(item, user);
+    else if (item.status === 'aktiv' || item.status === 'pause') {
       item.stats = calcTimeregStats(item, nowOsloTime());
     }
     return item;
   }).filter(Boolean);
   beregnOvertidForPoster(items);
-  return items.map(function (item) { return maskTimeregForViewer(item, viewer); });
+  return items;
+}
+
+function mapTimeregPoster(rows, viewer, usersById) {
+  return mapTimeregRader(rows, usersById).map(function (item) {
+    return maskTimeregForViewer(item, viewer);
+  });
+}
+
+async function lagreOvertidSnapshot(items) {
+  for (const item of items || []) {
+    if (!item || !item.stats || item.status === 'aktiv' || item.status === 'pause') continue;
+    const s = item.stats;
+    await prepare(`
+      UPDATE timeregistrering SET
+        worked_minutes = @worked_minutes,
+        daily_overtime_minutes = @daily_overtime_minutes,
+        weekly_overtime_minutes = @weekly_overtime_minutes,
+        total_overtime_minutes = @total_overtime_minutes,
+        overtime_amount_ore = @overtime_amount_ore,
+        ordinary_amount_ore = @ordinary_amount_ore,
+        daily_threshold_minutes = @daily_threshold_minutes,
+        weekly_threshold_minutes = @weekly_threshold_minutes,
+        overtidsprosent = @overtidsprosent,
+        timelonn = @timelonn,
+        uke_start = @uke_start
+      WHERE id = @id
+    `).run({
+      id: item.id,
+      worked_minutes: s.workedMin || 0,
+      daily_overtime_minutes: s.overtidDagMin || 0,
+      weekly_overtime_minutes: s.overtidUkeMin || 0,
+      total_overtime_minutes: s.overtidMin || 0,
+      overtime_amount_ore: s.overtidsbelopOre || 0,
+      ordinary_amount_ore: s.ordinærLonnOre || 0,
+      daily_threshold_minutes: item.dagligGrenseMin || s.dagligGrenseMin || 540,
+      weekly_threshold_minutes: item.ukentligGrenseMin || s.ukentligGrenseMin || 2400,
+      overtidsprosent: normalizeOvertidsprosent(item.overtidsprosent),
+      timelonn: Math.max(0, Math.round(Number(item.timelonn) || 0)),
+      uke_start: normalizeUkeStart(item.ukeStart)
+    });
+  }
+}
+
+async function usersByIdMap() {
+  const users = await getUsers();
+  const byId = {};
+  (users || []).forEach(function (user) {
+    if (user && user.id != null) byId[Number(user.id)] = user;
+  });
+  return byId;
 }
 
 function filtrerTimeregPeriode(items, fra, til) {
@@ -3175,13 +3249,18 @@ app.get('/api/timeregistrering', requireAuth, requirePermission('timeregistrerin
   const userId = resolveTimeregUserId(req, req.query.userId);
   const fra = String(req.query.fra || weekStartIso(nowOsloDate())).slice(0, 10);
   const til = String(req.query.til || addDaysIso(fra, 6)).slice(0, 10);
-  const contextFra = weekStartIso(fra);
+  const contextFra = addDaysIso(fra, -6);
   const rows = await prepare(`
     SELECT * FROM timeregistrering
     WHERE user_id = ? AND dato >= ? AND dato <= ?
     ORDER BY dato DESC, start_tid DESC, id DESC
   `).all(userId, contextFra, til);
-  const items = filtrerTimeregPeriode(mapTimeregPoster(rows, req.user), fra, til);
+  const avtale = await usersByIdMap();
+  const beregnet = mapTimeregRader(rows, avtale);
+  await lagreOvertidSnapshot(beregnet);
+  const items = filtrerTimeregPeriode(beregnet, fra, til).map(function (item) {
+    return maskTimeregForViewer(item, req.user);
+  });
   res.json({ ok: true, items, fra, til, userId });
 });
 
@@ -3200,7 +3279,7 @@ app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('ti
   const userId = resolveTimeregUserId(req, req.query.userId);
   const fra = String(req.query.fra || weekStartIso(nowOsloDate())).slice(0, 10);
   const til = String(req.query.til || addDaysIso(fra, 6)).slice(0, 10);
-  const contextFra = weekStartIso(fra);
+  const contextFra = addDaysIso(fra, -6);
   const rows = await prepare(`
     SELECT * FROM timeregistrering
     WHERE user_id = ? AND dato >= ? AND dato <= ?
@@ -3211,20 +3290,27 @@ app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('ti
   let pauseMin = 0;
   let ordinarMin = 0;
   let overtidMin = 0;
-  let overtidsbelop = 0;
-  let lonnKr = 0;
+  let overtidsbelopOre = 0;
+  let ordinærLonnOre = 0;
+  let lonnOre = 0;
   let dager = 0;
+  let overtidsprosent = 40;
+  let timesats = 0;
   const perDag = {};
   const kanSeLonn = canViewAllTimereg(req.user);
+  const avtale = await usersByIdMap();
 
-  filtrerTimeregPeriode(mapTimeregPoster(rows, req.user), fra, til).forEach(function (item) {
+  filtrerTimeregPeriode(mapTimeregRader(rows, avtale), fra, til).forEach(function (item) {
     if (!item || item.status === 'aktiv' || item.status === 'pause') return;
     nettoMin += item.stats.nettoMin;
     pauseMin += item.stats.pauseMin;
     ordinarMin += item.stats.ordinarMin || 0;
     overtidMin += item.stats.overtidMin || 0;
-    overtidsbelop += item.stats.overtidsbelop || 0;
-    lonnKr += item.stats.lonnKr;
+    overtidsbelopOre += item.stats.overtidsbelopOre || 0;
+    ordinærLonnOre += item.stats.ordinærLonnOre || 0;
+    lonnOre += item.stats.lonnOre || 0;
+    if (item.overtidsprosent) overtidsprosent = item.overtidsprosent;
+    if (item.timelonn) timesats = item.timelonn;
     dager += 1;
     perDag[item.dato] = (perDag[item.dato] || 0) + item.stats.nettoMin;
   });
@@ -3243,7 +3329,15 @@ app.get('/api/timeregistrering/oppsummering', requireAuth, requirePermission('ti
       overtidMin,
       overtidTimer: Math.round((overtidMin / 60) * 100) / 100,
       timer: Math.round((nettoMin / 60) * 100) / 100,
-      ...(kanSeLonn ? { lonnKr, overtidsbelop } : {})
+      overtidsprosent,
+      ...(kanSeLonn ? {
+        timesats,
+        ordinærLonnOre,
+        overtidsbelopOre,
+        lonnOre,
+        lonnKr: lonnOre / 100,
+        overtidsbelop: overtidsbelopOre / 100
+      } : {})
     },
     perDag
   });
@@ -3262,14 +3356,19 @@ app.get('/api/timeregistrering/oppsummering/maaned', requireAuth, requirePermiss
     return res.status(400).json({ ok: false, error: 'Ugyldig år eller måned.' });
   }
 
-  const contextFra = weekStartIso(range.fra);
+  const contextFra = addDaysIso(range.fra, -6);
   const rows = await prepare(`
     SELECT * FROM timeregistrering
     WHERE dato >= ? AND dato <= ?
     ORDER BY bruker_navn ASC, dato ASC, start_tid ASC
   `).all(contextFra, range.til);
 
-  const synlige = filtrerTimeregPeriode(mapTimeregPoster(rows, req.user), range.fra, range.til);
+  const avtale = await usersByIdMap();
+  const beregnet = mapTimeregRader(rows, avtale);
+  await lagreOvertidSnapshot(beregnet);
+  const synlige = filtrerTimeregPeriode(beregnet, range.fra, range.til).map(function (item) {
+    return maskTimeregForViewer(item, req.user);
+  });
   const statsByUserId = aggregateTimeregByUser(synlige, function (item) { return item; });
   const users = await getUsers();
   const ansatte = buildMaanedAnsatteList(users, statsByUserId, userHasTimeregistreringAccess);
@@ -3327,10 +3426,29 @@ app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistreri
   const overtidsprosent = body.overtidsprosent != null && canViewAllTimereg(req.user)
     ? normalizeOvertidsprosent(body.overtidsprosent)
     : normalizeOvertidsprosent(user.overtidsprosent);
+  const overMidnatt = body.overMidnatt === true || body.over_midnatt === true;
+  const eksisterende = await prepare(`
+    SELECT * FROM timeregistrering
+    WHERE user_id = ? AND dato >= ? AND dato <= ?
+  `).all(userId, addDaysIso(dato, -1), addDaysIso(dato, 1));
+  const feil = validerTimeregPost({
+    dato,
+    startTid,
+    sluttTid,
+    pauser,
+    overMidnatt
+  }, eksisterende.map(mapTimeregistreringRow));
+  if (feil.length) return res.status(400).json({ ok: false, error: feil[0], feil });
 
   const info = await prepare(`
-    INSERT INTO timeregistrering (user_id, bruker_navn, dato, status, start_tid, slutt_tid, pauser, notat, timelonn, overtidsprosent)
-    VALUES (@user_id, @bruker_navn, @dato, 'fullfort', @start_tid, @slutt_tid, @pauser, @notat, @timelonn, @overtidsprosent)
+    INSERT INTO timeregistrering (
+      user_id, bruker_navn, dato, status, start_tid, slutt_tid, pauser, notat, timelonn, overtidsprosent,
+      daily_threshold_minutes, weekly_threshold_minutes, uke_start
+    )
+    VALUES (
+      @user_id, @bruker_navn, @dato, 'fullfort', @start_tid, @slutt_tid, @pauser, @notat, @timelonn, @overtidsprosent,
+      @daily_threshold_minutes, @weekly_threshold_minutes, @uke_start
+    )
   `).run({
     user_id: userId,
     bruker_navn: user.name || user.username,
@@ -3340,18 +3458,24 @@ app.post('/api/timeregistrering', requireAuth, requirePermission('timeregistreri
     pauser: JSON.stringify(pauser),
     notat,
     timelonn,
-    overtidsprosent
+    overtidsprosent,
+    daily_threshold_minutes: lesDagligGrenseMin(user),
+    weekly_threshold_minutes: lesUentligGrenseMin(user),
+    uke_start: normalizeUkeStart(user.ukeStart)
   });
 
   const row = await getTimeregRow(info.lastInsertRowid);
-  const ukeFra = weekStartIso(row.dato);
-  const ukeTil = addDaysIso(ukeFra, 6);
+  const ukeFra = addDaysIso(row.dato, -6);
+  const ukeTil = addDaysIso(row.dato, 6);
   const ukeRader = await prepare(`
     SELECT * FROM timeregistrering
     WHERE user_id = ? AND dato >= ? AND dato <= ?
   `).all(row.user_id, ukeFra, ukeTil);
-  const lagret = mapTimeregPoster(ukeRader, req.user).find(function (item) { return item.id === Number(row.id); });
-  res.status(201).json({ ok: true, item: lagret || mapTimeregLive(row, req.user) });
+  const avtale = await usersByIdMap();
+  const beregnet = mapTimeregRader(ukeRader, avtale);
+  await lagreOvertidSnapshot(beregnet);
+  const lagret = beregnet.find(function (item) { return item.id === Number(row.id); });
+  res.status(201).json({ ok: true, item: maskTimeregForViewer(lagret, req.user) || mapTimeregLive(row, req.user) });
 });
 
 app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregistrering'), async function (req, res) {
@@ -3429,6 +3553,22 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
   const overtidsprosent = body.overtidsprosent != null && canViewAllTimereg(req.user)
     ? normalizeOvertidsprosent(body.overtidsprosent)
     : normalizeOvertidsprosent(row.overtidsprosent);
+  const endrerTid = !isStatusOnlyPatch;
+  if (endrerTid && sluttTid) {
+    const naboer = await prepare(`
+      SELECT * FROM timeregistrering
+      WHERE user_id = ? AND id != ? AND dato >= ? AND dato <= ?
+    `).all(row.user_id, id, addDaysIso(dato, -1), addDaysIso(dato, 1));
+    const feil = validerTimeregPost({
+      id,
+      dato,
+      startTid,
+      sluttTid,
+      pauser,
+      overMidnatt: body.overMidnatt === true || body.over_midnatt === true
+    }, naboer.map(mapTimeregistreringRow));
+    if (feil.length) return res.status(400).json({ ok: false, error: feil[0], feil });
+  }
 
   await prepare(`
     UPDATE timeregistrering SET
@@ -3455,14 +3595,17 @@ app.patch('/api/timeregistrering/:id', requireAuth, requirePermission('timeregis
   });
 
   const fresh = await getTimeregRow(id);
-  const ukeFra = weekStartIso(fresh.dato);
-  const ukeTil = addDaysIso(ukeFra, 6);
+  const ukeFra = addDaysIso(fresh.dato, -6);
+  const ukeTil = addDaysIso(fresh.dato, 6);
   const ukeRader = await prepare(`
     SELECT * FROM timeregistrering
     WHERE user_id = ? AND dato >= ? AND dato <= ?
   `).all(fresh.user_id, ukeFra, ukeTil);
-  const oppdatert = mapTimeregPoster(ukeRader, req.user).find(function (item) { return item.id === id; });
-  res.json({ ok: true, item: oppdatert || mapTimeregLive(fresh, req.user) });
+  const avtalePatch = await usersByIdMap();
+  const beregnetPatch = mapTimeregRader(ukeRader, avtalePatch);
+  await lagreOvertidSnapshot(beregnetPatch);
+  const oppdatert = beregnetPatch.find(function (item) { return item.id === id; });
+  res.json({ ok: true, item: maskTimeregForViewer(oppdatert, req.user) || mapTimeregLive(fresh, req.user) });
 });
 
 app.delete('/api/timeregistrering/:id', requireAuth, requirePermission('timeregistrering'), async function (req, res) {

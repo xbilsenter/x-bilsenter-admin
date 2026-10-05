@@ -10978,7 +10978,10 @@ const EMPTY_BRUKER = {
   aktiv: true,
   isAdmin: false,
   timelonn: 0,
-  overtidsprosent: 40
+  overtidsprosent: 40,
+  dagligOvertidTimer: 9,
+  ukentligOvertidTimer: 40,
+  ukeStart: 'monday'
 };
 
 function BrukereSection({ currentUser, visTost }) {
@@ -11051,7 +11054,10 @@ function BrukereSection({ currentUser, visTost }) {
     aktiv: b.aktiv,
     isAdmin: !!b.isAdmin,
     timelonn: Number(b.timelonn) || 0,
-    overtidsprosent: Math.max(40, Math.round(Number(b.overtidsprosent) || 40))
+    overtidsprosent: Math.max(40, Math.round(Number(b.overtidsprosent) || 40)),
+    dagligOvertidTimer: Number(b.dagligOvertidTimer) || (Number(b.dagligOvertidMin) ? Number(b.dagligOvertidMin) / 60 : 9),
+    ukentligOvertidTimer: Number(b.ukentligOvertidTimer) || (Number(b.ukentligOvertidMin) ? Number(b.ukentligOvertidMin) / 60 : 40),
+    ukeStart: b.ukeStart || 'monday'
   });
 
   const lagre = async () => {
@@ -11075,7 +11081,10 @@ function BrukereSection({ currentUser, visTost }) {
         aktiv: form.aktiv,
         isAdmin: form.isAdmin,
         timelonn: Math.max(0, Math.round(Number(form.timelonn) || 0)),
-        overtidsprosent: Math.max(40, Math.round(Number(form.overtidsprosent) || 40))
+        overtidsprosent: Math.max(40, Math.round(Number(form.overtidsprosent) || 40)),
+        dagligOvertidTimer: Number(String(form.dagligOvertidTimer).replace(',', '.')) || 9,
+        ukentligOvertidTimer: Number(String(form.ukentligOvertidTimer).replace(',', '.')) || 40,
+        ukeStart: form.ukeStart || 'monday'
       };
       if (form.password?.trim()) body.password = form.password.trim();
 
@@ -11225,6 +11234,36 @@ function BrukereSection({ currentUser, visTost }) {
                   placeholder="40"
                 />
                 <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 4 }}>Minimum 40 % av timesatsen. Gjelder timelønnede.</div>
+              </div>
+              <div>
+                <div className="fl">Daglig overtidsgrense (timer)</div>
+                <input
+                  type="number"
+                  min="1"
+                  max="24"
+                  step="0.25"
+                  value={form.dagligOvertidTimer}
+                  onChange={e => setForm({ ...form, dagligOvertidTimer: e.target.value })}
+                />
+              </div>
+              <div>
+                <div className="fl">Ukentlig overtidsgrense (timer)</div>
+                <input
+                  type="number"
+                  min="1"
+                  max="168"
+                  step="0.25"
+                  value={form.ukentligOvertidTimer}
+                  onChange={e => setForm({ ...form, ukentligOvertidTimer: e.target.value })}
+                />
+                <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 4 }}>Standard er 9 timer per døgn og 40 timer per uke.</div>
+              </div>
+              <div>
+                <div className="fl">Uken starter</div>
+                <select value={form.ukeStart || 'monday'} onChange={e => setForm({ ...form, ukeStart: e.target.value })}>
+                  <option value="monday">Mandag</option>
+                  <option value="sunday">Søndag</option>
+                </select>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, paddingBottom: 2 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
