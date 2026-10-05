@@ -116,12 +116,19 @@ function normalizePauserList(list) {
 
 function pauseSummary(item) {
   const pauser = item?.pauser || [];
-  if (!pauser.length) return '—';
-  return pauser.map(function (p) {
+  const min = Number(item?.stats?.pauseMin) || 0;
+  if (!pauser.length) return min ? `${min} min` : '—';
+  const ranges = pauser.map(function (p) {
     const span = p.slutt ? `${p.start}–${p.slutt}` : `${p.start}–…`;
     const type = p.type && p.type !== 'pause' ? ` (${p.type})` : '';
     return span + type;
   }).join(', ');
+  return min ? `${ranges} · ${min} min` : ranges;
+}
+
+function overtidTittel(stats) {
+  if (!stats?.overtidMin) return 'Ingen overtid';
+  return `Over 9 timer i døgnet: ${fmtTimerFraMin(stats.overtidDagMin)}. Over 40 timer i uken: ${fmtTimerFraMin(stats.overtidUkeMin)}.`;
 }
 
 function fmtTimerFraMin(min) {
@@ -153,6 +160,8 @@ function skrivUtTimereg() {
 function TimeregUtskrift({ ansattNavn, periodeLabel, poster }) {
   const nettoMin = poster.reduce(function (sum, item) { return sum + (item.stats?.nettoMin || 0); }, 0);
   const pauseMin = poster.reduce(function (sum, item) { return sum + (item.stats?.pauseMin || 0); }, 0);
+  const ordinarMin = poster.reduce(function (sum, item) { return sum + (item.stats?.ordinarMin || 0); }, 0);
+  const overtidMin = poster.reduce(function (sum, item) { return sum + (item.stats?.overtidMin || 0); }, 0);
   const sortert = poster.slice().sort(function (a, b) {
     return String(a.dato).localeCompare(String(b.dato)) || String(a.startTid || '').localeCompare(String(b.startTid || ''));
   });
@@ -176,7 +185,9 @@ function TimeregUtskrift({ ansattNavn, periodeLabel, poster }) {
               <th>Inn</th>
               <th>Ut</th>
               <th>Pause</th>
-              <th>Timer</th>
+              <th>Faktisk</th>
+              <th>Ordinær</th>
+              <th>Overtid</th>
               <th>Notat</th>
             </tr>
           </thead>
@@ -189,6 +200,8 @@ function TimeregUtskrift({ ansattNavn, periodeLabel, poster }) {
                   <td>{item.sluttTid || '—'}</td>
                   <td>{pauseSummary(item)}</td>
                   <td>{item.stats?.display || '—'}</td>
+                  <td>{fmtTimerFraMin(item.stats?.ordinarMin)}</td>
+                  <td>{item.stats?.overtidMin ? fmtTimerFraMin(item.stats.overtidMin) : '—'}</td>
                   <td>{item.notat || '—'}</td>
                 </tr>
               );
@@ -199,6 +212,8 @@ function TimeregUtskrift({ ansattNavn, periodeLabel, poster }) {
               <td colSpan={3}>Sum · {sortert.length} registrering{sortert.length === 1 ? '' : 'er'}</td>
               <td>{fmtTimerFraMin(pauseMin)}</td>
               <td>{fmtTimerFraMin(nettoMin)}</td>
+              <td>{fmtTimerFraMin(ordinarMin)}</td>
+              <td>{overtidMin ? fmtTimerFraMin(overtidMin) : '—'}</td>
               <td></td>
             </tr>
           </tfoot>
@@ -262,7 +277,7 @@ function PauseEditor({ pauser, onChange, allowOpenEnd }) {
       <div className="timereg-pauser-hd">
         <div>
           <div className="modal-sec timereg-pauser-sec">Pauser</div>
-          <div className="timereg-pauser-copy">Legg inn alle pauser for riktig timetelling.</div>
+          <div className="timereg-pauser-copy">Pauser trekkes fra arbeidstiden før overtid beregnes.</div>
         </div>
         <button type="button" className="btn btn-g btn-sm timereg-pauser-add" onClick={function () {
           onChange([...list, newPause()]);
@@ -581,7 +596,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
         <div>
           <div className="ph-title">Timeregistrering</div>
           <div className="ph-sub">
-            Registrer arbeidstid manuelt og få månedsoversikt
+            Timelønnede får ordinær tid og overtid automatisk: over 9 timer i døgnet og over 40 timer man–søn. Pauser trekkes fra først, og samme time gir ikke tillegg to ganger.
             {currentUser?.name ? ` · ${currentUser.name}` : ''}
           </div>
         </div>
@@ -623,9 +638,16 @@ export default function TimeregistreringView({ currentUser, visTost }) {
             <div className="timereg-stat card timereg-stat--accent">
               <div className="timereg-stat-label">Estimert lønn</div>
               <div className="timereg-stat-value">{nok(oppsummering?.lonnKr)}</div>
-              <div className="timereg-stat-sub">Basert på timelønn</div>
+              <div className="timereg-stat-sub">
+                Inkludert overtidstillegg{oppsummering?.overtidsbelop ? ` ${nok(oppsummering.overtidsbelop)}` : ''}
+              </div>
             </div>
           )}
+          <div className="timereg-stat card">
+            <div className="timereg-stat-label">Overtid</div>
+            <div className="timereg-stat-value">{oppsummering ? `${oppsummering.overtidTimer || 0} t` : '—'}</div>
+            <div className="timereg-stat-sub">Over 9 t/døgn og 40 t/uke</div>
+          </div>
           <div className="timereg-stat card">
             <div className="timereg-stat-label">I dag</div>
             <div className="timereg-stat-value">
@@ -690,6 +712,14 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                     <div><span>Inn</span><strong>{item.startTid || '—'}</strong></div>
                     <div><span>Ut</span><strong>{item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—')}</strong></div>
                     <div><span>Pause</span><strong>{pauserTxt}</strong></div>
+                    <div><span>Ordinær</span><strong>{fmtTimerFraMin(item.stats?.ordinarMin)}</strong></div>
+                    <div title={overtidTittel(item.stats)}><span>Overtid</span><strong>{item.stats?.overtidMin ? fmtTimerFraMin(item.stats.overtidMin) : '—'}</strong></div>
+                    {visLonn && (
+                      <div><span>Timesats</span><strong>{item.stats?.timesats ? `${item.stats.timesats} kr` : '—'}</strong></div>
+                    )}
+                    {visLonn && (
+                      <div><span>Overtid {item.stats?.overtidsprosent || 40} %</span><strong>{item.stats?.overtidsbelop ? nok(item.stats.overtidsbelop) : '—'}</strong></div>
+                    )}
                     {visLonn && (
                       <div><span>Lønn</span><strong>{item.stats?.lonnKr ? nok(item.stats.lonnKr) : '—'}</strong></div>
                     )}
@@ -720,7 +750,11 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                   <th>Inn</th>
                   <th>Ut</th>
                   <th>Pause</th>
-                  <th>Timer</th>
+                  <th>Faktisk</th>
+                  <th>Ordinær</th>
+                  <th>Overtid</th>
+                  {visLonn && <th>Timesats</th>}
+                  {visLonn && <th>Tillegg</th>}
                   {visLonn && <th>Lønn</th>}
                   <th>Notat</th>
                   <th></th>
@@ -738,6 +772,10 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                       <td>{item.sluttTid || (item.status === 'aktiv' || item.status === 'pause' ? '…' : '—')}</td>
                       <td className="timereg-notat" title={pauserTxt}>{pauserTxt}</td>
                       <td><strong>{item.stats?.display || '—'}</strong></td>
+                      <td>{fmtTimerFraMin(item.stats?.ordinarMin)}</td>
+                      <td title={overtidTittel(item.stats)}>{item.stats?.overtidMin ? fmtTimerFraMin(item.stats.overtidMin) : '—'}</td>
+                      {visLonn && <td>{item.stats?.timesats ? `${item.stats.timesats} kr` : '—'}</td>}
+                      {visLonn && <td>{item.stats?.overtidsbelop ? nok(item.stats.overtidsbelop) : '—'}</td>}
                       {visLonn && <td>{item.stats?.lonnKr ? nok(item.stats.lonnKr) : '—'}</td>}
                       <td className="timereg-notat">{item.notat || '—'}</td>
                       <td className="timereg-row-actions">
@@ -804,6 +842,7 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                     </div>
                     <div className="timereg-entry-meta">
                       <div><span>Pause</span><strong>{row.pauseTimer} t</strong></div>
+                      <div><span>Overtid</span><strong>{row.overtidTimer || 0} t</strong></div>
                       {visLonnMaaned && (
                         <div><span>Lønn</span><strong>{row.lonnKr ? nok(row.lonnKr) : '—'}</strong></div>
                       )}
@@ -842,7 +881,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                     <th>Dager</th>
                     <th>Poster</th>
                     <th>Timer</th>
+                    <th>Overtid</th>
                     <th>Pause</th>
+                    {visLonnMaaned && <th>Tillegg</th>}
                     {visLonnMaaned && <th>Lønn</th>}
                     <th></th>
                   </tr>
@@ -856,7 +897,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                         <td>{row.dager}</td>
                         <td>{row.registreringer}</td>
                         <td><strong>{row.timer} t</strong></td>
+                        <td>{row.overtidTimer || 0} t</td>
                         <td>{row.pauseTimer} t</td>
+                        {visLonnMaaned && <td>{row.overtidsbelop ? nok(row.overtidsbelop) : '—'}</td>}
                         {visLonnMaaned && <td>{row.lonnKr ? nok(row.lonnKr) : '—'}</td>}
                         <td className="timereg-row-actions">
                           <button type="button" className="btn btn-g btn-xs" onClick={function () { velgAnsattFraMaaned(row.userId); }}>
@@ -874,7 +917,9 @@ export default function TimeregistreringView({ currentUser, visTost }) {
                       <td>{maanedTotalt.dager}</td>
                       <td>{maanedTotalt.registreringer}</td>
                       <td><strong>{maanedTotalt.timer} t</strong></td>
+                      <td>{maanedTotalt.overtidTimer || 0} t</td>
                       <td>{maanedTotalt.pauseTimer} t</td>
+                      {visLonnMaaned && <td>{maanedTotalt.overtidsbelop ? nok(maanedTotalt.overtidsbelop) : '—'}</td>}
                       {visLonnMaaned && <td>{maanedTotalt.lonnKr ? nok(maanedTotalt.lonnKr) : '—'}</td>}
                       <td></td>
                     </tr>

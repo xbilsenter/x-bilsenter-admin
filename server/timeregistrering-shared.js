@@ -60,6 +60,16 @@ function minutesToDecimalHours(totalMin) {
   return Math.round((Math.max(0, Number(totalMin) || 0) / 60) * 100) / 100;
 }
 
+const DAG_ORDINAR_MIN = 9 * 60;
+const UKE_ORDINAR_MIN = 40 * 60;
+const MIN_OVERTIDSPROSENT = 40;
+
+function normalizeOvertidsprosent(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < MIN_OVERTIDSPROSENT) return MIN_OVERTIDSPROSENT;
+  return n;
+}
+
 function calcTimeregStats(entry, nowTime) {
   const start = parseTimeToMinutes(entry.startTid || entry.start_tid);
   let end = entry.sluttTid || entry.slutt_tid
@@ -79,17 +89,131 @@ function calcTimeregStats(entry, nowTime) {
   const bruttoMin = Math.max(0, end - start);
   const nettoMin = Math.max(0, bruttoMin - pauseMin);
   const timelonn = Number(entry.timelonn) || 0;
+  const prosent = normalizeOvertidsprosent(entry.overtidsprosent);
   const lonnKr = timelonn > 0 ? Math.round((nettoMin / 60) * timelonn) : 0;
 
   return {
     bruttoMin,
     pauseMin,
+    pauseMinutter: pauseMin,
     nettoMin,
+    faktiskMin: nettoMin,
     timer: minutesToDecimalHours(nettoMin),
+    timesats: timelonn,
+    ordinarMin: nettoMin,
+    ordinarTimer: minutesToDecimalHours(nettoMin),
+    overtidMin: 0,
+    overtidTimer: 0,
+    overtidDagMin: 0,
+    overtidUkeMin: 0,
+    overtidsprosent: prosent,
+    overtidsbelop: 0,
     lonnKr,
     display: minutesToDisplay(nettoMin),
     pauseDisplay: minutesToDisplay(pauseMin)
   };
+}
+
+function settOvertidStats(item, ordinarMin, dagOt, ukeOt) {
+  const nettoMin = Math.max(0, Number(item.stats?.nettoMin) || 0);
+  const overtidMin = Math.max(0, dagOt) + Math.max(0, ukeOt);
+  const prosent = normalizeOvertidsprosent(item.overtidsprosent);
+  const timesats = Math.max(0, Math.round(Number(item.timelonn) || 0));
+  const overtidsbelop = timesats > 0
+    ? Math.round((overtidMin / 60) * timesats * (prosent / 100))
+    : 0;
+  const grunnlag = timesats > 0 ? Math.round((nettoMin / 60) * timesats) : 0;
+  item.overtidsprosent = prosent;
+  item.stats = {
+    ...item.stats,
+    timesats: timesats,
+    ordinarMin: ordinarMin,
+    ordinarTimer: minutesToDecimalHours(ordinarMin),
+    overtidMin: overtidMin,
+    overtidTimer: minutesToDecimalHours(overtidMin),
+    overtidDagMin: dagOt,
+    overtidUkeMin: ukeOt,
+    overtidsprosent: prosent,
+    overtidsbelop: overtidsbelop,
+    lonnKr: grunnlag + overtidsbelop
+  };
+}
+
+function erTimeregFerdige(item) {
+  return item && item.stats && item.status !== 'aktiv' && item.status !== 'pause';
+}
+
+/**
+ * Overtid for timelønnede.
+ * Faktisk tid er allerede netto etter ubetalte pauser.
+ * Over 9 timer i døgnet og over 40 ordinære timer man–søn blir overtid.
+ * Timer som allerede er døgn-overtid telles ikke på nytt mot 40-timersgrensen.
+ */
+function beregnOvertidForAnsatt(poster) {
+  const ferdige = (poster || []).filter(erTimeregFerdige);
+  const timelonnet = ferdige.some(function (item) { return Number(item.timelonn) > 0; });
+  if (!timelonnet) {
+    ferdige.forEach(function (item) {
+      settOvertidStats(item, item.stats.nettoMin || 0, 0, 0);
+    });
+    return;
+  }
+
+  const byWeek = {};
+  ferdige.forEach(function (item) {
+    const start = weekStartIso(item.dato);
+    if (!byWeek[start]) byWeek[start] = [];
+    byWeek[start].push(item);
+  });
+
+  Object.keys(byWeek).forEach(function (start) {
+    const byDay = {};
+    byWeek[start].forEach(function (item) {
+      if (!byDay[item.dato]) byDay[item.dato] = [];
+      byDay[item.dato].push(item);
+    });
+    const dager = Object.keys(byDay).sort();
+    let ukeOrdinær = 0;
+    dager.forEach(function (dato) {
+      const dagPoster = byDay[dato].slice().sort(function (a, b) {
+        return String(a.startTid || '').localeCompare(String(b.startTid || ''))
+          || Number(a.id) - Number(b.id);
+      });
+      let dagBrukt = 0;
+      dagPoster.forEach(function (item) {
+        const netto = Math.max(0, Number(item.stats.nettoMin) || 0);
+        const plassDag = Math.max(0, DAG_ORDINAR_MIN - dagBrukt);
+        const dagOt = Math.max(0, netto - plassDag);
+        item._kandidatOrdinær = netto - dagOt;
+        item._dagOt = dagOt;
+        dagBrukt += netto;
+      });
+      dagPoster.forEach(function (item) {
+        const plassUke = Math.max(0, UKE_ORDINAR_MIN - ukeOrdinær);
+        const ukeOt = Math.max(0, item._kandidatOrdinær - plassUke);
+        const ordinær = item._kandidatOrdinær - ukeOt;
+        ukeOrdinær += ordinær;
+        settOvertidStats(item, ordinær, item._dagOt, ukeOt);
+        delete item._kandidatOrdinær;
+        delete item._dagOt;
+      });
+    });
+  });
+}
+
+function beregnOvertidForPoster(items) {
+  const byUser = {};
+  (Array.isArray(items) ? items : []).forEach(function (item) {
+    if (!item) return;
+    const uid = Number(item.userId);
+    if (!Number.isFinite(uid)) return;
+    if (!byUser[uid]) byUser[uid] = [];
+    byUser[uid].push(item);
+  });
+  Object.keys(byUser).forEach(function (key) {
+    beregnOvertidForAnsatt(byUser[key]);
+  });
+  return items;
 }
 
 function isTimeregLaast(row) {
@@ -112,6 +236,7 @@ function mapTimeregistreringRow(row) {
     pauser,
     notat: row.notat || '',
     timelonn: Number(row.timelonn) || 0,
+    overtidsprosent: normalizeOvertidsprosent(row.overtidsprosent),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -160,6 +285,9 @@ function aggregateTimeregByUser(rows, mapItem) {
         brukerNavn: item.brukerNavn || '',
         nettoMin: 0,
         pauseMin: 0,
+        ordinarMin: 0,
+        overtidMin: 0,
+        overtidsbelop: 0,
         lonnKr: 0,
         registreringer: 0,
         dagerSet: {}
@@ -168,6 +296,9 @@ function aggregateTimeregByUser(rows, mapItem) {
     const u = byUser[uid];
     u.nettoMin += item.stats.nettoMin;
     u.pauseMin += item.stats.pauseMin;
+    u.ordinarMin += item.stats.ordinarMin || 0;
+    u.overtidMin += item.stats.overtidMin || 0;
+    u.overtidsbelop += item.stats.overtidsbelop || 0;
     u.lonnKr += item.stats.lonnKr;
     u.registreringer += 1;
     u.dagerSet[item.dato] = true;
@@ -184,6 +315,11 @@ function aggregateTimeregByUser(rows, mapItem) {
       registreringer: u.registreringer,
       nettoMin: u.nettoMin,
       pauseMin: u.pauseMin,
+      ordinarMin: u.ordinarMin,
+      ordinarTimer: minutesToDecimalHours(u.ordinarMin),
+      overtidMin: u.overtidMin,
+      overtidTimer: minutesToDecimalHours(u.overtidMin),
+      overtidsbelop: u.overtidsbelop,
       lonnKr: u.lonnKr,
       timer: minutesToDecimalHours(u.nettoMin),
       pauseTimer: minutesToDecimalHours(u.pauseMin)
@@ -198,6 +334,11 @@ function buildMaanedAnsatteList(users, statsByUserId, canIncludeUser) {
     registreringer: 0,
     nettoMin: 0,
     pauseMin: 0,
+    ordinarMin: 0,
+    ordinarTimer: 0,
+    overtidMin: 0,
+    overtidTimer: 0,
+    overtidsbelop: 0,
     lonnKr: 0,
     timer: 0,
     pauseTimer: 0
@@ -245,6 +386,9 @@ function summarizeMaanedAnsatte(ansatte) {
       registreringer: acc.registreringer + Number(row.registreringer || 0),
       nettoMin: acc.nettoMin + Number(row.nettoMin || 0),
       pauseMin: acc.pauseMin + Number(row.pauseMin || 0),
+      ordinarMin: acc.ordinarMin + Number(row.ordinarMin || 0),
+      overtidMin: acc.overtidMin + Number(row.overtidMin || 0),
+      overtidsbelop: acc.overtidsbelop + Number(row.overtidsbelop || 0),
       lonnKr: acc.lonnKr + Number(row.lonnKr || 0)
     };
   }, {
@@ -252,10 +396,15 @@ function summarizeMaanedAnsatte(ansatte) {
     registreringer: 0,
     nettoMin: 0,
     pauseMin: 0,
+    ordinarMin: 0,
+    overtidMin: 0,
+    overtidsbelop: 0,
     lonnKr: 0
   });
   return {
     ...sum,
+    ordinarTimer: minutesToDecimalHours(sum.ordinarMin),
+    overtidTimer: minutesToDecimalHours(sum.overtidMin),
     timer: minutesToDecimalHours(sum.nettoMin),
     pauseTimer: minutesToDecimalHours(sum.pauseMin)
   };
@@ -282,9 +431,15 @@ function maskTimeregStatusForViewer(item, viewer) {
 function maskTimeregLonnForViewer(item, viewer) {
   if (!item) return item;
   if (canViewAllTimereg(viewer)) return item;
-  const next = { ...item, timelonn: 0 };
+  const next = { ...item, timelonn: 0, overtidsprosent: 0 };
   if (next.stats && typeof next.stats === 'object') {
-    next.stats = { ...next.stats, lonnKr: 0 };
+    next.stats = {
+      ...next.stats,
+      lonnKr: 0,
+      overtidsbelop: 0,
+      timesats: 0,
+      overtidsprosent: 0
+    };
   }
   return next;
 }
@@ -305,7 +460,10 @@ module.exports = {
   parseTimeToMinutes,
   minutesToDisplay,
   minutesToDecimalHours,
+  MIN_OVERTIDSPROSENT,
+  normalizeOvertidsprosent,
   calcTimeregStats,
+  beregnOvertidForPoster,
   isTimeregLaast,
   mapTimeregistreringRow,
   weekStartIso,

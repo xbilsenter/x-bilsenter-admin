@@ -10977,7 +10977,8 @@ const EMPTY_BRUKER = {
   permissions: [],
   aktiv: true,
   isAdmin: false,
-  timelonn: 0
+  timelonn: 0,
+  overtidsprosent: 40
 };
 
 function BrukereSection({ currentUser, visTost }) {
@@ -11049,7 +11050,8 @@ function BrukereSection({ currentUser, visTost }) {
     permissions: [...(b.permissions || [])],
     aktiv: b.aktiv,
     isAdmin: !!b.isAdmin,
-    timelonn: Number(b.timelonn) || 0
+    timelonn: Number(b.timelonn) || 0,
+    overtidsprosent: Math.max(40, Math.round(Number(b.overtidsprosent) || 40))
   });
 
   const lagre = async () => {
@@ -11072,7 +11074,8 @@ function BrukereSection({ currentUser, visTost }) {
         permissions: form.permissions,
         aktiv: form.aktiv,
         isAdmin: form.isAdmin,
-        timelonn: Math.max(0, Math.round(Number(form.timelonn) || 0))
+        timelonn: Math.max(0, Math.round(Number(form.timelonn) || 0)),
+        overtidsprosent: Math.max(40, Math.round(Number(form.overtidsprosent) || 40))
       };
       if (form.password?.trim()) body.password = form.password.trim();
 
@@ -11210,6 +11213,18 @@ function BrukereSection({ currentUser, visTost }) {
                   onChange={e => setForm({ ...form, timelonn: e.target.value })}
                   placeholder="0"
                 />
+              </div>
+              <div>
+                <div className="fl">Overtidsprosent</div>
+                <input
+                  type="number"
+                  min="40"
+                  step="1"
+                  value={form.overtidsprosent}
+                  onChange={e => setForm({ ...form, overtidsprosent: e.target.value })}
+                  placeholder="40"
+                />
+                <div style={{ fontSize: 11, color: 'var(--t4)', marginTop: 4 }}>Minimum 40 % av timesatsen. Gjelder timelønnede.</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, paddingBottom: 2 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>

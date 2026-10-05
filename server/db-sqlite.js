@@ -261,6 +261,22 @@ function migrateTimeregistrering() {
   } catch {
     /* column exists */
   }
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN overtidsprosent INTEGER NOT NULL DEFAULT 40');
+  } catch {
+    /* column exists */
+  }
+  try {
+    db.exec('ALTER TABLE timeregistrering ADD COLUMN overtidsprosent INTEGER NOT NULL DEFAULT 40');
+  } catch {
+    /* column exists */
+  }
+}
+
+function clampOvertidsprosent(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 40) return 40;
+  return n;
 }
 
 function normalizeModulOppsett(list) {
@@ -1623,6 +1639,7 @@ function mapUser(row, includeHash) {
     aktiv: !!row.aktiv,
     isAdmin: !!row.is_admin,
     timelonn: Number(row.timelonn) || 0,
+    overtidsprosent: clampOvertidsprosent(row.overtidsprosent),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1645,7 +1662,7 @@ function getUserByUsername(username, includeHash) {
 
 function getUsers() {
   return db.prepare(`
-    SELECT id, username, name, email, role, permissions, aktiv, is_admin, timelonn, created_at, updated_at
+    SELECT id, username, name, email, role, permissions, aktiv, is_admin, timelonn, overtidsprosent, created_at, updated_at
     FROM users
     ORDER BY name COLLATE NOCASE ASC, id ASC
   `).all().map(function (row) { return mapUser(row); }).filter(Boolean);
@@ -1677,8 +1694,8 @@ function createUser(data, passwordHash) {
   const isAdmin = resolveRoleKey(role) === 'Daglig leder' ? true : !!data.isAdmin;
 
   const info = db.prepare(`
-    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin, timelonn)
-    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin, @timelonn)
+    INSERT INTO users (username, password_hash, name, email, role, permissions, aktiv, is_admin, timelonn, overtidsprosent)
+    VALUES (@username, @password_hash, @name, @email, @role, @permissions, @aktiv, @is_admin, @timelonn, @overtidsprosent)
   `).run({
     username,
     password_hash: passwordHash,
@@ -1688,7 +1705,8 @@ function createUser(data, passwordHash) {
     permissions: JSON.stringify(permissions),
     aktiv: data.aktiv === false ? 0 : 1,
     is_admin: isAdmin ? 1 : 0,
-    timelonn: Math.max(0, Math.round(Number(data.timelonn) || 0))
+    timelonn: Math.max(0, Math.round(Number(data.timelonn) || 0)),
+    overtidsprosent: clampOvertidsprosent(data.overtidsprosent)
   });
 
   return getUserById(info.lastInsertRowid);
@@ -1738,6 +1756,7 @@ function updateUser(id, data, passwordHash) {
       aktiv = COALESCE(@aktiv, aktiv),
       is_admin = COALESCE(@is_admin, is_admin),
       timelonn = COALESCE(@timelonn, timelonn),
+      overtidsprosent = COALESCE(@overtidsprosent, overtidsprosent),
       updated_at = datetime('now')
     WHERE id = @id
   `).run({
@@ -1750,7 +1769,8 @@ function updateUser(id, data, passwordHash) {
     permissions,
     aktiv: data.aktiv == null ? null : (data.aktiv ? 1 : 0),
     is_admin: isAdminValue,
-    timelonn: data.timelonn == null ? null : Math.max(0, Math.round(Number(data.timelonn) || 0))
+    timelonn: data.timelonn == null ? null : Math.max(0, Math.round(Number(data.timelonn) || 0)),
+    overtidsprosent: data.overtidsprosent == null ? null : clampOvertidsprosent(data.overtidsprosent)
   });
 
   return getUserById(id);
