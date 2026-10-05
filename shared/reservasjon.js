@@ -419,6 +419,7 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
   });
   const summaryRows = flattenSummaryGroups(summaryGroups);
 
+  const regnr = bil?.reg ? String(bil.reg).trim().toUpperCase() : '';
   const paymentLines = erTerminal
     ? [
         `Depositum på ${doc.depositumTekst} betales med bankterminal i butikk hos ${doc.firma.navn}.`,
@@ -426,7 +427,8 @@ function buildReservasjonPdfModel(bil, kunde, reservasjonRaw) {
       ]
     : [
         `Depositum på ${doc.depositumTekst} overføres til konto ${doc.firma.kontonummer}.`,
-        `Mottaker: ${doc.firma.navn}. Betalingsfrist: ${doc.depositumForfallTekst}.`
+        `Mottaker: ${doc.firma.navn}. Betalingsfrist: ${doc.depositumForfallTekst}.`,
+        ...(regnr ? [`Betalingen merkes med ${regnr}.`] : [])
       ];
 
   const vilkar = erTilbud

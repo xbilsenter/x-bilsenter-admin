@@ -466,8 +466,8 @@ function computeLayout(model, introEndY, doc) {
     + commentBlockHeight(doc, model.innbytte?.kommentar || '');
   const minSummaryRowH = 17;
   const maxSummaryRowH = 22;
-  const minPaymentH = 52;
-  const maxPaymentH = 64;
+  const minPaymentH = 72;
+  const maxPaymentH = 86;
   const minTwoColH = COL_HEADER_H + 96;
   const hasKundeSection = kundeRows > 0;
   const sectionCount = (model.skipPayment ? 2 : 3) + (hasKundeSection ? 1 : 0);

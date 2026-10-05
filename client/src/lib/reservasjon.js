@@ -405,6 +405,7 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
   });
   const summaryRows = flattenSummaryGroups(summaryGroups);
 
+  const regnr = bil?.reg ? String(bil.reg).trim().toUpperCase() : '';
   const payment = {
     title: erTerminal ? 'Betaling i butikk' : 'Betaling via bankoverføring',
     lines: erTerminal
@@ -414,7 +415,8 @@ export function buildReservasjonPreviewModel(bil, kunde, reservasjon) {
         ]
       : [
           `Depositum på ${depositumTekst} overføres til konto ${RESERVASJON_FIRMA.kontonummer}.`,
-          `Mottaker: ${RESERVASJON_FIRMA.navn}. Betalingsfrist: ${depositumForfallTekst}.`
+          `Mottaker: ${RESERVASJON_FIRMA.navn}. Betalingsfrist: ${depositumForfallTekst}.`,
+          ...(regnr ? [`Betalingen merkes med ${regnr}.`] : [])
         ]
   };
 
