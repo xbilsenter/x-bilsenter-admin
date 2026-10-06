@@ -2916,7 +2916,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
   };
 
   const renderBilSearchRow = function (bil) {
-    const chassis = String(bil.chassisnr || bil.understell || '').trim().toUpperCase();
     return (
       <div
         className="bil-arkiv-row bil-arkiv-row--clickable"
@@ -2940,7 +2939,6 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
               : <span className="chip chip-green">På lager</span>}
           </div>
           <div className="bil-name">{bil.merke} {bil.modell}</div>
-          {chassis ? <div className="bil-search-chassis">{chassis}</div> : null}
           <div className="bil-sub">
             {bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · {bil.status}
           </div>
