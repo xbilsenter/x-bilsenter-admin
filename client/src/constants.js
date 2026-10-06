@@ -1745,8 +1745,26 @@ export function ansvarligSelectOptions(lists, currentValue) {
   return options;
 }
 
+function normalizeChassisQuery(value) {
+  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function bilChassisVerdier(bil) {
+  return [bil?.chassisnr, bil?.understell, bil?.svvData?.vehicle?.understell]
+    .map(normalizeChassisQuery)
+    .filter(function (value) { return value.length >= 5; });
+}
+
+function bilMatchesChassisSearch(bil, query) {
+  const q = normalizeChassisQuery(query);
+  if (q.length < 5) return false;
+  return bilChassisVerdier(bil).some(function (chassis) { return chassis.includes(q); });
+}
+
 export function bilMatchesSearch(bil, query) {
   if (!bil || !String(query || '').trim()) return false;
+
+  if (bilMatchesChassisSearch(bil, query)) return true;
 
   if (looksLikeRegnrQuery(query)) {
     return bilMatchesRegSearch(bil, query);
@@ -1828,6 +1846,8 @@ function bilSearchFieldValues(bil) {
     bil.internInfo,
     bil.finnKode,
     bil.chassisnr,
+    bil.understell,
+    bil.svvData?.vehicle?.understell,
     bil.drivstoff,
     bil.girkasse,
     bil.utstyr,

@@ -2694,6 +2694,15 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     ? biler.filter(function (b) { return bilMatchesSearch(b, searchQuery); })
     : [];
   const searchActive = searchQuery.length > 0;
+  const lagerHits = searchHits
+    .filter(function (b) { return !b.archived; })
+    .sort(function (a, b) { return String(a.reg || '').localeCompare(String(b.reg || ''), 'nb'); });
+  const arkivHits = searchHits
+    .filter(function (b) { return b.archived; })
+    .sort(function (a, b) {
+      return String(b.archivedAt || '').localeCompare(String(a.archivedAt || ''))
+        || String(a.reg || '').localeCompare(String(b.reg || ''), 'nb');
+    });
   const [visSlettelog, setVisSlettelog] = useState(false);
   const [orderEditId, setOrderEditId] = useState(null);
   const [hoveredBilId, setHoveredBilId] = useState(null);
@@ -2906,13 +2915,55 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
     );
   };
 
+  const renderBilSearchRow = function (bil) {
+    const chassis = String(bil.chassisnr || bil.understell || '').trim().toUpperCase();
+    return (
+      <div
+        className="bil-arkiv-row bil-arkiv-row--clickable"
+        key={bil.id}
+        role="button"
+        tabIndex={0}
+        onClick={function () { openBil(bil); }}
+        onKeyDown={function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openBil(bil);
+          }
+        }}
+      >
+        <div className="bil-arkiv-main">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            <span className="bil-reg">{bil.reg}</span>
+            <Badge s={bil.status} />
+            {bil.archived
+              ? <span className="chip chip-gray">Arkivert</span>
+              : <span className="chip chip-green">På lager</span>}
+          </div>
+          <div className="bil-name">{bil.merke} {bil.modell}</div>
+          {chassis ? <div className="bil-search-chassis">{chassis}</div> : null}
+          <div className="bil-sub">
+            {bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · {bil.status}
+          </div>
+        </div>
+        <div className="bil-arkiv-actions" onClick={function (e) { e.stopPropagation(); }}>
+          <button type="button" className="btn btn-g btn-sm" onClick={function () { openBil(bil); }}>Åpne</button>
+          {bil.archived && (
+            <button type="button" className="btn btn-p btn-sm" onClick={function () { restoreBil(bil); }}>Gjenopprett</button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="ph ph--biler">
         <div>
-          <div className="ph-title">{section === 'arkiv' ? 'Arkiv' : 'Biler på lager'}</div>
+          <div className="ph-title">{searchActive ? 'Søk i biler' : section === 'arkiv' ? 'Arkiv' : 'Biler på lager'}</div>
           <div className="ph-sub">
-            {section === 'arkiv'
+            {searchActive
+              ? 'Biler på lager vises først. Arkiverte treff ligger under.'
+              : section === 'arkiv'
               ? `${arkivBiler.length} arkiverte bil${arkivBiler.length === 1 ? '' : 'er'} · gjenopprett til lager når du vil ha dem tilbake i oversikten`
               : `${aktiveBiler.length} biler i lager · ${aktiveBiler.filter(b => b.status !== 'Solgt').length} aktive · ${aktiveBiler.filter(b => b.status === 'Annonsert').length} annonsert på FINN · nummererte biler først, ellers etter sjekklistens rekkefølge med minst progresjon øverst · ${view === 'kanban' ? 'dra bil mellom kolonner' : 'dra bil mellom stasjoner'}`}
           </div>
@@ -2924,7 +2975,7 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
           <input
             value={search}
             onChange={function (e) { setSearch(e.target.value); }}
-            placeholder="Reg.nr, merke, modell, status, notater, dokumenter…"
+            placeholder="Reg.nr, chassisnr, merke, modell, status…"
             style={{ flex: 1 }}
           />
           {searchActive && (
@@ -2935,7 +2986,8 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
         </div>
         {searchActive && (
           <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>
-            {searchHits.length} treff på tvers av lager, løype og arkiv
+            {lagerHits.length} på lager
+            {arkivHits.length > 0 ? ` · ${arkivHits.length} i arkiv` : ''}
           </div>
         )}
       </div>
@@ -3039,44 +3091,29 @@ function BilerView({ biler, setModal, lists, kal, henv, innbytte, epost, updateB
             Ingen biler matcher «{searchQuery}».
           </div>
         ) : (
-          <div className="bil-arkiv">
-            {searchHits.sort(function (a, b) {
-              return String(a.reg || '').localeCompare(String(b.reg || ''));
-            }).map(function (bil) {
-              return (
-                <div
-                  className="bil-arkiv-row bil-arkiv-row--clickable"
-                  key={bil.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={function () { openBil(bil); }}
-                  onKeyDown={function (e) {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openBil(bil);
-                    }
-                  }}
-                >
-                  <div className="bil-arkiv-main">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                      <span className="bil-reg">{bil.reg}</span>
-                      <Badge s={bil.status} />
-                      {bil.archived
-                        ? <span className="chip chip-gray">Arkivert</span>
-                        : <span className="chip chip-green">I lager</span>}
-                    </div>
-                    <div className="bil-name">{bil.merke} {bil.modell}</div>
-                    <div className="bil-sub">
-                      {bil.aar}{fmtKmLabel(bil.km) ? ` · ${fmtKmLabel(bil.km)}` : ''} · {bil.status}
-                      {(bil.dokumenter || []).length > 0 ? ` · ${bil.dokumenter.length} dokument${bil.dokumenter.length === 1 ? '' : 'er'}` : ''}
-                    </div>
-                  </div>
-                  <div className="bil-arkiv-actions" onClick={function (e) { e.stopPropagation(); }}>
-                    <button type="button" className="btn btn-p btn-sm" onClick={function () { openBil(bil); }}>Åpne</button>
-                  </div>
+          <div className="bil-search-results">
+            {lagerHits.length > 0 && (
+              <section className="bil-search-group">
+                <div className="bil-search-group__hd">
+                  <span className="bil-search-group__title">På lager</span>
+                  <span className="bil-search-group__count">{lagerHits.length}</span>
                 </div>
-              );
-            })}
+                <div className="bil-arkiv">
+                  {lagerHits.map(renderBilSearchRow)}
+                </div>
+              </section>
+            )}
+            {arkivHits.length > 0 && (
+              <section className="bil-search-group bil-search-group--arkiv">
+                <div className="bil-search-group__hd">
+                  <span className="bil-search-group__title">Arkiv</span>
+                  <span className="bil-search-group__count">{arkivHits.length}</span>
+                </div>
+                <div className="bil-arkiv">
+                  {arkivHits.map(renderBilSearchRow)}
+                </div>
+              </section>
+            )}
           </div>
         )
       ) : section === 'arkiv' ? (

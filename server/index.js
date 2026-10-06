@@ -2455,7 +2455,7 @@ async function mapBilerForApi(rows, kundeMap) {
 
 const BIL_LIST_COLUMNS = [
   'id', 'reg', 'merke', 'modell', 'aar', 'km', 'innkjop', 'kjopt_inn_fra', 'salg', 'farge', 'status', 'sort_order', 'pipeline_nummer',
-  'ansvarlig', 'frist', 'notater', 'eu_kontroll', 'forsikring', 'finn_kode', 'chassisnr',
+  'ansvarlig', 'frist', 'notater', 'eu_kontroll', 'forsikring', 'finn_kode', 'chassisnr', 'svv_data',
   'drivstoff', 'girkasse', 'utstyr', 'intern_info', 'sjekkliste', 'sjekklister', 'okonomi', 'kunde_id',
   'archived', 'archived_at', 'tilstandsrapport'
 ].join(', ');
@@ -2465,8 +2465,11 @@ async function mapBilersLiteForApi(rows, kundeMap) {
   const mal = settings.bilSjekklister || {};
   return rows.map(function (row) {
     const item = mapBil(row, (kundeMap && kundeMap[row.id]) || [], mal);
+    const understell = String(item.svvData?.vehicle?.understell || '').trim();
     return {
       ...item,
+      chassisnr: String(item.chassisnr || understell || '').trim(),
+      understell: understell,
       lite: true,
       svvData: null,
       logg: [],
