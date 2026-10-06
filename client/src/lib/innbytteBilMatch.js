@@ -25,18 +25,17 @@ export function innbytteOnsketChassis(inn) {
 export function matchesInnbytteTilBil(inn, bil) {
   if (!inn || !bil) return false;
 
+  const innChassis = innbytteOnsketChassis(inn);
+  const bilChassis = bilChassisFromRecord(bil);
+  const harChassis = innChassis.length >= 5 && bilChassis.length >= 5;
+  if (harChassis) return innChassis === bilChassis;
+
   if (inn.onsketBil && bil.finnKode) {
     const onsketFinnId = parseFinnItemId(inn.onsketBil);
     const bilFinnId = parseFinnItemId(bil.finnKode) || String(bil.finnKode).trim();
     if (onsketFinnId && bilFinnId && String(onsketFinnId) === String(bilFinnId)) {
       return true;
     }
-  }
-
-  const innChassis = innbytteOnsketChassis(inn);
-  const bilChassis = bilChassisFromRecord(bil);
-  if (innChassis && bilChassis && innChassis.length >= 5 && innChassis === bilChassis) {
-    return true;
   }
 
   return false;

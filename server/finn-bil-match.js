@@ -56,13 +56,15 @@ function bilYear(bil) {
 function scoreBilFinnMatch(bil, car) {
   if (!bil || !car || car.sold || car.availability === 'sold') return -1;
 
+  const bilVin = bilChassis(bil);
+  const finnVin = finnChassis(car);
+  if (bilVin && finnVin && bilVin !== finnVin) return -1;
+
   const finnId = String(car.id || '').trim();
   if (finnId && String(bil.finn_kode || bil.finnKode || '').trim() === finnId) {
     return 1000;
   }
 
-  const bilVin = bilChassis(bil);
-  const finnVin = finnChassis(car);
   if (bilVin && finnVin && bilVin === finnVin) {
     return 900;
   }
@@ -151,14 +153,23 @@ async function loadFinnInventory(siteOrigin, options) {
   return detailed;
 }
 
-function matchKlarBilerToFinn(klarBiler, finnCars) {
+function matchKlarBilerToFinn(klarBiler, finnCars, occupiedFinnIds) {
+  const occupied = new Set(
+    (Array.isArray(occupiedFinnIds) ? occupiedFinnIds : [])
+      .map(function (id) { return String(id || '').trim(); })
+      .filter(Boolean)
+  );
   const usedFinnIds = new Set();
   const matches = [];
   const unmatched = [];
 
   klarBiler.forEach(function (bil) {
     const candidates = finnCars.filter(function (car) {
-      return car && car.id && !usedFinnIds.has(String(car.id));
+      if (!car || !car.id || usedFinnIds.has(String(car.id))) return false;
+      if (!occupied.has(String(car.id))) return true;
+      const bilVin = bilChassis(bil);
+      const finnVin = finnChassis(car);
+      return !!(bilVin && finnVin && bilVin === finnVin);
     });
     const hit = findBestFinnMatch(bil, candidates);
     if (hit?.car?.id) {

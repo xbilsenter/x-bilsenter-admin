@@ -57,7 +57,14 @@ async function main() {
   const finnCars = await loadFinnInventory(siteOrigin, { refresh });
   console.log('FINN (tilgjengelige):', finnCars.length);
 
-  const { matches, unmatched } = matchKlarBilerToFinn(klarBiler, finnCars);
+  const occupiedRows = await prepare(
+    "SELECT finn_kode FROM biler WHERE COALESCE(finn_kode, '') <> '' AND NOT (COALESCE(archived, 0) = 0 AND status = ?)"
+  ).all(KLAR_STATUS);
+  const { matches, unmatched } = matchKlarBilerToFinn(
+    klarBiler,
+    finnCars,
+    occupiedRows.map(function (row) { return row.finn_kode; })
+  );
   console.log('\nTreff:', matches.length);
   matches.forEach(function (m) {
     console.log(

@@ -987,7 +987,14 @@ app.post('/api/biler/sync-finn-status', requireAuth, requirePermission('biler'),
     ).all(KLAR_STATUS);
 
     const finnCars = await loadFinnInventory(getSiteOrigin(), { refresh });
-    const { matches, unmatched } = matchKlarBilerToFinn(klarRows, finnCars);
+    const occupiedRows = await prepare(
+      "SELECT finn_kode FROM biler WHERE COALESCE(finn_kode, '') <> '' AND NOT (COALESCE(archived, 0) = 0 AND status = ?)"
+    ).all(KLAR_STATUS);
+    const { matches, unmatched } = matchKlarBilerToFinn(
+      klarRows,
+      finnCars,
+      occupiedRows.map(function (row) { return row.finn_kode; })
+    );
 
     const preview = matches.map(function (m) {
       return {
