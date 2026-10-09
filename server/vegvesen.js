@@ -693,12 +693,28 @@ function sectionsFromParsed(parsed) {
   }).filter(function (s) { return s.fields.length > 0; });
 }
 
+const VEGVESEN_FETCH_TIMEOUT_MS = 8000;
+
 async function fetchFromVegvesen(url, paramName, paramValue, apiKey) {
   const endpoint = new URL(url);
   endpoint.searchParams.set(paramName, paramValue);
-  return fetch(endpoint.toString(), {
-    headers: { Accept: 'application/json', 'SVV-Authorization': 'Apikey ' + apiKey }
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(function () { controller.abort(); }, VEGVESEN_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(endpoint.toString(), {
+      headers: { Accept: 'application/json', 'SVV-Authorization': 'Apikey ' + apiKey },
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      const error = new Error('Kjøretøyregisteret svarte ikke i tide');
+      error.code = 'UPSTREAM_UNAVAILABLE';
+      throw error;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function normalizeUnderstellsnummer(value) {
@@ -724,9 +740,22 @@ async function lookupVehicleFullByParam(paramName, paramValue, options) {
     throw error;
   }
 
-  let response = await fetchFromVegvesen(VEGVESEN_URL, paramName, normalized, apiKey);
-  if (response.status === 404 || response.status === 204) {
-    response = await fetchFromVegvesen(ATLAS_URL, paramName, normalized, apiKey);
+  let response = null;
+  const urls = [VEGVESEN_URL, ATLAS_URL];
+  for (let i = 0; i < urls.length; i += 1) {
+    try {
+      const next = await fetchFromVegvesen(urls[i], paramName, normalized, apiKey);
+      if ((next.status === 404 || next.status === 204) && i < urls.length - 1) continue;
+      response = next;
+      break;
+    } catch (err) {
+      if (i === urls.length - 1) throw err;
+    }
+  }
+  if (!response) {
+    const error = new Error(notFoundMessage);
+    error.code = 'NOT_FOUND';
+    throw error;
   }
 
   if (response.status === 403) {

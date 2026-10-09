@@ -625,14 +625,34 @@ async function resolveSelgBilStatus(key) {
   return resolveInnbytteStatus(key);
 }
 
+function withTimeout(promise, ms) {
+  return new Promise(function (resolve, reject) {
+    const timer = setTimeout(function () {
+      reject(new Error('Tidsavbrudd'));
+    }, ms);
+    Promise.resolve(promise).then(function (value) {
+      clearTimeout(timer);
+      resolve(value);
+    }, function (err) {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
 async function saveIngestBilder(bilderMeta) {
   const items = Array.isArray(bilderMeta) ? bilderMeta : [];
   const saved = await Promise.all(items.map(async function (file, index) {
     if (!file || !file.data) return null;
-    return saveBase64DataUrl(file.data, {
-      name: file.name,
-      index: index
-    });
+    try {
+      return await withTimeout(saveBase64DataUrl(file.data, {
+        name: file.name,
+        index: index
+      }), 10000);
+    } catch (err) {
+      console.warn('[ingest/bilde]', err.message);
+      return null;
+    }
   }));
   return saved.filter(Boolean);
 }
@@ -1383,8 +1403,8 @@ app.post('/api/ingest/innbytte', requireIngest, upload.array('bilder', 12), asyn
 // JSON innbytte (same as website uses today)
 app.post('/api/ingest/innbytte/json', requireIngest, async function (req, res) {
   req.body = req.body || {};
-  const savedFiles = await saveIngestBilder(Array.isArray(req.body.bilder) ? req.body.bilder : []);
-  req.body.bilder = savedFiles;
+  const bilderMeta = Array.isArray(req.body.bilder) ? req.body.bilder : [];
+  req.body.bilder = [];
   req.body.mobil = req.body.mobil || req.body.tlf;
 
   const b = req.body;
@@ -1393,13 +1413,28 @@ app.post('/api/ingest/innbytte/json', requireIngest, async function (req, res) {
   }
 
   try {
-    const info = await insertInnbytteRow(b, savedFiles);
+    const info = await insertInnbytteRow(b, []);
+    const id = info.lastInsertRowid;
+    let savedFiles = [];
+    try {
+      savedFiles = await saveIngestBilder(bilderMeta);
+    } catch (err) {
+      console.warn('[innbytte/bilder]', String(b.regnr || '').toUpperCase(), err.message);
+    }
+    if (id && savedFiles.length) {
+      try {
+        await prepare('UPDATE innbytte SET bilder = ? WHERE id = ?').run(JSON.stringify(savedFiles), id);
+      } catch (err) {
+        console.warn('[innbytte/bilder]', id, err.message);
+      }
+    }
     console.log('[innbytte/ingest]', {
-      id: info.lastInsertRowid,
+      id: id,
       regnr: String(b.regnr || '').toUpperCase(),
-      epost: String(b.epost || '').trim().toLowerCase()
+      epost: String(b.epost || '').trim().toLowerCase(),
+      bilder: savedFiles.length
     });
-    res.status(201).json({ ok: true, id: info.lastInsertRowid });
+    res.status(201).json({ ok: true, id: id });
   } catch (err) {
     console.error('[innbytte/ingest]', err.message, {
       regnr: String(b.regnr || '').toUpperCase()
